@@ -25,6 +25,7 @@
 #include <fun4all/Fun4AllOutputManager.h>
 #include <fun4all/Fun4AllRunNodeInputManager.h>
 #include <fun4all/Fun4AllServer.h>
+#include <eventdisplay/TrackerEventDisplay.h>
 
 #include <phool/recoConsts.h>
 
@@ -41,8 +42,20 @@
 
 #include <trackingdiagnostics/TrackResiduals.h>
 #include <trackingdiagnostics/TrkrNtuplizer.h>
-
+#include <trackingdiagnostics/KshortReconstruction.h>
 #include <stdio.h>
+
+/*#include <float.h>
+
+#pragma GCC diagnostic push
+
+#pragma GCC diagnostic ignored "-Wundefined-internal"
+
+#include <kfparticle_sphenix/KFParticle_sPHENIX.h>
+
+#pragma GCC diagnostic pop*/
+
+R__LOAD_LIBRARY(libkfparticle_sphenix.so)
 
 R__LOAD_LIBRARY(libfun4all.so)
 R__LOAD_LIBRARY(libffamodules.so)
@@ -54,13 +67,18 @@ R__LOAD_LIBRARY(libtpc.so)
 R__LOAD_LIBRARY(libmicromegas.so)
 R__LOAD_LIBRARY(libTrackingDiagnostics.so)
 R__LOAD_LIBRARY(libtrackingqa.so)
+R__LOAD_LIBRARY(libEventDisplay.so)
 R__LOAD_LIBRARY(libtpcqa.so)
+
 void Fun4All_FieldOnAllTrackers(
-    const int nEvents = 10,
+        const int nIn = 1,
     const std::string tpcfilename = "DST_BEAM_run2pp_new_2023p013-00041989-0000.root",
+        //const std::string tpcfilename = "DST_STREAMING_EVENT_run2pp_new_2024p002-00051107-00000.root",
+        //const std::string tpcdir = "/sphenix/lustre01/sphnxpro/physics/slurp/streaming/physics/run_00051100_00051200/",
     const std::string tpcdir = "/sphenix/lustre01/sphnxpro/commissioning/slurp/tpcbeam/run_00041900_00042000/",
     const std::string outfilename = "clusters_seeds",
-    const bool convertSeeds = true)
+    const bool convertSeeds = false,
+        const int nEvents = 0)
 {
   std::string inputtpcRawHitFile = tpcdir + tpcfilename;
 
@@ -90,6 +108,15 @@ void Fun4All_FieldOnAllTrackers(
   ACTSGEOM::tpotMisalignment = 100.;
   TString outfile = outfilename + "_" + runnumber + "-" + segment + ".root";
   std::string theOutfile = outfile.Data();
+
+    string outDir = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/myKShortReco/";
+    string outputFileName = "outputFile_kso_" + to_string(runnumber) + "_" + to_string(segment);
+
+    string outputRecoDir = outDir + "inReconstruction/";
+    string makeDirectory = "mkdir -p " + outputRecoDir;
+    system(makeDirectory.c_str());
+    string outputRecoFile = outputRecoDir + outputFileName + ".root";
+
   auto se = Fun4AllServer::instance();
   se->Verbosity(2);
   auto rc = recoConsts::instance();
@@ -98,7 +125,7 @@ void Fun4All_FieldOnAllTrackers(
   Enable::CDB = true;
   rc->set_StringFlag("CDB_GLOBALTAG", "ProdA_2024");
   rc->set_uint64Flag("TIMESTAMP", runnumber);
-  std::string geofile = CDBInterface::instance()->getUrl("Tracking_Geometry");
+  std::string geofile = CDBInterface::instance()->getUrl("Tracking_Geometry");//准备载入几何信息
 
   Fun4AllRunNodeInputManager *ingeo = new Fun4AllRunNodeInputManager("GeoIn");
   ingeo->AddFile(geofile);
@@ -142,7 +169,7 @@ void Fun4All_FieldOnAllTrackers(
   Mvtx_Clustering();
   Intt_Clustering();
 
-  auto tpcclusterizer = new TpcClusterizer;
+  auto tpcclusterizer = new TpcClusterizer;//把hit打包成cluster
   tpcclusterizer->Verbosity(0);
   tpcclusterizer->set_do_hit_association(G4TPC::DO_HIT_ASSOCIATION);
   tpcclusterizer->set_rawdata_reco();
@@ -157,7 +184,7 @@ void Fun4All_FieldOnAllTrackers(
   /*
    * Silicon Seeding
    */
-  auto silicon_Seeding = new PHActsSiliconSeeding;
+  auto silicon_Seeding = new PHActsSiliconSeeding;//种子并合并种子
   silicon_Seeding->Verbosity(0);
   silicon_Seeding->searchInIntt();
   silicon_Seeding->setinttRPhiSearchWindow(0.4);
@@ -220,6 +247,7 @@ void Fun4All_FieldOnAllTrackers(
    * Track Matching between silicon and TPC
    */
   // The normal silicon association methods
+    //为什么silicon的种子没有拓展成stubs?
   // Match the TPC track stubs from the CA seeder to silicon track stubs from PHSiliconTruthTrackSeeding
   auto silicon_match = new PHSiliconTpcTrackMatching;
   silicon_match->Verbosity(0);
@@ -257,7 +285,7 @@ void Fun4All_FieldOnAllTrackers(
     auto converter = new TrackSeedTrackMapConverter;
     // Default set to full SvtxTrackSeeds. Can be set to
     // SiliconTrackSeedContainer or TpcTrackSeedContainer
-    converter->setTrackSeedName("SvtxTrackSeedContainer");
+    converter->setTrackSeedName("TpcTrackSeedContainer");
     converter->setFieldMap(G4MAGNET::magfield_tracking);
     converter->Verbosity(0);
     se->registerSubsystem(converter);
@@ -313,7 +341,50 @@ void Fun4All_FieldOnAllTrackers(
   finder->setOutlierPairCut(0.1);
   se->registerSubsystem(finder);
 
-  TString residoutfile = theOutfile + "_resid.root";
+
+    /*    //KFParticle setup
+      KFParticle_sPHENIX *kfparticle = new KFParticle_sPHENIX("myKShortReco");
+      kfparticle->Verbosity(1);
+      kfparticle->setDecayDescriptor("K_S0 -> pi^+ pi^-");
+
+      //Basic node selection and configuration
+      kfparticle->magFieldFile("FIELDMAP_TRACKING");
+      kfparticle->getAllPVInfo(false);
+      kfparticle->allowZeroMassTracks(true);
+      kfparticle->useFakePrimaryVertex(true);
+
+      kfparticle->constrainToPrimaryVertex(false);
+      kfparticle->setMotherIPchi2(FLT_MAX);                               //不对IP chi2进行任何限制
+      kfparticle->setFlightDistancechi2(-1.);
+      kfparticle->setMinDIRA(-1.1);
+      kfparticle->setDecayLengthRange(0., FLT_MAX);
+      kfparticle->setDecayTimeRange(-1 * FLT_MAX, FLT_MAX);
+
+      //Track parameters
+      kfparticle->setMinMVTXhits(0);
+      kfparticle->setMinTPChits(20);
+      kfparticle->setMinimumTrackPT(-1.);
+      kfparticle->setMaximumTrackPTchi2(FLT_MAX);
+      kfparticle->setMinimumTrackIPchi2(-1.);
+      kfparticle->setMinimumTrackIP(-1.);
+      kfparticle->setMaximumTrackchi2nDOF(20.);
+
+      //Vertex parameters
+      kfparticle->setMaximumVertexchi2nDOF(50);
+      kfparticle->setMaximumDaughterDCA(1.);
+
+      //Parent parameters
+      kfparticle->setMotherPT(0);
+      kfparticle->setMinimumMass(0.300);
+      kfparticle->setMaximumMass(0.700);
+      kfparticle->setMaximumMotherVertexVolume(0.1);
+
+      kfparticle->setOutputName(outputRecoFile);
+
+      se->registerSubsystem(kfparticle);
+      std::cout << "KFParticle output file: " << outputRecoFile << std::endl;*/
+
+  TString residoutfile = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_resid.root";
   std::string residstring(residoutfile.Data());
 
   auto resid = new TrackResiduals("TrackResiduals");
@@ -334,6 +405,22 @@ void Fun4All_FieldOnAllTrackers(
   resid->Verbosity(0);
   se->registerSubsystem(resid);
 
+    /*auto ks0reco = new KshortReconstruction("KshortReconstruction");
+  ks0reco->Verbosity(5);
+
+  ks0reco->setPtCut(0.000000001);
+*//*    ks0reco->setApplyInvariantPtCut(false);
+    ks0reco->setApplyQualityCut(false);
+    ks0reco->setApplyDCACut(false);
+    ks0reco->setApplyPairDCACut(false);*//*
+    ks0reco->setRequireMVTX(false);
+    ks0reco->setTrackQualityCut(10000000000000000);
+    ks0reco->setPairDCACut(10000000000000);
+    ks0reco->setTrackDCACut(0.0000000000000001);
+    ks0reco->set_output_file(outputRecoFile);
+    se->registerSubsystem(ks0reco);*/
+    //tree->Draw("pt", "pdg==11");
+
   //auto ntuplizer = new TrkrNtuplizer("TrkrNtuplizer");
   //se->registerSubsystem(ntuplizer);
 
@@ -352,9 +439,20 @@ void Fun4All_FieldOnAllTrackers(
   se->End();
   se->PrintTimer();
 
+    /*   ifstream file(outputRecoFile.c_str());
+      if (file.good())
+      {
+          std::cout << "Output file found: " << outputRecoFile << std::endl;
+          string moveOutput = "mv " + outputRecoFile + " " + outDir;
+          system(moveOutput.c_str());
+          std::cout << "Moved output file to: " << outDir << std::endl;
+      } else {
+          std::cout << "Output file not found: " << outputRecoFile << std::endl;
+      }*/
+
   if (Enable::QA)
   {
-    TString qaname = theOutfile + "_qa.root";
+    TString qaname = outputRecoFile + "_qa.root";
     std::string qaOutputFileName(qaname.Data());
     QAHistManagerDef::saveQARootFile(qaOutputFileName);
   }
