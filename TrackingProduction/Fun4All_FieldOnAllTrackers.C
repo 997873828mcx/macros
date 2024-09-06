@@ -72,10 +72,10 @@ R__LOAD_LIBRARY(libtpcqa.so)
 
 void Fun4All_FieldOnAllTrackers(
         const int nIn = 1,
-    const std::string tpcfilename = "DST_BEAM_run2pp_new_2023p013-00041989-0000.root",
+    const std::string tpcfilename = "DST_STREAMING_EVENT_run2pp_new_2024p002-00051576-00000.root",
         //const std::string tpcfilename = "DST_STREAMING_EVENT_run2pp_new_2024p002-00051107-00000.root",
-        //const std::string tpcdir = "/sphenix/lustre01/sphnxpro/physics/slurp/streaming/physics/run_00051100_00051200/",
-    const std::string tpcdir = "/sphenix/lustre01/sphnxpro/commissioning/slurp/tpcbeam/run_00041900_00042000/",
+        const std::string tpcdir = "/sphenix/lustre01/sphnxpro/physics/slurp/streaming/physics/new_2024p002/run_00051500_00051600/",
+    //const std::string tpcdir = "/sphenix/lustre01/sphnxpro/commissioning/slurp/tpcbeam/run_00041900_00042000/",
     const std::string outfilename = "clusters_seeds",
     const bool convertSeeds = false,
         const int nEvents = 0)
@@ -405,20 +405,20 @@ void Fun4All_FieldOnAllTrackers(
   resid->Verbosity(0);
   se->registerSubsystem(resid);
 
-    /*auto ks0reco = new KshortReconstruction("KshortReconstruction");
+    auto ks0reco = new KshortReconstruction("KshortReconstruction");
   ks0reco->Verbosity(5);
 
   ks0reco->setPtCut(0.000000001);
-*//*    ks0reco->setApplyInvariantPtCut(false);
+    /*ks0reco->setApplyInvariantPtCut(false);
     ks0reco->setApplyQualityCut(false);
     ks0reco->setApplyDCACut(false);
-    ks0reco->setApplyPairDCACut(false);*//*
+    ks0reco->setApplyPairDCACut(false);*/
     ks0reco->setRequireMVTX(false);
     ks0reco->setTrackQualityCut(10000000000000000);
     ks0reco->setPairDCACut(10000000000000);
     ks0reco->setTrackDCACut(0.0000000000000001);
     ks0reco->set_output_file(outputRecoFile);
-    se->registerSubsystem(ks0reco);*/
+    se->registerSubsystem(ks0reco);
     //tree->Draw("pt", "pdg==11");
 
   //auto ntuplizer = new TrkrNtuplizer("TrkrNtuplizer");
