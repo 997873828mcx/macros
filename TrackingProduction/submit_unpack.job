@@ -1,0 +1,11 @@
+  Universe  	= vanilla
+  Executable 	= /bin/sh
+  Arguments     = /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/unpack_cosfiles.sh $(process) beam_data_51107.txt
+  Notify_user   = 997873828mcx@gmail.com
+  Output  	= /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/log/10k_trk_sim_$(process).out
+  Error         = /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/log/10k_trk_sim_$(process).err
+  Log  	        = /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/log/tmp/10k_trk_sim_$(process).log
+  Initialdir  	= /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/
+  PeriodicHold = (NumJobStarts>=2 && JobStatus == 1) 
+
+  Queue 429
