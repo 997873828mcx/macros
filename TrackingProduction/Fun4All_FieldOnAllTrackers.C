@@ -78,7 +78,7 @@ void Fun4All_FieldOnAllTrackers(
     //const std::string tpcdir = "/sphenix/lustre01/sphnxpro/commissioning/slurp/tpcbeam/run_00041900_00042000/",
     const std::string outfilename = "clusters_seeds",
     const bool convertSeeds = false,
-        const int nEvents = 0)
+        const int nEvents = 1)
 {
   std::string inputtpcRawHitFile = tpcdir + tpcfilename;
 
@@ -164,7 +164,7 @@ void Fun4All_FieldOnAllTrackers(
   Mvtx_HitUnpacking();
   Intt_HitUnpacking();
   Tpc_HitUnpacking();
-  Micromegas_HitUnpacking();
+ Micromegas_HitUnpacking();
 
   Mvtx_Clustering();
   Intt_Clustering();
@@ -439,7 +439,7 @@ void Fun4All_FieldOnAllTrackers(
   se->End();
   se->PrintTimer();
 
-    /*   ifstream file(outputRecoFile.c_str());
+       ifstream file(outputRecoFile.c_str());
       if (file.good())
       {
           std::cout << "Output file found: " << outputRecoFile << std::endl;
@@ -448,7 +448,7 @@ void Fun4All_FieldOnAllTrackers(
           std::cout << "Moved output file to: " << outDir << std::endl;
       } else {
           std::cout << "Output file not found: " << outputRecoFile << std::endl;
-      }*/
+      }
 
   if (Enable::QA)
   {

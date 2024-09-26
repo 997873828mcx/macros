@@ -1,6 +1,6 @@
   Universe  	= vanilla
   Executable 	= /bin/sh
-  Arguments     = /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/unpack_cosfiles.sh $(process) beam_data_51107.txt
+  Arguments     = /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/unpack_cosfiles.sh $(process) beam_data_51576.txt
   Notify_user   = 997873828mcx@gmail.com
   Output  	= /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/log/10k_trk_sim_$(process).out
   Error         = /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/log/10k_trk_sim_$(process).err
