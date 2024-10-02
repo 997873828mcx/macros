@@ -14,6 +14,7 @@
 #include <QA.C>
 #include <Trkr_TpcReadoutInit.C>
 #include <Trkr_Clustering.C>
+#include <Trkr_LaserClustering.C>
 #include <Trkr_Reco.C>
 
 #include <ffamodules/CDBInterface.h>
@@ -150,6 +151,8 @@ void Fun4All_FieldOnAllTrackers_KFP(
   tpcclusterizer->set_rawdata_reco();
   se->registerSubsystem(tpcclusterizer);
 
+  Tpc_LaserEventIdentifying();
+
   Micromegas_Clustering();
 
   Tracking_Reco_TrackSeed();
@@ -202,11 +205,11 @@ void Fun4All_FieldOnAllTrackers_KFP(
 
   //Basic node selection and configuration
   kfparticle->magFieldFile("FIELDMAP_TRACKING");
-  kfparticle->getAllPVInfo(false);
-  kfparticle->allowZeroMassTracks(true);
-  kfparticle->useFakePrimaryVertex(true);
+  // kfparticle->getAllPVInfo(false);
+  kfparticle->allowZeroMassTracks(); // true
+  kfparticle->useFakePrimaryVertex(); // true
 
-  kfparticle->constrainToPrimaryVertex(false);
+  // kfparticle->constrainToPrimaryVertex(false);
   kfparticle->setMotherIPchi2(FLT_MAX);
   kfparticle->setFlightDistancechi2(-1.);
   kfparticle->setMinDIRA(-1.1);
