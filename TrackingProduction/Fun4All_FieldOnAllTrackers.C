@@ -13,6 +13,7 @@
 #include <GlobalVariables.C>
 #include <QA.C>
 #include <Trkr_Clustering.C>
+#include <Trkr_LaserClustering.C>
 #include <Trkr_Reco.C>
 #include <Trkr_RecoInit.C>
 #include <Trkr_TpcReadoutInit.C>
@@ -72,10 +73,8 @@ R__LOAD_LIBRARY(libtpcqa.so)
 
 void Fun4All_FieldOnAllTrackers(
         const int nIn = 1,
-    const std::string tpcfilename = "DST_BEAM_run2pp_new_2023p013-00041989-0000.root",
-        //const std::string tpcfilename = "DST_STREAMING_EVENT_run2pp_new_2024p002-00051107-00000.root",
-        //const std::string tpcdir = "/sphenix/lustre01/sphnxpro/physics/slurp/streaming/physics/run_00051100_00051200/",
-    const std::string tpcdir = "/sphenix/lustre01/sphnxpro/commissioning/slurp/tpcbeam/run_00041900_00042000/",
+    const std::string tpcfilename = "DST_STREAMING_EVENT_run2pp_new_2024p002-00053217-00000.root",
+    const std::string tpcdir = "/sphenix/lustre01/sphnxpro/physics/slurp/streaming/physics/new_2024p002/run_00053200_00053300/",
     const std::string outfilename = "clusters_seeds",
     const bool convertSeeds = false,
         const int nEvents = 0)
@@ -95,6 +94,8 @@ void Fun4All_FieldOnAllTrackers(
 	   << " pre: " << TRACKING::reco_tpc_time_presample
 	   << " vdrift: " << G4TPC::tpc_drift_velocity_reco
 	   << std::endl;
+
+ TRACKING::pp_mode = false;
 
   // distortion calibration mode
   /*
@@ -121,6 +122,7 @@ void Fun4All_FieldOnAllTrackers(
   se->Verbosity(2);
   auto rc = recoConsts::instance();
   rc->set_IntFlag("RUNNUMBER", runnumber);
+  rc->set_IntFlag("RUNSEGMENT", segment);
 
   Enable::CDB = true;
   rc->set_StringFlag("CDB_GLOBALTAG", "ProdA_2024");
@@ -151,7 +153,13 @@ void Fun4All_FieldOnAllTrackers(
 
   //to turn on the default static corrections, enable the two lines below
   //G4TPC::ENABLE_STATIC_CORRECTIONS = true;
-  //G4TPC::DISTORTIONS_USE_PHI_AS_RADIANS = false;
+  //G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
+
+  //to turn on the average corrections derived from simulation, enable the three lines below
+  //note: these are designed to be used only if static corrections are also applied
+  //G4TPC::ENABLE_AVERAGE_CORRECTIONS = true;
+  //G4TPC::USE_PHI_AS_RAD_AVERAGE_CORRECTIONS = false;
+  //G4TPC:average_correction_filename = std::string(getenv("CALIBRATIONROOT")) + "/distortion_maps/average_minus_static_distortion_inverted_10-new.root";
 
   G4MAGNET::magfield_rescale = 1;
   TrackingInit();
@@ -175,6 +183,8 @@ void Fun4All_FieldOnAllTrackers(
   tpcclusterizer->set_rawdata_reco();
   se->registerSubsystem(tpcclusterizer);
 
+  Tpc_LaserEventIdentifying();
+
   Micromegas_Clustering();
 
   /*
@@ -184,11 +194,25 @@ void Fun4All_FieldOnAllTrackers(
   /*
    * Silicon Seeding
    */
+
   auto silicon_Seeding = new PHActsSiliconSeeding;//种子并合并种子
+
+
+  /*
+
   silicon_Seeding->Verbosity(0);
   silicon_Seeding->searchInIntt();
   silicon_Seeding->setinttRPhiSearchWindow(0.4);
   silicon_Seeding->setinttZSearchWindow(1.6);
+  silicon_Seeding->seedAnalysis(false);
+  se->registerSubsystem(silicon_Seeding);
+  */
+
+  auto silicon_Seeding = new PHActsSiliconSeeding;
+  silicon_Seeding->Verbosity(0);
+  // these get us to about 83% INTT > 1
+  silicon_Seeding->setinttRPhiSearchWindow(1.0);
+  silicon_Seeding->setinttZSearchWindow(7.0);
   silicon_Seeding->seedAnalysis(false);
   se->registerSubsystem(silicon_Seeding);
 
@@ -243,6 +267,16 @@ void Fun4All_FieldOnAllTrackers(
   cprop->set_pp_mode(TRACKING::pp_mode);
   se->registerSubsystem(cprop);
 
+  if (TRACKING::pp_mode)
+  {
+    // for pp mode, apply preliminary distortion corrections to TPC clusters before crossing is known
+    // and refit the trackseeds. Replace KFProp fits with the new fit parameters in the TPC seeds.
+    auto prelim_distcorr = new PrelimDistortionCorrection;
+    prelim_distcorr->set_pp_mode(TRACKING::pp_mode);
+    prelim_distcorr->Verbosity(0);
+    se->registerSubsystem(prelim_distcorr);
+  }
+
   /*
    * Track Matching between silicon and TPC
    */
@@ -256,8 +290,7 @@ void Fun4All_FieldOnAllTrackers(
   silicon_match->set_z_search_window(5.);
   silicon_match->set_phi_search_window(0.2);
   silicon_match->set_eta_search_window(0.1);
-  silicon_match->set_use_old_matching(true);
-  silicon_match->set_pp_mode(true);
+  silicon_match->set_pp_mode(TRACKING::pp_mode);
   se->registerSubsystem(silicon_match);
 
   // Match TPC track stubs from CA seeder to clusters in the micromegas layers
@@ -309,6 +342,10 @@ void Fun4All_FieldOnAllTrackers(
     actsFit->useOutlierFinder(false);
     actsFit->setFieldMap(G4MAGNET::magfield_tracking);
     se->registerSubsystem(actsFit);
+
+    auto cleaner = new PHTrackCleaner();
+    cleaner->Verbosity(0);
+    se->registerSubsystem(cleaner);
 
     if (G4TRACKING::SC_CALIBMODE)
     {
@@ -402,6 +439,7 @@ void Fun4All_FieldOnAllTrackers(
   resid->clusterTree();
   resid->hitTree();
   resid->convertSeeds(G4TRACKING::convert_seeds_to_svtxtracks);
+
   resid->Verbosity(0);
   se->registerSubsystem(resid);
 
@@ -433,7 +471,12 @@ void Fun4All_FieldOnAllTrackers(
     se->registerSubsystem(new InttClusterQA);
     se->registerSubsystem(new TpcClusterQA);
     se->registerSubsystem(new MicromegasClusterQA);
-    se->registerSubsystem(new TpcSeedsQA);
+    auto tpcqa = new TpcSeedsQA;
+    tpcqa->setTrackMapName("TpcSvtxTrackMap");
+    tpcqa->setVertexMapName("TpcSvtxVertexMap");
+    tpcqa->setSegment(rc->get_IntFlag("RUNSEGMENT"));
+    se->registerSubsystem(tpcqa);
+
   }
   se->run(nEvents);
   se->End();
