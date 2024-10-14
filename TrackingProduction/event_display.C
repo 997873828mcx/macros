@@ -108,7 +108,7 @@ void event_display(const int eve=0){
     // Variables to store the data for the track to be processed
     std::vector<double> x, y, z;
     std::vector<double> tx, ty, tz;
-    int nsteps = 10000;
+    int nsteps = 20000;
     tx.reserve(nsteps);
     ty.reserve(nsteps);
     tz.reserve(nsteps);
@@ -152,7 +152,7 @@ void event_display(const int eve=0){
     }
     //nEntriesInAnEvent=10;
     nentries=nEntriesInAnEvent;
-    int nEntriesWeWant = 1;
+    int nEntriesWeWant = nentries;
     int nthEntry=0;
 
     std::vector<TGraph2D*> gr1;
@@ -266,16 +266,22 @@ void event_display(const int eve=0){
 
                     //2nd expressioni for dPhi
                     //double dPhi = (-charge*length*0.01*0.3*(mom.Y()*bz-mom.Z()*by)+mom.Z()*p*std::cos(phi)*dTheta)/mom.Pt()/std::sin(phi)/p;
-                    //double dPhi = -(charge * 1.4 * 0.3 * 0.01 * length) / (sqrt(px * px + py * py));
+
+
+                    //double dPhi = -(charge * bz * 0.3 * 0.01 * length) / (sqrt(px * px + py * py)); //approximate dPhi
                     double dPhiMiddle = dPhi/2.0;
                     double phiMiddle = phi+dPhiMiddle;
                     phi+=dPhi;
 
                     dPosition.SetMagThetaPhi(length, thetaMiddle, phiMiddle);
                     //dPosition.SetMagThetaPhi(length, theta, phi);
-                    tx.push_back(tx[j - 1] + dPosition.X());
-                    ty.push_back(ty[j - 1] + dPosition.Y());
-                    tz.push_back(tz[j - 1] + dPosition.Z());
+                    if (fabs(tx[j - 1] + dPosition.X()) > 110 || fabs(ty[j - 1] + dPosition.Y()) > 110 || fabs(tz[j - 1] + dPosition.Z()) > 110) {
+                        break;  // Stop the loop if the new position is outside the range
+                    }else {
+                        tx.push_back(tx[j - 1] + dPosition.X());
+                        ty.push_back(ty[j - 1] + dPosition.Y());
+                        tz.push_back(tz[j - 1] + dPosition.Z());
+                    }
 
 
 
@@ -324,7 +330,7 @@ void event_display(const int eve=0){
     TCanvas *c = new TCanvas("c", "3D Event Display", 800, 800);
 
     c->cd();
-    TH3F* htemp = new TH3F("htemp"," ", 10, -100, 100, 10, -100, 100, 10, -100 , 100);
+    TH3F* htemp = new TH3F("htemp"," ", 10, -120, 120, 10, -120, 120, 10, -120 , 120);
     htemp->GetXaxis()->SetTitle("X");
     htemp->GetYaxis()->SetTitle("Y");
     htemp->GetZaxis()->SetTitle("Z");
@@ -354,7 +360,7 @@ void event_display(const int eve=0){
     }
 
 // Save the canvas and graphs to a ROOT file
-    TFile *outfile_root = new TFile("event_display_graphs_trackmap_allOn_10.root", "RECREATE");
+    TFile *outfile_root = new TFile("event_display_graphs_trackmap_allOn_wholeEvent.root", "RECREATE");
     if (!outfile_root || outfile_root->IsZombie()) {
         std::cerr << "Error creating output file!" << std::endl;
         return;
@@ -368,7 +374,7 @@ void event_display(const int eve=0){
     }*/
     outfile_root->Close();
 
-    std::cout << "Graphs saved to event_display_graphs_trackmap_allOn_10.root" << std::endl;
+    std::cout << "Graphs saved to event_display_graphs_trackmap_constField_20.root" << std::endl;
 
     /*file->Close();
     field->Close();*/
