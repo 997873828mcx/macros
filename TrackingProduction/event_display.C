@@ -8,16 +8,38 @@
 #include <TLegend.h>
 #include <iostream>
 #include <vector>
-#include <ffamodules/CDBInterface.h>
+
 
 void event_display(const int eve=0){
 
     // Open the ROOT file
     TFile *file = TFile::Open("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_51576_122_resid.root");
 
+
     // Check if the file was opened successfully
     if (!file || file->IsZombie()) {
         std::cerr << "Error opening file" << std::endl;
+        return;
+    }
+
+    TFile *field = TFile::Open("magnetic_field_histograms.root");
+
+
+     // Check if the file was opened successfully
+    if (!field || field->IsZombie()) {
+        std::cerr << "Error opening magnetic field file" << std::endl;
+        file->Close();
+        return;
+    }
+
+    TH3F *hist_bx = (TH3F *) field->Get("hist_bx");
+    TH3F *hist_by = (TH3F *) field->Get("hist_by");
+    TH3F *hist_bz = (TH3F *) field->Get("hist_bz");
+
+    if (!hist_bx || !hist_by || !hist_bz) {
+        std::cerr << "Error retrieving magnetic field histograms from file" << std::endl;
+        file->Close();
+        field->Close();
         return;
     }
 
@@ -28,12 +50,9 @@ void event_display(const int eve=0){
     if (!tree) {
         std::cerr << "Error getting tree from file" << std::endl;
         file->Close();
+        field->Close();
         return;
     }
-
-
-
-
 
 
 
@@ -78,6 +97,10 @@ void event_display(const int eve=0){
     // Variables to store the data for the track to be processed
     std::vector<double> x, y, z;
     std::vector<double> tx, ty, tz;
+
+    tx.reserve(3000);
+    ty.reserve(3000);
+    tz.reserve(3000);
     //float tx[5000], ty[5000], tz[5000];
     int nEntriesInAnEvent=0;
 
@@ -171,25 +194,61 @@ void event_display(const int eve=0){
                 z.assign(clusgz->begin(), clusgz->end());
 
                 // Prepare the track propagation
-                TVector3 track(px, py, pz);
+                //TVector3 track(px, py, pz);
+                TVector3 mom(px, py, pz);
+                TVector3 dPosition(0, 0, 0);
                 // std::cout << "momentum" << "px:" << px << "py:" << py << "pz:" << pz << std::endl;
-                phi0 = track.Phi();
-                the0 = track.Theta();
+                double phi = mom.Phi();
+                double theta = mom.Theta();
 
 
-                int nsteps = 3000;
-                double phi;
-                phi = phi0;
+                int nsteps = 10000;
+
+                double p = std::sqrt(px*px+py*py+pz*pz);
 
                 for (int j = 1; j < nsteps; j++) {
                     //double length = j * length_step;
-                    double length = 0.1;
-                    phi -= (charge * 1.4 * 0.3 * 0.01 * length) / (sqrt(px * px + py * py));
-                    track.SetMagThetaPhi(length, the0, phi);
+                    double length = 0.01;
+                    /*const int xBin = hist_bx->GetXaxis()->FindBin(tx[j-1]);
+                    const int yBin = hist_bx->GetYaxis()->FindBin(ty[j-1]);
+                    const int zBin = hist_bx->GetZaxis()->FindBin(tz[j-1]);*/
 
-                    tx.push_back(tx[j - 1] + track.X());
-                    ty.push_back(ty[j - 1] + track.Y());
-                    tz.push_back(tz[j - 1] + track.Z());
+                    mom.SetMagThetaPhi(p, theta, phi);
+                    /*dPosition.SetMagThetaPhi(length, theta, phi);
+                    tx.push_back(tx[j - 1] + dPosition.X());
+                    ty.push_back(ty[j - 1] + dPosition.Y());
+                    tz.push_back(tz[j - 1] + dPosition.Z());*/
+
+
+                    /*const float bx = -1.0 * hist_bx->GetBinContent(xBin, yBin, zBin);
+                    const float by = -1.0 * hist_by->GetBinContent(xBin, yBin, zBin);
+                    const float bz = -1.0 * hist_bz->GetBinContent(xBin, yBin, zBin);*/
+                    const float bx = -1.0 * hist_bx->Interpolate(tx[j-1], ty[j-1], tz[j-1]);
+                    const float by = -1.0 * hist_by->Interpolate(tx[j-1], ty[j-1], tz[j-1]);
+                    const float bz = -1.0 * hist_bz->Interpolate(tx[j-1], ty[j-1], tz[j-1]);
+                    //phi += (charge * bz * 0.3 * 0.01 * length) / (std::sqrt(mom.X() * mom.X() + mom.Y() * mom.Y()));
+                    pt = mom.Pt();
+                    double dTheta = -charge*length*0.01*0.3*(mom.X()*by-mom.Y()*bx)/p/pt;
+                    double dThetaMiddle = dTheta/2.0;
+                    double thetaMiddle = theta+dThetaMiddle;
+                    theta+=dTheta;
+                    //1st expression for dPhi
+                    //double dPhi = (charge*length*0.01*0.3*(mom.Z()*bx-mom.X()*bz)-mom.Z()*p*std::sin(phi)*dTheta)/mom.Pt()/std::cos(phi)/p;
+
+                    //2nd expressioni for dPhi
+                    double dPhi = (-charge*length*0.01*0.3*(mom.Y()*bz-mom.Z()*by)+mom.Z()*p*std::cos(phi)*dTheta)/mom.Pt()/std::sin(phi)/p;
+                    double dPhiMiddle = dPhi/2.0;
+                    double phiMiddle = phi+dPhiMiddle;
+                    phi+=dPhi;
+
+                    dPosition.SetMagThetaPhi(length, thetaMiddle, phiMiddle);
+                    //dPosition.SetMagThetaPhi(length, theta, phi);
+                    tx.push_back(tx[j - 1] + dPosition.X());
+                    ty.push_back(ty[j - 1] + dPosition.Y());
+                    tz.push_back(tz[j - 1] + dPosition.Z());
+
+
+
                 }
 
                 //gr2[i] = new TGraph2D(3001, x, y, z);
@@ -215,7 +274,11 @@ void event_display(const int eve=0){
 
                 entryNumber = eEntry; // Store the entry number
                 //break; // Exit the loop after processing the first matching track
+
                 nthEntry++;
+                if (nthEntry >= nEntriesWeWant) {
+                    break; // Exit the loop after processing the desired number of entries
+                }
             }
 
         }
@@ -347,6 +410,6 @@ void event_display(const int eve=0){
 }
 
 
-void Get
+
 
 
