@@ -14,7 +14,7 @@ void event_display(const int eve=0){
 
     // Open the ROOT file
     TFile *file = TFile::Open("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_51576_122_resid.root");
-
+    const bool using_clusgideal = false;
 
     // Check if the file was opened successfully
     if (!file || file->IsZombie()) {
@@ -22,7 +22,8 @@ void event_display(const int eve=0){
         return;
     }
 
-    TFile *field = TFile::Open("magnetic_field_histograms.root");
+    //TFile *field = TFile::Open("magnetic_field_histograms.root");
+    TFile *field = TFile::Open("magnetic_field_histograms_track.root");
 
 
      // Check if the file was opened successfully
@@ -60,6 +61,9 @@ void event_display(const int eve=0){
     std::vector<float> *clusgx = nullptr;
     std::vector<float> *clusgy = nullptr;
     std::vector<float> *clusgz = nullptr;
+    std::vector<float> *clusgxideal = nullptr;
+    std::vector<float> *clusgyideal = nullptr;
+    std::vector<float> *clusgzideal = nullptr;
     float pt, eta, dedx, quality, phi, pcax, pcay, pcaz, phi0, the0, px, py, pz;
     int nhits, charge, ntpc, nintt, nmaps, event;
     std::string m_magField = "FIELDMAP_TRACKING";
@@ -90,6 +94,13 @@ void event_display(const int eve=0){
     tree->SetBranchAddress("pz", &pz);
     tree->SetBranchAddress("event", &event);
 
+    if (using_clusgideal)
+    {
+        tree->SetBranchAddress("clusgxideal", &clusgxideal);
+        tree->SetBranchAddress("clusgyideal", &clusgyideal);
+        tree->SetBranchAddress("clusgzideal", &clusgzideal);
+    }
+
     Long64_t nentries = tree->GetEntries();
 
 
@@ -97,10 +108,10 @@ void event_display(const int eve=0){
     // Variables to store the data for the track to be processed
     std::vector<double> x, y, z;
     std::vector<double> tx, ty, tz;
-
-    tx.reserve(3000);
-    ty.reserve(3000);
-    tz.reserve(3000);
+    int nsteps = 10000;
+    tx.reserve(nsteps);
+    ty.reserve(nsteps);
+    tz.reserve(nsteps);
     //float tx[5000], ty[5000], tz[5000];
     int nEntriesInAnEvent=0;
 
@@ -141,7 +152,7 @@ void event_display(const int eve=0){
     }
     //nEntriesInAnEvent=10;
     nentries=nEntriesInAnEvent;
-    int nEntriesWeWant = 10;
+    int nEntriesWeWant = 1;
     int nthEntry=0;
 
     std::vector<TGraph2D*> gr1;
@@ -165,13 +176,7 @@ void event_display(const int eve=0){
                 //if (1) {
                 TGraph2D* graph1 = new TGraph2D();
                 TGraph2D* graph2 = new TGraph2D();
-                // Get the number of hit points
-                npoints = clusgx->size();
-                // Check if there are any hits to plot
-                if (npoints == 0) {
-                    std::cerr << "No hits to plot for entry " << eEntry << std::endl;
-                    continue; // Skip this entry and continue the loop
-                }
+
 
                 tx.clear();
                 ty.clear();
@@ -186,13 +191,37 @@ void event_display(const int eve=0){
                 //std::cout << "origin" << "x:" << pcax << "y:" << pcay << "z:" << pcaz << std::endl;
 
 
+                if(using_clusgideal)
+                {
+                    // Get the number of hit points
+                    npoints = clusgxideal->size();
 
+                    // Check if there are any hits to plot
+                    if (npoints == 0) {
+                        std::cerr << "No hits to plot for entry " << eEntry << std::endl;
+                        continue; // Skip this entry and continue the loop
+                    }
 
-                // Convert std::vector<float> to std::vector<double> for TGraph2D
-                x.assign(clusgx->begin(), clusgx->end());
-                y.assign(clusgy->begin(), clusgy->end());
-                z.assign(clusgz->begin(), clusgz->end());
+                    // Convert std::vector<float> to std::vector<double> for TGraph2D
+                    x.assign(clusgxideal->begin(), clusgxideal->end());
+                    y.assign(clusgyideal->begin(), clusgyideal->end());
+                    z.assign(clusgzideal->begin(), clusgzideal->end());
 
+                }
+                else {
+                    // Get the number of hit points
+                    npoints = clusgx->size();
+                    // Check if there are any hits to plot
+                    if (npoints == 0) {
+                        std::cerr << "No hits to plot for entry " << eEntry << std::endl;
+                        continue; // Skip this entry and continue the loop
+                    }
+
+                    // Convert std::vector<float> to std::vector<double> for TGraph2D
+                    x.assign(clusgx->begin(), clusgx->end());
+                    y.assign(clusgy->begin(), clusgy->end());
+                    z.assign(clusgz->begin(), clusgz->end());
+                }
                 // Prepare the track propagation
                 //TVector3 track(px, py, pz);
                 TVector3 mom(px, py, pz);
@@ -202,7 +231,7 @@ void event_display(const int eve=0){
                 double theta = mom.Theta();
 
 
-                int nsteps = 10000;
+
 
                 double p = std::sqrt(px*px+py*py+pz*pz);
 
@@ -214,29 +243,30 @@ void event_display(const int eve=0){
                     const int zBin = hist_bx->GetZaxis()->FindBin(tz[j-1]);*/
 
                     mom.SetMagThetaPhi(p, theta, phi);
-                    /*dPosition.SetMagThetaPhi(length, theta, phi);
-                    tx.push_back(tx[j - 1] + dPosition.X());
-                    ty.push_back(ty[j - 1] + dPosition.Y());
-                    tz.push_back(tz[j - 1] + dPosition.Z());*/
+
 
 
                     /*const float bx = -1.0 * hist_bx->GetBinContent(xBin, yBin, zBin);
                     const float by = -1.0 * hist_by->GetBinContent(xBin, yBin, zBin);
                     const float bz = -1.0 * hist_bz->GetBinContent(xBin, yBin, zBin);*/
-                    const float bx = -1.0 * hist_bx->Interpolate(tx[j-1], ty[j-1], tz[j-1]);
-                    const float by = -1.0 * hist_by->Interpolate(tx[j-1], ty[j-1], tz[j-1]);
-                    const float bz = -1.0 * hist_bz->Interpolate(tx[j-1], ty[j-1], tz[j-1]);
-                    //phi += (charge * bz * 0.3 * 0.01 * length) / (std::sqrt(mom.X() * mom.X() + mom.Y() * mom.Y()));
+                    const float bx = hist_bx->Interpolate(tx[j-1], ty[j-1], tz[j-1]);
+                    const float by = hist_by->Interpolate(tx[j-1], ty[j-1], tz[j-1]);
+                    const float bz = hist_bz->Interpolate(tx[j-1], ty[j-1], tz[j-1]);
+                    /*const float bx = 0;
+                    const float by = 0;
+                    const float bz = 1.4;*/
+
                     pt = mom.Pt();
                     double dTheta = -charge*length*0.01*0.3*(mom.X()*by-mom.Y()*bx)/p/pt;
                     double dThetaMiddle = dTheta/2.0;
                     double thetaMiddle = theta+dThetaMiddle;
                     theta+=dTheta;
                     //1st expression for dPhi
-                    //double dPhi = (charge*length*0.01*0.3*(mom.Z()*bx-mom.X()*bz)-mom.Z()*p*std::sin(phi)*dTheta)/mom.Pt()/std::cos(phi)/p;
+                    double dPhi = (charge*length*0.01*0.3*(mom.Z()*bx-mom.X()*bz)-mom.Z()*p*std::sin(phi)*dTheta)/mom.Pt()/std::cos(phi)/p;
 
                     //2nd expressioni for dPhi
-                    double dPhi = (-charge*length*0.01*0.3*(mom.Y()*bz-mom.Z()*by)+mom.Z()*p*std::cos(phi)*dTheta)/mom.Pt()/std::sin(phi)/p;
+                    //double dPhi = (-charge*length*0.01*0.3*(mom.Y()*bz-mom.Z()*by)+mom.Z()*p*std::cos(phi)*dTheta)/mom.Pt()/std::sin(phi)/p;
+                    //double dPhi = -(charge * 1.4 * 0.3 * 0.01 * length) / (sqrt(px * px + py * py));
                     double dPhiMiddle = dPhi/2.0;
                     double phiMiddle = phi+dPhiMiddle;
                     phi+=dPhi;
@@ -285,52 +315,14 @@ void event_display(const int eve=0){
 
     }
 
-   /* // Calculate range of the track
-    double xmin = *std::min_element(tx.begin(), tx.end());
-    double xmax = *std::max_element(tx.begin(), tx.end());
-    double ymin = *std::min_element(ty.begin(), ty.end());
-    double ymax = *std::max_element(ty.begin(), ty.end());
-    double zmin = *std::min_element(tz.begin(), tz.end());
-    double zmax = *std::max_element(tz.begin(), tz.end());*/
-
-/*    // Add some padding to the ranges
-    double padding = 0.1 * std::max({xmax-xmin, ymax-ymin, zmax-zmin});
-    xmin -= padding; xmax += padding;
-    ymin -= padding; ymax += padding;
-    zmin -= padding; zmax += padding;*/
-
-    // Create TGraph2D for the propagated track
-
-
-    // Set the ranges before adding points
-/*    gr2->GetXaxis()->SetLimits(-10, 10);
-    gr2->GetYaxis()->SetLimits(ymin, ymax);
-    gr2->GetZaxis()->SetLimits(zmin, zmax);*/
-
-/*    for (int i=0; i<tx.size();i++)
-    {
-        std::cout<<"position"<<tx[i]<<ty[i]<<tz[i]<<std::endl;
-        gr2->SetPoint(i, tx[i], ty[i], tz[i]);
-    }*/
 
 
 
-    // Add a test point at (0,0,0) to ensure something is plotted
-    /*gr2->SetPoint(tx.size(), 0, 0, 0);
-    std::cout << "Added test point at (0,0,0)" << std::endl;*/
 
-
-/*    // Check if a track was found
-    if (entryNumber == -1) {
-        std::cerr << "No track found without hits in INTT and MAPS" << std::endl;
-        file->Close();
-        return;
-    }*/
 
     // Create a canvas to draw the graphs
     TCanvas *c = new TCanvas("c", "3D Event Display", 800, 800);
-    /*c->SetFillColor(kWhite);
-    c->SetFrameFillColor(kWhite);*/
+
     c->cd();
     TH3F* htemp = new TH3F("htemp"," ", 10, -100, 100, 10, -100, 100, 10, -100 , 100);
     htemp->GetXaxis()->SetTitle("X");
@@ -338,20 +330,14 @@ void event_display(const int eve=0){
     htemp->GetZaxis()->SetTitle("Z");
     htemp->Draw();
 
-    /*// Create TGraph2D for the hits
-    TGraph2D *gr1 = new TGraph2D(npoints, &x[0], &y[0], &z[0]);
-    gr1->SetTitle(Form("Entry %lld;X [cm];Y [cm];Z [cm]", entryNumber));
-    gr1->SetMarkerStyle(20);
-    gr1->SetMarkerSize(0.5);
-    gr1->SetMarkerColor(kBlue);*/
 
     for(size_t i=0; i < gr1.size(); i++){
         if(gr1[i])
             {
-            gr1[i]->SetMarkerStyle(20);
+                gr1[i]->SetMarkerStyle(20);
                 gr1[i]->SetMarkerSize(0.2);
                 gr1[i]->SetMarkerColor(color[i % numColors]);
-            gr1[i]->Draw("PSAME");
+                gr1[i]->Draw("PSAME");
             }
         else
             {
@@ -367,46 +353,32 @@ void event_display(const int eve=0){
             }
     }
 
+// Save the canvas and graphs to a ROOT file
+    TFile *outfile_root = new TFile("event_display_graphs_trackmap_allOn_10.root", "RECREATE");
+    if (!outfile_root || outfile_root->IsZombie()) {
+        std::cerr << "Error creating output file!" << std::endl;
+        return;
+    }
+
+    c->Write();
+
+    /*for (size_t i = 0; i < gr1.size(); i++) {
+        gr1[i]->Write(Form("gr1_%zu", i));
+        gr2[i]->Write(Form("gr2_%zu", i));
+    }*/
+    outfile_root->Close();
+
+    std::cout << "Graphs saved to event_display_graphs_trackmap_allOn_10.root" << std::endl;
+
+    /*file->Close();
+    field->Close();*/
 
 
 
 
 
-/*    // Force 3D view
-    TView3D *view = new TView3D();
-    view->SetRange(xmin, ymin, zmin, xmax, ymax, zmax);
-    c->SetView(view);*/
 
 
-    /*// Draw the first graph
-    gr2->Draw("P0");
-    gr2->GetHistogram()->GetXaxis()->SetLimits(-60, 60);
-    gr2->GetHistogram()->GetYaxis()->SetLimits(-60, 60);
-    gr2->GetHistogram()->GetZaxis()->SetRangeUser(-100, 100);
-
-    // Draw the second graph on the same canvas
-    //initial_point->Draw("P0 SAME");
-
-    gr1->Draw("P0 SAME");*/
-    //gr1->Draw("P0");
-
-/*    // Add a legend
-    TLegend *legend = new TLegend(0.75, 0.85, 0.95, 0.95);
-    //legend->AddEntry(gr1, "Hits", "p");
-    legend->AddEntry(gr2, "Propagated Track", "p");
-    legend->Draw();*/
-
-    // Update the canvas
-    //c->Update();
-
-    // Optionally, save the canvas to a file
-    //c->SaveAs(Form("event_display_%lld.png", entryNumber));
-
-    /*// Clean up
-    delete gr1;
-    delete gr2;
-    delete c;
-    file->Close();*/
 }
 
 

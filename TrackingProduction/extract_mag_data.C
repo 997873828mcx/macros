@@ -14,7 +14,8 @@
 void extract_mag_data() {
 
     // Open the ROOT file
-    TFile *file = TFile::Open("sphenix3dbigmapxyz_steel_rebuild.root");
+    std::string filename = "/cvmfs/sphenix.sdcc.bnl.gov/gcc-12.1.0/release/release_new/new.3/share/calibrations/Field/Map/sphenix3dtrackingmapxyz.root";
+    TFile *file = TFile::Open(filename.c_str());
 
     // Check if the file was opened successfully
     if (!file || file->IsZombie()) {
@@ -46,22 +47,46 @@ void extract_mag_data() {
     tree->SetBranchAddress("by", &by);
     tree->SetBranchAddress("bz", &bz);
 
-
+    int nbins_x, nbins_y, nbins_z;
+    float x_min, x_max, y_min, y_max, z_min, z_max;
 
 // Create 3D histograms for Bx, By, Bz, and B (total magnitude)
-    int nbins_x = 271;  // Number of bins in x
-    int nbins_y = 271;  // Number of bins in y
-    int nbins_z = 331;  // Number of bins in z
-    float x_min = -271, x_max = 271;  // Set appropriate min and max for x
-    float y_min = -271, y_max = 271;  // Set appropriate min and max for y
-    float z_min = -331, z_max = 331;  // Set appropriate min and max for z
+if(filename == "/cvmfs/sphenix.sdcc.bnl.gov/gcc-12.1.0/release/release_new/new.3/share/calibrations/Field/Map/sphenix3dbigmapxyz_steel_rebuild.root") {
+     nbins_x = 271;  // Number of bins in x
+     nbins_y = 271;  // Number of bins in y
+     nbins_z = 331;  // Number of bins in z
+     x_min = -271, x_max = 271;  // Set appropriate min and max for x
+     y_min = -271, y_max = 271;  // Set appropriate min and max for y
+     z_min = -331, z_max = 331;  // Set appropriate min and max for z
+}
 
+else if(filename=="/cvmfs/sphenix.sdcc.bnl.gov/gcc-12.1.0/release/release_new/new.3/share/calibrations/Field/Map/sphenix3dtrackingmapxyz.root")
+{
+     nbins_x = 111;  // Number of bins in x
+     nbins_y = 111;  // Number of bins in y
+     nbins_z = 111;  // Number of bins in z
+     x_min = -111, x_max = 111;  // Set appropriate min and max for x
+     y_min = -111, y_max = 111;  // Set appropriate min and max for y
+     z_min = -111, z_max = 111;  // Set appropriate min and max for z
+} else {
+    std::cerr << "Unknown file. Cannot determine histogram settings." << std::endl;
+    file->Close();
+    return;
+}
     // 3D histograms for Bx, By, Bz, and the total field magnitude
     TH3F *hist_bx = new TH3F("hist_bx", "Bx (3D)", nbins_x, x_min, x_max, nbins_y, y_min, y_max, nbins_z, z_min, z_max);
     TH3F *hist_by = new TH3F("hist_by", "By (3D)", nbins_x, x_min, x_max, nbins_y, y_min, y_max, nbins_z, z_min, z_max);
     TH3F *hist_bz = new TH3F("hist_bz", "Bz (3D)", nbins_x, x_min, x_max, nbins_y, y_min, y_max, nbins_z, z_min, z_max);
     // TH3F *hist_b = new TH3F("hist_b", "B (Total Field Magnitude)", nbins_x, x_min, x_max, nbins_y, y_min, y_max, nbins_z, z_min, z_max);
 
+
+    // Open output text file to save coordinates
+    std::ofstream outfile("coordinates_output_track.txt");
+    if (!outfile.is_open()) {
+        std::cerr << "Error opening output file" << std::endl;
+        file->Close();
+        return;
+    }
 
     // Get the total number of entries in the tree
     Long64_t nentries = tree->GetEntries();
@@ -71,7 +96,8 @@ void extract_mag_data() {
     for (Long64_t i = 0; i < nentries; i++) {
         // Load the data for the i-th entry
         tree->GetEntry(i);
-
+        // Save the coordinates to the output file
+        outfile << "Entry " << i << ": x = " << x << ", y = " << y << ", z = " << z << std::endl;
 
 
 // Find the appropriate bin for the given coordinates
@@ -106,6 +132,7 @@ void extract_mag_data() {
         }
 
     }
+    outfile.close();
 
     // Create a canvas to draw the histograms
     /*TCanvas *c = new TCanvas("c", "Magnetic Field 3D Components", 1200, 900);
@@ -136,8 +163,8 @@ void extract_mag_data() {
     //c->SaveAs("magnetic_field_3d.png");
 
     // Save the histograms to a new ROOT file
-    TFile *outfile = new TFile("magnetic_field_histograms_test.root", "RECREATE");
-    if (!outfile || outfile->IsZombie()) {
+    TFile *outfile_root = new TFile("magnetic_field_histograms_track.root", "RECREATE");
+    if (!outfile_root || outfile_root->IsZombie()) {
         std::cerr << "Error creating output file!" << std::endl;
         return;
     }
@@ -146,10 +173,10 @@ void extract_mag_data() {
     hist_by->Write();
     hist_bz->Write();
     file->Close();
-    outfile->Close();
+    outfile_root->Close();
 
-    // Close the ROOT file
 
-    std::cout << "Coordinates saved to coordinates_output.txt" << std::endl;
+
+    std::cout << "Coordinates saved to coordinates_output_track.txt" << std::endl;
 
 }
