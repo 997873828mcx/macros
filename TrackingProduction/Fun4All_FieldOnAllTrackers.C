@@ -147,7 +147,7 @@ void Fun4All_FieldOnAllTrackers(
     std::cout << "Use calibrated TPC drift velocity for Run " << runnumber << ": " << G4TPC::tpc_drift_velocity_reco << " cm/ns" << std::endl;
   }
 
-  G4TPC::ENABLE_MODULE_EDGE_CORRECTIONS = true;
+  G4TPC::ENABLE_MODULE_EDGE_CORRECTIONS = false;
   //Flag for running the tpc hit unpacker with zero suppression on
   TRACKING::tpc_zero_supp = true;
 
