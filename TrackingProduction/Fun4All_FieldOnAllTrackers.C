@@ -76,8 +76,8 @@ void Fun4All_FieldOnAllTrackers(
     const std::string tpcfilename = "DST_STREAMING_EVENT_run2pp_new_2024p002-00053217-00000.root",
     const std::string tpcdir = "/sphenix/lustre01/sphnxpro/physics/slurp/streaming/physics/new_2024p002/run_00053200_00053300/",
     const std::string outfilename = "clusters_seeds",
-    const bool convertSeeds = false,
-        const int nEvents = 0)
+    const bool convertSeeds = false)
+
 {
   std::string inputtpcRawHitFile = tpcdir + tpcfilename;
 
@@ -95,7 +95,7 @@ void Fun4All_FieldOnAllTrackers(
 	   << " vdrift: " << G4TPC::tpc_drift_velocity_reco
 	   << std::endl;
 
- TRACKING::pp_mode = false;
+ TRACKING::pp_mode = true;
 
   // distortion calibration mode
   /*
@@ -245,7 +245,7 @@ void Fun4All_FieldOnAllTrackers(
   seeder->SetMinHitsPerCluster(0);
   seeder->SetMinClustersPerTrack(3);
   seeder->useFixedClusterError(true);
-  seeder->set_pp_mode(TRACKING::pp_mode);
+  seeder->set_pp_mode(true);
   se->registerSubsystem(seeder);
 
   // expand stubs in the TPC using simple kalman filter
@@ -264,18 +264,15 @@ void Fun4All_FieldOnAllTrackers(
   cprop->useFixedClusterError(true);
   cprop->set_max_window(5.);
   cprop->Verbosity(0);
-  cprop->set_pp_mode(TRACKING::pp_mode);
+  cprop->set_pp_mode(true);
   se->registerSubsystem(cprop);
 
-  if (TRACKING::pp_mode)
-  {
-    // for pp mode, apply preliminary distortion corrections to TPC clusters before crossing is known
-    // and refit the trackseeds. Replace KFProp fits with the new fit parameters in the TPC seeds.
-    auto prelim_distcorr = new PrelimDistortionCorrection;
-    prelim_distcorr->set_pp_mode(TRACKING::pp_mode);
-    prelim_distcorr->Verbosity(0);
-    se->registerSubsystem(prelim_distcorr);
-  }
+  // Always apply preliminary distortion corrections to TPC clusters before silicon matching
+  // and refit the trackseeds. Replace KFProp fits with the new fit parameters in the TPC seeds.
+  auto prelim_distcorr = new PrelimDistortionCorrection;
+  prelim_distcorr->set_pp_mode(true);
+  prelim_distcorr->Verbosity(0);
+  se->registerSubsystem(prelim_distcorr);
 
   /*
    * Track Matching between silicon and TPC
@@ -296,10 +293,10 @@ void Fun4All_FieldOnAllTrackers(
   // Match TPC track stubs from CA seeder to clusters in the micromegas layers
   auto mm_match = new PHMicromegasTpcTrackMatching;
   mm_match->Verbosity(0);
-  mm_match->set_rphi_search_window_lyr1(0.4);
-  mm_match->set_rphi_search_window_lyr2(13.0);
-  mm_match->set_z_search_window_lyr1(26.0);
-  mm_match->set_z_search_window_lyr2(0.4);
+  mm_match->set_rphi_search_window_lyr1(3.);
+  mm_match->set_rphi_search_window_lyr2(15.0);
+  mm_match->set_z_search_window_lyr1(30.0);
+  mm_match->set_z_search_window_lyr2(3.);
 
   mm_match->set_min_tpc_layer(38);             // layer in TPC to start projection fit
   mm_match->set_test_windows_printout(false);  // used for tuning search windows only
