@@ -199,6 +199,11 @@ void Fun4All_FieldOnAllTrackers(
   /*
    * Tpc Seeding
    */
+<<<<<<< HEAD
+=======
+    TString outfileSeed = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusters_edgeOn_staticOff_1120_0.root";
+    std::string outstring(outfileSeed.Data());
+>>>>>>> e42cc75... temperary py script for GUI software
   auto seeder = new PHCASeeding("PHCASeeding");
   double fieldstrength = std::numeric_limits<double>::quiet_NaN();  // set by isConstantField if constant
   bool ConstField = isConstantField(G4MAGNET::magfield_tracking, fieldstrength);
