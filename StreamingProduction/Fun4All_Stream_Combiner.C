@@ -141,6 +141,7 @@ void Fun4All_Stream_Combiner(int nEvents = 5, int RunNumber = 41989,
 //  in->Verbosity(3);
 
 // create and register input managers
+  int NumInputs = 0;
   int i = 0;
 
   for (auto iter : gl1_infile)
@@ -154,9 +155,9 @@ void Fun4All_Stream_Combiner(int nEvents = 5, int RunNumber = 41989,
       i++;
     }
   }
+  NumInputs += i;
+
   i = 0;
-
-
   if (use_inttpool)
   {
     for (auto iter : intt_infile)
@@ -166,8 +167,8 @@ void Fun4All_Stream_Combiner(int nEvents = 5, int RunNumber = 41989,
 	cout << "opening file " << iter << endl;
 	SingleInttPoolInput *intt_sngl = new SingleInttPoolInput("INTT_" + to_string(i));
 //    intt_sngl->Verbosity(3);
-	intt_sngl->SetNegativeBco(1);
-	intt_sngl->SetBcoRange(2);
+	intt_sngl->SetNegativeBco(120-23);
+	intt_sngl->SetBcoRange(500);
 	intt_sngl->AddListFile(iter);
 	in->registerStreamingInput(intt_sngl, InputManagerType::INTT);
 	i++;
@@ -183,14 +184,15 @@ void Fun4All_Stream_Combiner(int nEvents = 5, int RunNumber = 41989,
 	cout << "opening file " << iter << endl;
 	SingleInttEventInput *intt_sngl = new SingleInttEventInput("INTT_" + to_string(i));
 //    intt_sngl->Verbosity(3);
-	intt_sngl->SetNegativeBco(1);
-	intt_sngl->SetBcoRange(2);
+	intt_sngl->SetNegativeBco(120-23);
+	intt_sngl->SetBcoRange(500);
 	intt_sngl->AddListFile(iter);
 	in->registerStreamingInput(intt_sngl, InputManagerType::INTT);
 	i++;
       }
     }
   }
+  NumInputs += i;
 
   i = 0;
   for (auto iter : mvtx_infile)
@@ -198,14 +200,14 @@ void Fun4All_Stream_Combiner(int nEvents = 5, int RunNumber = 41989,
     if (isGood(iter))
     {
     SingleMvtxPoolInput *mvtx_sngl = new SingleMvtxPoolInput("MVTX_" + to_string(i));
-//    mvtx_sngl->Verbosity(5);
-    mvtx_sngl->SetBcoRange(100);
-    mvtx_sngl->SetNegativeBco(100);
+    //mvtx_sngl->Verbosity(5);
     mvtx_sngl->AddListFile(iter);
     in->registerStreamingInput(mvtx_sngl, InputManagerType::MVTX);
     i++;
     }
   }
+  NumInputs += i;
+
   i = 0;
   for (auto iter : tpc_infile)
   {
@@ -216,27 +218,37 @@ void Fun4All_Stream_Combiner(int nEvents = 5, int RunNumber = 41989,
     //   tpc_sngl->DryRun();
     tpc_sngl->SetBcoRange(5);
     tpc_sngl->AddListFile(iter);
-    tpc_sngl->SetMaxTpcTimeSamples(TRACKING::reco_tpc_maxtime_sample);
+//    tpc_sngl->SetMaxTpcTimeSamples(TRACKING::reco_tpc_maxtime_sample);
+    tpc_sngl->SetMaxTpcTimeSamples(1024);
     in->registerStreamingInput(tpc_sngl, InputManagerType::TPC);
     i++;
     }
   }
-  i = 0;
+  NumInputs += i;
 
+  i = 0;
   for (auto iter : tpot_infile)
   {
     if (isGood(iter))
     {
     SingleMicromegasPoolInput *mm_sngl = new SingleMicromegasPoolInput("MICROMEGAS_" + to_string(i));
     //   sngl->Verbosity(3);
-    mm_sngl->SetBcoRange(5);
+    mm_sngl->SetBcoRange(10);
     mm_sngl->SetNegativeBco(2);
+    mm_sngl->SetBcoPoolSize(50);
     mm_sngl->AddListFile(iter);
     in->registerStreamingInput(mm_sngl, InputManagerType::MICROMEGAS);
     i++;
     }
   }
+  NumInputs += i;
 
+// if there is no input manager this macro will still run - so just quit here
+  if (NumInputs == 0)
+  {
+    std::cout << "no file lists no input manager registered, quitting" << std::endl;
+    gSystem->Exit(1);
+  }
   se->registerInputManager(in);
   // StreamingCheck *scheck = new StreamingCheck();
   // scheck->SetTpcBcoRange(130);

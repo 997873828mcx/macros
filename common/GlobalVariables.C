@@ -22,8 +22,9 @@ namespace Input
   enum BeamConfiguration
   {
     AA_COLLISION = 0,
-    pA_COLLISION,
-    pp_COLLISION
+    pA_COLLISION = 1,
+    pp_COLLISION = 2,
+    pp_ZEROANGLE = 3
   };
 
   BeamConfiguration BEAM_CONFIGURATION = AA_COLLISION;
@@ -74,6 +75,7 @@ namespace TRACKING
   int reco_tpc_maxtime_sample = 425;
   int reco_tpc_time_presample = 40;//120 - 80
   bool tpc_zero_supp = false;
+  bool tpc_baseline_corr = true;
 
 }  // namespace TRACKING
 

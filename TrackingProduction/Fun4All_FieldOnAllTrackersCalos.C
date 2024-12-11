@@ -10,6 +10,7 @@
 #include <G4_Magnet.C>
 #include <GlobalVariables.C>
 #include <Trkr_Clustering.C>
+#include <Trkr_LaserClustering.C>
 #include <Trkr_RecoInit.C>
 #include <Trkr_TpcReadoutInit.C>
 #include <Trkr_Reco.C>
@@ -64,10 +65,10 @@ std::string GetFirstLine(std::string listname);
 // > /sphenix/lustre01/sphnxpro/physics/slurp/caloy2test/run_00046700_00046800/DST_CALO_run2pp_new_2024p004-00046730-00001.root
 
 void Fun4All_FieldOnAllTrackersCalos(
-    const int nEvents = 10, 
+    const int nEvents = 10,
     vector<string> myInputLists = {
         "run46730_0000_trkr.txt",
-        "run46730_calo.list"}, 
+        "run46730_calo.list"},
     bool doTpcOnlyTracking = true,
     bool doEMcalRadiusCorr = true,
     const bool convertSeeds = false)
@@ -173,6 +174,8 @@ void Fun4All_FieldOnAllTrackersCalos(
   tpcclusterizer->set_do_sequential(true);
   se->registerSubsystem(tpcclusterizer);
 
+  Tpc_LaserEventIdentifying();
+
   Micromegas_Clustering();
 
   /*
@@ -219,7 +222,7 @@ void Fun4All_FieldOnAllTrackersCalos(
   seeder->SetMinHitsPerCluster(0);
   seeder->SetMinClustersPerTrack(3);
   seeder->useFixedClusterError(true);
-  seeder->set_pp_mode(TRACKING::pp_mode);
+  seeder->set_pp_mode(true);
   se->registerSubsystem(seeder);
 
   // expand stubs in the TPC using simple kalman filter
@@ -238,8 +241,15 @@ void Fun4All_FieldOnAllTrackersCalos(
   cprop->useFixedClusterError(true);
   cprop->set_max_window(5.);
   cprop->Verbosity(verbosity);
-  cprop->set_pp_mode(TRACKING::pp_mode);
+  cprop->set_pp_mode(true);
   se->registerSubsystem(cprop);
+
+  // Always apply preliminary distortion corrections to TPC clusters before silicon matching
+  // and refit the trackseeds. Replace KFProp fits with the new fit parameters in the TPC seeds.
+  auto prelim_distcorr = new PrelimDistortionCorrection;
+  prelim_distcorr->set_pp_mode(true);
+  prelim_distcorr->Verbosity(0);
+  se->registerSubsystem(prelim_distcorr);
 
   /*
    * Track Matching between silicon and TPC
@@ -254,16 +264,16 @@ void Fun4All_FieldOnAllTrackersCalos(
   silicon_match->set_phi_search_window(0.2);
   silicon_match->set_eta_search_window(0.1);
   silicon_match->set_use_old_matching(true);
-  silicon_match->set_pp_mode(true);
+  silicon_match->set_pp_mode(TRACKING::pp_mode);
   se->registerSubsystem(silicon_match);
 
   // Match TPC track stubs from CA seeder to clusters in the micromegas layers
   auto mm_match = new PHMicromegasTpcTrackMatching;
   mm_match->Verbosity(0);
-  mm_match->set_rphi_search_window_lyr1(0.4);
-  mm_match->set_rphi_search_window_lyr2(13.0);
-  mm_match->set_z_search_window_lyr1(26.0);
-  mm_match->set_z_search_window_lyr2(0.4);
+  mm_match->set_rphi_search_window_lyr1(3.);
+  mm_match->set_rphi_search_window_lyr2(15.0);
+  mm_match->set_z_search_window_lyr1(30.0);
+  mm_match->set_z_search_window_lyr2(3.);
 
   mm_match->set_min_tpc_layer(38);             // layer in TPC to start projection fit
   mm_match->set_test_windows_printout(false);  // used for tuning search windows only
@@ -378,17 +388,8 @@ void Fun4All_FieldOnAllTrackersCalos(
   if (Enable::DSTOUT)
   {
     Fun4AllDstOutputManager *out = new Fun4AllDstOutputManager("DSTOUT", outputDstFile);
-    out->StripNode("TPC");
-    out->StripNode("Sync");
-    out->StripNode("MBD");
-    out->StripNode("ZDC");
-    out->StripNode("SEPD");
-    out->StripNode("HCALIN");
-    out->StripNode("HCALOUT");
-    out->StripNode("alignmentTransformationContainer");
-    out->StripNode("alignmentTransformationContainerTransient");
-    out->StripNode("SiliconTrackSeedContainer");
     out->StripNode("RUN");
+    out->AddNode("TPC");
     out->SaveRunNode(0);
     se->registerOutputManager(out);
   }

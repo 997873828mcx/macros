@@ -26,6 +26,7 @@
 #include <trackreco/TrackingIterationCounter.h>
 
 #include <tpc/TpcLoadDistortionCorrection.h>
+#include <tpc/LaserEventRejecter.h>
 
 #include <tpccalib/PHTpcResiduals.h>
 #include <tpccalib/TpcSpaceChargeReconstruction.h>
@@ -65,6 +66,14 @@ void Tracking_Reco_TrackSeed_ZeroField()
 
   // get fun4all server instance
   auto se = Fun4AllServer::instance();
+
+ auto silicon_Seeding = new PHActsSiliconSeeding;
+  silicon_Seeding->Verbosity(verbosity);
+  se->registerSubsystem(silicon_Seeding);
+
+  auto merger = new PHSiliconSeedMerger;
+  merger->Verbosity(verbosity);
+  se->registerSubsystem(merger);
 
   auto seeder = new PHCASeeding("PHCASeeding");
   double fieldstrength = std::numeric_limits<double>::quiet_NaN();  // set by isConstantField if constant
@@ -123,7 +132,7 @@ void Tracking_Reco_TrackSeed_ZeroField()
   {
   }
 
-  seeder->set_pp_mode(TRACKING::pp_mode);
+  seeder->set_pp_mode(true);
   se->registerSubsystem(seeder);
 
   // expand stubs in the TPC using simple kalman filter
@@ -179,28 +188,9 @@ void Tracking_Reco_TrackSeed_ZeroField()
   {
   }
 
-  cprop->set_pp_mode(TRACKING::pp_mode);
+  cprop->set_pp_mode(true);
   se->registerSubsystem(cprop);
 
-  PHSiliconHelicalPropagator* hprop = new PHSiliconHelicalPropagator("PHSiliconHelicalPropagator");
-  hprop->dca_xy_cut(0.3);
-  hprop->dca_z_cut(1.);
-  hprop->Verbosity(verbosity);
-  hprop->zeroField();
-  se->registerSubsystem(hprop);
-
-  auto mm_match = new PHMicromegasTpcTrackMatching;
-  mm_match->Verbosity(verbosity);
-
-  // baseline configuration is (0.2, 13.0, 26, 0.2) and is the default
-  mm_match->set_rphi_search_window_lyr1(0.4);
-  mm_match->set_rphi_search_window_lyr2(13.0);
-  mm_match->set_z_search_window_lyr1(26.0);
-  mm_match->set_z_search_window_lyr2(0.4);
-
-  mm_match->set_min_tpc_layer(38);            // layer in TPC to start projection fit
-  mm_match->set_test_windows_printout(true);  // used for tuning search windows only
-  se->registerSubsystem(mm_match);
 }
 void Tracking_Reco_TrackSeed()
 {
@@ -414,22 +404,12 @@ void Tracking_Reco_TrackSeed()
     // Match TPC track stubs from CA seeder to clusters in the micromegas layers
     auto mm_match = new PHMicromegasTpcTrackMatching;
     mm_match->Verbosity(verbosity);
-    if (G4TRACKING::SC_CALIBMODE)
-    {
-      // configuration is potentially with different search windows
-      mm_match->set_rphi_search_window_lyr1(0.2);
-      mm_match->set_rphi_search_window_lyr2(13.0);
-      mm_match->set_z_search_window_lyr1(26.0);
-      mm_match->set_z_search_window_lyr2(0.2);
-    }
-    else
-    {
-      // baseline configuration is (0.2, 13.0, 26, 0.2) and is the default
-      mm_match->set_rphi_search_window_lyr1(0.2);
-      mm_match->set_rphi_search_window_lyr2(13.0);
-      mm_match->set_z_search_window_lyr1(26.0);
-      mm_match->set_z_search_window_lyr2(0.2);
-    }
+
+    mm_match->set_rphi_search_window_lyr1(0.2);
+    mm_match->set_rphi_search_window_lyr2(13.0);
+    mm_match->set_z_search_window_lyr1(26.0);
+    mm_match->set_z_search_window_lyr2(0.2);
+
     mm_match->set_min_tpc_layer(38);             // layer in TPC to start projection fit
     mm_match->set_test_windows_printout(false);  // used for tuning search windows only
     se->registerSubsystem(mm_match);
@@ -528,7 +508,7 @@ void Tracking_Reco_TrackFit()
        * in calibration mode, calculate residuals between TPC and fitted tracks,
        * store in dedicated structure for distortion correction
        */
-      auto residuals = new PHTpcResiduals;
+      auto residuals = new PHTpcResiduals();
       residuals->setOutputfile(G4TRACKING::SC_ROOTOUTPUT_FILENAME);
       residuals->setUseMicromegas(G4TRACKING::SC_USE_MICROMEGAS);
       // reconstructed distortion grid size (phi, r, z)
@@ -861,6 +841,18 @@ void Filter_Conversion_Electrons(std::string ntuple_outfile)
   secvert->setDecayParticleMass(0.000511);  // for electrons
   secvert->setOutfileName(ntuple_outfile);
   se->registerSubsystem(secvert);
+}
+
+void Reject_Laser_Events()
+{
+  if (G4TPC::REJECT_LASER_EVENTS)
+  {
+    auto se = Fun4AllServer::instance();
+    int verbosity = std::max(Enable::VERBOSITY, Enable::TRACKING_VERBOSITY);
+
+    LaserEventRejecter *rejecter = new LaserEventRejecter();
+    se->registerSubsystem(rejecter);
+  }
 }
 
 #endif

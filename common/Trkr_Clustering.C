@@ -10,6 +10,7 @@
 #include <micromegas/MicromegasCombinedDataDecoder.h>
 #include <mvtx/MvtxCombinedRawDataDecoder.h>
 #include <tpc/TpcCombinedRawDataUnpacker.h>
+#include <tpc/LaserEventIdentifier.h>
 
 #include <intt/InttClusterizer.h>
 #include <mvtx/MvtxClusterizer.h>
@@ -42,7 +43,7 @@ void Mvtx_HitUnpacking(const std::string& felix="")
   int verbosity = std::max(Enable::VERBOSITY, Enable::MVTX_VERBOSITY);
   Fun4AllServer* se = Fun4AllServer::instance();
 
-  auto mvtxunpacker = new MvtxCombinedRawDataDecoder;
+  auto mvtxunpacker = new MvtxCombinedRawDataDecoder("MvtxCombinedRawDataDecoder"+felix);
   mvtxunpacker->Verbosity(verbosity);
   if(felix.length() > 0)
     {
@@ -72,7 +73,7 @@ void Intt_HitUnpacking(const std::string& server="")
   int verbosity = std::max(Enable::VERBOSITY, Enable::INTT_VERBOSITY);
   Fun4AllServer* se = Fun4AllServer::instance();
 
-  auto inttunpacker = new InttCombinedRawDataDecoder;
+  auto inttunpacker = new InttCombinedRawDataDecoder("InttCombinedRawDataDecoder"+server);
   inttunpacker->Verbosity(verbosity);
   inttunpacker->LoadHotChannelMapRemote("INTT_HotMap");
    if(server.length() > 0)
@@ -105,8 +106,8 @@ void Tpc_HitUnpacking(const std::string& ebdc="")
 {
   int verbosity = std::max(Enable::VERBOSITY, Enable::TPC_VERBOSITY);
   Fun4AllServer* se = Fun4AllServer::instance();
-
-  auto tpcunpacker = new TpcCombinedRawDataUnpacker;
+  std::string name = "TpcCombinedRawDataUnpacker"+ebdc;
+  auto tpcunpacker = new TpcCombinedRawDataUnpacker("TpcCombinedRawDataUnpacker"+ebdc);
   tpcunpacker->set_presampleShift(TRACKING::reco_tpc_time_presample);
   if(ebdc.length() > 0)
     {
@@ -116,8 +117,24 @@ void Tpc_HitUnpacking(const std::string& ebdc="")
     {
       tpcunpacker->ReadZeroSuppressedData();
     }
+  tpcunpacker->doBaselineCorr(TRACKING::tpc_baseline_corr);
   tpcunpacker->Verbosity(verbosity);
   se->registerSubsystem(tpcunpacker);
+}
+
+void Tpc_LaserEventIdentifying()
+{
+  int verbosity = std::max(Enable::VERBOSITY, Enable::TPC_VERBOSITY);
+  Fun4AllServer* se = Fun4AllServer::instance();
+  
+  auto laserEventIdentifier = new LaserEventIdentifier;
+  if(G4TPC::laser_event_debug_filename != "")
+  {
+    laserEventIdentifier->set_debug(true);
+    laserEventIdentifier->set_debug_name(G4TPC::laser_event_debug_filename);
+  }
+  laserEventIdentifier->set_max_time_samples(TRACKING::reco_tpc_maxtime_sample);
+  se->registerSubsystem(laserEventIdentifier);
 }
 
 void TPC_Clustering()
