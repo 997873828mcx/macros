@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QLabel,
     QSplitter,
-    QFrame
+    QFrame,
 )
 from PyQt5.QtCore import Qt
 
@@ -23,7 +23,7 @@ from PyQt5.QtCore import Qt
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Cluster Visualization")
+        self.setWindowTitle("Event Display")
         self.resize(1200, 800)
 
         # Main container widget
@@ -95,7 +95,9 @@ class MainWindow(QMainWindow):
 
     def load_data(self):
         # Prompt the user to choose a ROOT file
-        filename, _ = QFileDialog.getOpenFileName(self, "Open ROOT File", "", "ROOT files (*.root)")
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Open ROOT File", "", "ROOT files (*.root)"
+        )
         if not filename:
             return  # User canceled
 
@@ -135,21 +137,28 @@ class MainWindow(QMainWindow):
 
         # Filter data based on checkboxes
         mask = np.ones(self.full_data.n_points, dtype=bool)
-        if "passed_straight" in self.full_data.point_data and self.show_passed.isChecked():
-            mask &= (self.full_data.point_data["passed_straight"] == 1)
+        if (
+            "passed_straight" in self.full_data.point_data
+            and self.show_passed.isChecked()
+        ):
+            mask &= self.full_data.point_data["passed_straight"] == 1
         if "used_in_seed" in self.full_data.point_data and self.show_used.isChecked():
-            mask &= (self.full_data.point_data["used_in_seed"] == 1)
+            mask &= self.full_data.point_data["used_in_seed"] == 1
 
         # Create a subset
         subset = self.full_data.extract_points(np.where(mask)[0])
 
         if subset.n_points > 0:
             # Add points to the plotter_widget directly
-            self.plotter_widget.add_points(subset, render_points_as_spheres=True, point_size=5)
+            self.plotter_widget.add_points(
+                subset, render_points_as_spheres=True, point_size=5
+            )
             self.plotter_widget.reset_camera()
 
             # Enable point picking on plotter_widget directly
-            self.plotter_widget.enable_point_picking(callback=self.on_point_picked, show_message=True, use_mesh=True)
+            self.plotter_widget.enable_point_picking(
+                callback=self.on_point_picked, show_message=True, use_mesh=True
+            )
             self.polydata = subset
         else:
             self.info_panel.setText("No points to display with current filters.")
