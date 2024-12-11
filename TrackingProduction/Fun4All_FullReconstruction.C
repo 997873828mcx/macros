@@ -211,7 +211,7 @@ void Fun4All_FullReconstruction(
    * Tpc Seeding
    */
 
-    TString outfileSeed = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusters_edgeOn_staticOff_1120_0.root";
+    TString outfileSeed = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusters_edgeOff_staticOff_1120_0.root";
     std::string outstring(outfileSeed.Data());
 
   auto seeder = new PHCASeeding("PHCASeeding");

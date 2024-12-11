@@ -156,8 +156,10 @@ class MainWindow(QMainWindow):
             self.plotter_widget.reset_camera()
 
             # Enable point picking on plotter_widget directly
+
+            self.plotter_widget.disable_picking()
             self.plotter_widget.enable_point_picking(
-                callback=self.on_point_picked, show_message=True, use_mesh=True
+                callback=self.on_point_picked, show_message=True, use_picker=True
             )
             self.polydata = subset
         else:
@@ -166,7 +168,8 @@ class MainWindow(QMainWindow):
 
         self.plotter_widget.show_axes()
 
-    def on_point_picked(self, mesh, point_id):
+    def on_point_picked(self, picker, event):
+
         if point_id < 0 or self.polydata is None:
             return
 
