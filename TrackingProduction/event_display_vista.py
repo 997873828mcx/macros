@@ -59,9 +59,15 @@ class MainWindow(QMainWindow):
         self.show_hits.stateChanged.connect(self.update_display)
         controls_layout.addWidget(self.show_hits)
 
-        self.show_used = QCheckBox("Show Used in Seed")
-        self.show_used.stateChanged.connect(self.update_display)
-        controls_layout.addWidget(self.show_used)
+        # Additional filters if needed (passed, used...)
+        # For now, just remove or comment out if not relevant:
+        # self.show_passed = QCheckBox("Show Passed Straight")
+        # self.show_passed.stateChanged.connect(self.update_display)
+        # controls_layout.addWidget(self.show_passed)
+
+        # self.show_used = QCheckBox("Show Used in Seed")
+        # self.show_used.stateChanged.connect(self.update_display)
+        # controls_layout.addWidget(self.show_used)
 
         left_layout.addLayout(controls_layout)
 
@@ -75,12 +81,12 @@ class MainWindow(QMainWindow):
         line.setFrameShadow(QFrame.Sunken)
         left_layout.addWidget(line)
 
-        # Sidebar for cluster information
+        # Sidebar for info
         sidebar = QWidget()
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(5, 5, 5, 5)
 
-        info_label = QLabel("Cluster Information")
+        info_label = QLabel("Cluster/Hit Information")
         sidebar_layout.addWidget(info_label)
 
         self.info_panel = QTextEdit()
@@ -93,8 +99,10 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
 
         # Data placeholders
-        self.polydata = None
-        self.full_data = None
+        self.cluster_data = None
+        self.hit_data = None
+        self.cluster_polydata = None
+        self.hit_polydata = None
 
         # Show axes
         self.plotter_widget.show_axes()
@@ -105,18 +113,19 @@ class MainWindow(QMainWindow):
             self, "Open ROOT File", "", "ROOT files (*.root)"
         )
         if not filename:
-            return  # User canceled
+            return
 
         try:
             # Load data using uproot
             file = uproot.open(filename)
-            tree = file["tracking_clusters"]  # Adjust if your tree name differs
-            data = tree.arrays(library="np")
+            # Load cluster tree
+            cluster_tree = file["combined_clusters"]
+            cluster_data = cluster_tree.arrays(library="np")
 
-            # Extract coordinates
-            x = data["x"]
-            y = data["y"]
-            z = data["z"]
+            # Create cluster polydata
+            cx = cluster_data["gx"]
+            cy = cluster_data["gy"]
+            cz = cluster_data["gz"]
             points = np.column_stack([x, y, z])
 
             # Create a PyVista PolyData
