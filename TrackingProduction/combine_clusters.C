@@ -1,54 +1,50 @@
-void separate_cluster_and_hits() {
+void combine_clusters() {
   // Open input files
-  TFile* f_resid = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_resid_edgeOn_staticOff.root", "READ");
-  TFile* f_seeding = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_clusters_edgeOn_staticOff_1110_0.root", "READ");
+  TFile* f_resid = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_resid_1211.root", "READ");
+  TFile* f_seed = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_clusters_edgeOn_staticOff_1211_0.root", "READ");
 
   // Get trees from residual file
   TTree* t_residual_clus = (TTree*)f_resid->Get("clustertree");
   TTree* t_residual = (TTree*)f_resid->Get("residualtree");
-  TTree* t_hits = (TTree*)f_resid->Get("hittree"); // If available
+  TTree* t_hits = (TTree*)f_resid->Get("hittree");
 
   // Get tracking_clusters tree from the tracking file
-  TTree* t_seeding = (TTree*)f_seeding->Get("tracking_clusters");
+  TTree* t_seeding = (TTree*)f_seed->Get("tracking_clusters");
 
   // --------------------------
   // Read tracking_clusters tree
   // --------------------------
-  ULong64_t tr_cluskey;
+  unsigned long long tr_cluskey;
   float tr_x, tr_y, tr_z;
-  int tr_used_in_seed, tr_passed_straight;
-
+  int tr_used_in_seed;
 
   t_seeding->SetBranchAddress("cluskey", &tr_cluskey);
   t_seeding->SetBranchAddress("x", &tr_x);
   t_seeding->SetBranchAddress("y", &tr_y);
   t_seeding->SetBranchAddress("z", &tr_z);
-  t_seeding->SetBranchAddress("passed_straight", &tr_passed_straight);
   t_seeding->SetBranchAddress("used_in_seed", &tr_used_in_seed);
 
   struct TrackingInfo {
     float x;
     float y;
     float z;
-    int   used_in_seed;
-    int  passed_straight;
+    int used_in_seed;
   };
 
-  std::map<ULong64_t, TrackingInfo> tracking_map;
-
+  std::map<unsigned long long, TrackingInfo> seeding_map;
   for (int i = 0; i < t_seeding->GetEntries(); i++) {
     t_seeding->GetEntry(i);
-    TrackingInfo info = {tr_x, tr_y, tr_z, tr_passed_straight, tr_used_in_seed};
-    tracking_map[tr_cluskey] = info;
+    TrackingInfo info = {tr_x, tr_y, tr_z, tr_used_in_seed};
+    seeding_map[tr_cluskey] = info;
   }
 
   // --------------------------
   // Determine which clusters are used in tracks from residualtree
   // --------------------------
-  std::vector<ULong64_t>* track_cluskeys = nullptr;
+  std::vector<unsigned long long>* track_cluskeys = nullptr;
   t_residual->SetBranchAddress("cluskeys", &track_cluskeys);
 
-  std::set<ULong64_t> clusters_in_tracks;
+  std::set<unsigned long long> clusters_in_tracks;
   for (int i = 0; i < t_residual->GetEntries(); i++) {
     t_residual->GetEntry(i);
     for (auto key : *track_cluskeys) {
@@ -57,7 +53,8 @@ void separate_cluster_and_hits() {
   }
 
   // --------------------------
-  // Read hittree - we will just copy its info into a new tree
+  // Read hittree from residual file
+  // Copy hits into a separate tree unchanged
   // --------------------------
   int m_runnumber, m_segment, m_job, m_event;
   ULong64_t m_bco, m_bcotr;
@@ -66,92 +63,134 @@ void separate_cluster_and_hits() {
   Int_t m_hitlayer, m_sector, m_side, m_staveid, m_chipid;
   Int_t m_strobeid, m_ladderzid, m_ladderphiid, m_timebucket, m_hitpad, m_hittbin;
   Int_t m_col, m_row, m_segtype, m_tileid, m_strip;
-  Float_t m_adc, m_zdriftlength;
+  Float_t m_adc_hit, m_zdriftlength;
 
-  t_hits->SetBranchAddress("m_runnumber", &m_runnumber);
-  t_hits->SetBranchAddress("m_segment", &m_segment);
-  t_hits->SetBranchAddress("m_job", &m_job);
-  t_hits->SetBranchAddress("m_event", &m_event);
-  t_hits->SetBranchAddress("m_bco", &m_bco);
-  t_hits->SetBranchAddress("m_bcotr", &m_bcotr);
-  t_hits->SetBranchAddress("m_hitsetkey", &m_hitsetkey);
-  t_hits->SetBranchAddress("m_hitgx", &m_hitgx);
-  t_hits->SetBranchAddress("m_hitgy", &m_hitgy);
-  t_hits->SetBranchAddress("m_hitgz", &m_hitgz);
-  t_hits->SetBranchAddress("m_hitlayer", &m_hitlayer);
-  t_hits->SetBranchAddress("m_sector", &m_sector);
-  t_hits->SetBranchAddress("m_side", &m_side);
-  t_hits->SetBranchAddress("m_staveid", &m_staveid);
-  t_hits->SetBranchAddress("m_chipid", &m_chipid);
-  t_hits->SetBranchAddress("m_strobeid", &m_strobeid);
-  t_hits->SetBranchAddress("m_ladderzid", &m_ladderzid);
-  t_hits->SetBranchAddress("m_ladderphiid", &m_ladderphiid);
-  t_hits->SetBranchAddress("m_timebucket", &m_timebucket);
-  t_hits->SetBranchAddress("m_hitpad", &m_hitpad);
-  t_hits->SetBranchAddress("m_hittbin", &m_hittbin);
-  t_hits->SetBranchAddress("m_col", &m_col);
-  t_hits->SetBranchAddress("m_row", &m_row);
-  t_hits->SetBranchAddress("m_segtype", &m_segtype);
-  t_hits->SetBranchAddress("m_tileid", &m_tileid);
-  t_hits->SetBranchAddress("m_strip", &m_strip);
-  t_hits->SetBranchAddress("m_adc", &m_adc);
-  t_hits->SetBranchAddress("m_zdriftlength", &m_zdriftlength);
-
-/*   struct HitInfo {
-    int nhits;
-    float avg_adc;
-  };
-
-  std::map<ULong64_t, HitInfo> hit_map;
-  if (t_hits) {
-    for (int i = 0; i < t_hits->GetEntries(); i++) {
-      t_hits->GetEntry(i);
-      HitInfo hinfo = {nhits, avg_adc};
-      hit_map[hit_cluskey] = hinfo;
-    }
-  } */
+  t_hits->SetBranchAddress("run", &m_runnumber);
+t_hits->SetBranchAddress("segment", &m_segment);
+t_hits->SetBranchAddress("job", &m_job);
+t_hits->SetBranchAddress("event", &m_event);
+t_hits->SetBranchAddress("gl1bco", &m_bco);
+t_hits->SetBranchAddress("trbco", &m_bcotr);
+t_hits->SetBranchAddress("hitsetkey", &m_hitsetkey);
+t_hits->SetBranchAddress("gx", &m_hitgx);
+t_hits->SetBranchAddress("gy", &m_hitgy);
+t_hits->SetBranchAddress("gz", &m_hitgz);
+t_hits->SetBranchAddress("layer", &m_hitlayer);
+t_hits->SetBranchAddress("sector", &m_sector);
+t_hits->SetBranchAddress("side", &m_side);
+t_hits->SetBranchAddress("stave", &m_staveid);
+t_hits->SetBranchAddress("chip", &m_chipid);
+t_hits->SetBranchAddress("strobe", &m_strobeid);
+t_hits->SetBranchAddress("ladderz", &m_ladderzid);
+t_hits->SetBranchAddress("ladderphi", &m_ladderphiid);
+t_hits->SetBranchAddress("timebucket", &m_timebucket);
+t_hits->SetBranchAddress("pad", &m_hitpad);
+t_hits->SetBranchAddress("tbin", &m_hittbin);
+t_hits->SetBranchAddress("col", &m_col);
+t_hits->SetBranchAddress("row", &m_row);
+t_hits->SetBranchAddress("segtype", &m_segtype);
+t_hits->SetBranchAddress("tile", &m_tileid);
+t_hits->SetBranchAddress("strip", &m_strip);
+t_hits->SetBranchAddress("adc", &m_adc_hit);
+t_hits->SetBranchAddress("zdriftlength", &m_zdriftlength);
 
   // --------------------------
-  // Read clustertree from residual file (which has all clusters)
+  // Read clustertree from residual file
+  // This has all the cluster info you want to keep
   // --------------------------
-  ULong64_t res_cluskey;
-  int layer = -1;
-  float adc = 0.0;
-  float charge = 0.0;
-
-  t_residual_clus->SetBranchAddress("cluskey", &res_cluskey);
-  if (t_residual_clus->GetBranch("layer")) t_residual_clus->SetBranchAddress("layer", &layer);
-  if (t_residual_clus->GetBranch("adc")) t_residual_clus->SetBranchAddress("adc", &adc);
-  if (t_residual_clus->GetBranch("charge")) t_residual_clus->SetBranchAddress("charge", &charge);
+  unsigned long m_scluskey;
+  Float_t m_scluslx, m_scluslz, m_sclusgx, m_sclusgy, m_sclusgz, m_sclusgr;
+  Float_t m_sclusphi, m_scluseta, m_adc_clus, m_scluselx, m_scluselz, m_clusmaxadc;
+  Int_t m_scluslayer, m_phisize, m_zsize, m_clussector;
+  
+t_residual_clus->SetBranchAddress("cluskey", &m_scluskey);
+t_residual_clus->SetBranchAddress("run", &m_runnumber);
+t_residual_clus->SetBranchAddress("segment", &m_segment);
+t_residual_clus->SetBranchAddress("job", &m_job);
+t_residual_clus->SetBranchAddress("event", &m_event);
+t_residual_clus->SetBranchAddress("gl1bco", &m_bco);
+t_residual_clus->SetBranchAddress("trbco", &m_bcotr);
+t_residual_clus->SetBranchAddress("lx", &m_scluslx);
+t_residual_clus->SetBranchAddress("lz", &m_scluslz);
+t_residual_clus->SetBranchAddress("gx", &m_sclusgx);
+t_residual_clus->SetBranchAddress("gy", &m_sclusgy);
+t_residual_clus->SetBranchAddress("gz", &m_sclusgz);
+t_residual_clus->SetBranchAddress("r", &m_sclusgr);
+t_residual_clus->SetBranchAddress("phi", &m_sclusphi);
+t_residual_clus->SetBranchAddress("eta", &m_scluseta);
+t_residual_clus->SetBranchAddress("adc", &m_adc_clus);
+t_residual_clus->SetBranchAddress("phisize", &m_phisize);
+t_residual_clus->SetBranchAddress("zsize", &m_zsize);
+t_residual_clus->SetBranchAddress("layer", &m_scluslayer);
+t_residual_clus->SetBranchAddress("erphi", &m_scluselx);
+t_residual_clus->SetBranchAddress("ez", &m_scluselz);
+t_residual_clus->SetBranchAddress("maxadc", &m_clusmaxadc);
+t_residual_clus->SetBranchAddress("sector", &m_clussector);
+t_residual_clus->SetBranchAddress("side", &m_side);
+t_residual_clus->SetBranchAddress("stave", &m_staveid);
+t_residual_clus->SetBranchAddress("chip", &m_chipid);
+t_residual_clus->SetBranchAddress("strobe", &m_strobeid);
+t_residual_clus->SetBranchAddress("ladderz", &m_ladderzid);
+t_residual_clus->SetBranchAddress("ladderphi", &m_ladderphiid);
+t_residual_clus->SetBranchAddress("timebucket", &m_timebucket);
+t_residual_clus->SetBranchAddress("segtype", &m_segtype);
+t_residual_clus->SetBranchAddress("tile", &m_tileid);
 
   // --------------------------
-  // Create the output file and two separate trees:
-  // 1) combined_clusters: cluster-level info
-  // 2) combined_hits: hit-level info
+  // Create output file and trees
   // --------------------------
   TFile* outFile = new TFile("separate_cluster_and_hits.root", "RECREATE");
 
-  // Cluster tree
-  TTree* t_combined_clusters = new TTree("combined_clusters", "Combined cluster info");
-  ULong64_t out_cluskey;
-  float out_x=0, out_y=0, out_z=0;
+  // Combined cluster tree
+  // Keep all original cluster info plus used_in_seed and used_in_track
+  unsigned long out_cluskey;
   int out_used_in_seed=0;
   int out_used_in_track=0;
-  int out_layer=-1;
-  float out_adc=0, out_charge=0;
+  float out_x=0, out_y=0, out_z=0; // (optional) from seeding_clusters
+
+  TTree* t_combined_clusters = new TTree("combined_clusters", "Combined cluster info");
   t_combined_clusters->Branch("cluskey", &out_cluskey, "cluskey/l");
-  t_combined_clusters->Branch("x", &out_x, "x/F");
-  t_combined_clusters->Branch("y", &out_y, "y/F");
-  t_combined_clusters->Branch("z", &out_z, "z/F");
+  t_combined_clusters->Branch("run", &m_runnumber, "run/I");
+  t_combined_clusters->Branch("segment", &m_segment, "segment/I");
+  t_combined_clusters->Branch("job", &m_job, "job/I");
+  t_combined_clusters->Branch("event", &m_event, "event/I");
+  t_combined_clusters->Branch("gl1bco", &m_bco, "gl1bco/l");
+  t_combined_clusters->Branch("trbco", &m_bcotr, "trbco/l");
+  t_combined_clusters->Branch("lx", &m_scluslx, "lx/F");
+  t_combined_clusters->Branch("lz", &m_scluslz, "lz/F");
+  t_combined_clusters->Branch("gx", &m_sclusgx, "gx/F");
+  t_combined_clusters->Branch("gy", &m_sclusgy, "gy/F");
+  t_combined_clusters->Branch("gz", &m_sclusgz, "gz/F");
+  t_combined_clusters->Branch("r", &m_sclusgr, "r/F");
+  t_combined_clusters->Branch("phi", &m_sclusphi, "phi/F");
+  t_combined_clusters->Branch("eta", &m_scluseta, "eta/F");
+  t_combined_clusters->Branch("adc", &m_adc_clus, "adc/F");
+  t_combined_clusters->Branch("phisize", &m_phisize, "phisize/I");
+  t_combined_clusters->Branch("zsize", &m_zsize, "zsize/I");
+  t_combined_clusters->Branch("layer", &m_scluslayer, "layer/I");
+  t_combined_clusters->Branch("erphi", &m_scluselx, "erphi/F");
+  t_combined_clusters->Branch("ez", &m_scluselz, "ez/F");
+  t_combined_clusters->Branch("maxadc", &m_clusmaxadc, "maxadc/F");
+  t_combined_clusters->Branch("sector", &m_clussector, "sector/I");
+  t_combined_clusters->Branch("side", &m_side, "side/I");
+  t_combined_clusters->Branch("stave", &m_staveid, "stave/I");
+  t_combined_clusters->Branch("chip", &m_chipid, "chip/I");
+  t_combined_clusters->Branch("strobe", &m_strobeid, "strobe/I");
+  t_combined_clusters->Branch("ladderz", &m_ladderzid, "ladderz/I");
+  t_combined_clusters->Branch("ladderphi", &m_ladderphiid, "ladderphi/I");
+  t_combined_clusters->Branch("timebucket", &m_timebucket, "timebucket/I");
+  t_combined_clusters->Branch("segtype", &m_segtype, "segtype/I");
+  t_combined_clusters->Branch("tile", &m_tileid, "tile/I");
+
+  // Additional branches from tracking_clusters
   t_combined_clusters->Branch("used_in_seed", &out_used_in_seed, "used_in_seed/I");
   t_combined_clusters->Branch("used_in_track", &out_used_in_track, "used_in_track/I");
-  t_combined_clusters->Branch("layer", &out_layer, "layer/I");
-  t_combined_clusters->Branch("adc", &out_adc, "adc/F");
-  t_combined_clusters->Branch("charge", &out_charge, "charge/F");
+  t_combined_clusters->Branch("seed_x", &out_x, "seed_x/F");
+  t_combined_clusters->Branch("seed_y", &out_y, "seed_y/F");
+  t_combined_clusters->Branch("seed_z", &out_z, "seed_z/F");
 
-  // Combined hits tree: copy from hittree input
+  // Combined hits tree
   TTree* t_combined_hits = new TTree("combined_hits", "Hit-level info");
-  // The branches will be the same as the input hittree
   t_combined_hits->Branch("runnumber", &m_runnumber, "runnumber/I");
   t_combined_hits->Branch("segment", &m_segment, "segment/I");
   t_combined_hits->Branch("job", &m_job, "job/I");
@@ -178,41 +217,33 @@ void separate_cluster_and_hits() {
   t_combined_hits->Branch("segtype", &m_segtype, "segtype/I");
   t_combined_hits->Branch("tile", &m_tileid, "tile/I");
   t_combined_hits->Branch("strip", &m_strip, "strip/I");
-  t_combined_hits->Branch("adc", &m_adc, "adc/F");
+  t_combined_hits->Branch("adc", &m_adc_hit, "adc/F");
   t_combined_hits->Branch("zdriftlength", &m_zdriftlength, "zdriftlength/F");
 
-  // Fill cluster tree
+  // Fill combined_clusters
   for (int i = 0; i < t_residual_clus->GetEntries(); i++) {
     t_residual_clus->GetEntry(i);
-    out_cluskey = res_cluskey;
-    out_layer = layer;
-    out_adc = adc;
-    out_charge = charge;
+    out_cluskey = m_scluskey;
 
-    if (tracking_map.find(res_cluskey) != tracking_map.end()) {
-      out_x = tracking_map[res_cluskey].x;
-      out_y = tracking_map[res_cluskey].y;
-      out_z = tracking_map[res_cluskey].z;
-      out_used_in_seed = tracking_map[res_cluskey].used_in_seed;
-    } else {
-      out_x = out_y = out_z = 0;
+    // Check tracking info
+    if (seeding_map.find((unsigned long long)m_scluskey) != seeding_map.end()) {
+    out_used_in_seed = seeding_map[(unsigned long long)m_scluskey].used_in_seed;
+    out_x = seeding_map[(unsigned long long)m_scluskey].x;
+    out_y = seeding_map[(unsigned long long)m_scluskey].y;
+    out_z = seeding_map[(unsigned long long)m_scluskey].z;
+} else {
       out_used_in_seed = 0;
+      out_x = out_y = out_z = 0;
     }
 
-    out_used_in_track = (clusters_in_tracks.find(res_cluskey) != clusters_in_tracks.end()) ? 1 : 0;
+    // Check if used in track
+    out_used_in_track = (clusters_in_tracks.find((unsigned long long)m_scluskey) != clusters_in_tracks.end()) ? 1 : 0;
 
     t_combined_clusters->Fill();
   }
 
-/*   // Fill hit tree (just copy from hit_map)
-  for (auto &hit_entry : hit_map) {
-    out_hit_cluskey = hit_entry.first;
-    out_nhits = hit_entry.second.nhits;
-    out_avg_adc = hit_entry.second.avg_adc;
-    t_combined_hits->Fill();
-  } */
-
- for (int i = 0; i < t_hits->GetEntries(); i++) {
+  // Fill combined_hits by looping over original hittree again
+  for (int i = 0; i < t_hits->GetEntries(); i++) {
     t_hits->GetEntry(i);
     t_combined_hits->Fill();
   }
@@ -224,7 +255,7 @@ void separate_cluster_and_hits() {
   outFile->Close();
 
   f_resid->Close();
-  f_track->Close();
+  f_seed->Close();
 
   std::cout << "Wrote separate_cluster_and_hits.root with combined_clusters and combined_hits trees." << std::endl;
 }
