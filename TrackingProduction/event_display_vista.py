@@ -49,9 +49,15 @@ class MainWindow(QMainWindow):
         btn_load.clicked.connect(self.load_data)
         controls_layout.addWidget(btn_load)
 
-        self.show_passed = QCheckBox("Show Passed Straight")
-        self.show_passed.stateChanged.connect(self.update_display)
-        controls_layout.addWidget(self.show_passed)
+        # Show clusters checkbox
+        self.show_clusters = QCheckBox("Show Clusters")
+        self.show_clusters.stateChanged.connect(self.update_display)
+        controls_layout.addWidget(self.show_clusters)
+
+        # Show hits checkbox
+        self.show_hits = QCheckBox("Show Hits")
+        self.show_hits.stateChanged.connect(self.update_display)
+        controls_layout.addWidget(self.show_hits)
 
         self.show_used = QCheckBox("Show Used in Seed")
         self.show_used.stateChanged.connect(self.update_display)
