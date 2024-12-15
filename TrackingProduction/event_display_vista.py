@@ -123,74 +123,142 @@ class MainWindow(QMainWindow):
             cluster_data = cluster_tree.arrays(library="np")
 
             # Create cluster polydata
-            cx = cluster_data["gx"]
-            cy = cluster_data["gy"]
-            cz = cluster_data["gz"]
-            points = np.column_stack([x, y, z])
+            cx = cluster_data["seed_x"]
+            cy = cluster_data["seed_y"]
+            cz = cluster_data["seed_z"]
+            cpoints = np.column_stack([cx, cy, cz])
+            cluster_polydata = pv.PolyData(cpoints)
+            for name in cluster_data.keys():
+                if name not in ("seed_x", "seed_y", "seed_z"):
+                    cluster_polydata.point_data[name] = cluster_data[name]
 
-            # Create a PyVista PolyData
-            polydata = pv.PolyData(points)
+            self.cluster_data = cluster_polydata
+
+            # Load hits tree
+            hits_tree = file["combined_hits"]
+            hits_data = hits_tree.arrays(library="np")
+
+            hx = hits_data["gx"]
+            hy = hits_data["gy"]
+            hz = hits_data["gz"]
+            hpoints = np.column_stack([hx, hy, hz])
+            hit_polydata = pv.PolyData(hpoints)
 
             # Add other attributes
-            for name in data.keys():
-                if name not in ("x", "y", "z"):
-                    polydata.point_data[name] = data[name]
+            for name in hits_data.keys():
+                if name not in ("gx", "gy", "gz"):
+                    hit_polydata.point_data[name] = hits_data[name]
 
-            self.full_data = polydata
+            self.hit_data = hit_polydata
             self.update_display()
 
         except Exception as e:
             self.info_panel.setText(f"Error loading file:\n{e}")
 
     def update_display(self):
+        # Save current camera position
+        camera_position = self.plotter_widget.camera_position
         # Clear the current plotter
         self.plotter_widget.clear()
 
-        # If no data loaded yet, return
-        if self.full_data is None:
-            return
+        # Determine what to show
+        show_clusters = self.show_clusters.isChecked()
+        show_hits = self.show_hits.isChecked()
 
-        # Filter data based on checkboxes
-        mask = np.ones(self.full_data.n_points, dtype=bool)
+        # Keep track of polydata items added to the scene
+        # so we know which is which when picking
+        self.cluster_polydata = None
+        self.hit_polydata = None
+
+        # Add clusters if requested and we have data
         if (
-            "passed_straight" in self.full_data.point_data
-            and self.show_passed.isChecked()
+            show_clusters
+            and self.cluster_data is not None
+            and self.cluster_data.n_points > 0
         ):
-            mask &= self.full_data.point_data["passed_straight"] == 1
-        if "used_in_seed" in self.full_data.point_data and self.show_used.isChecked():
-            mask &= self.full_data.point_data["used_in_seed"] == 1
+            self.cluster_polydata = self.cluster_data
+            # Add cluster points in one color, e.g. red
 
-        # Create a subset
-        subset = self.full_data.extract_points(np.where(mask)[0])
-
-        if subset.n_points > 0:
-            # Add points to the plotter_widget directly
             self.plotter_widget.add_points(
-                subset, render_points_as_spheres=True, point_size=5
+                self.cluster_polydata,
+                render_points_as_spheres=True,
+                point_size=5,
+                color=[1, 0, 0],
             )
-            self.plotter_widget.reset_camera()
-
-            # Enable point picking on plotter_widget directly
-
-            self.plotter_widget.disable_picking()
-            self.plotter_widget.enable_point_picking(
-                callback=self.on_point_picked, show_message=True, use_picker=True
+            # Add hits if requested and we have data
+        if show_hits and self.hit_data is not None and self.hit_data.n_points > 0:
+            self.hit_polydata = self.hit_data
+            # Add hit points in another color, e.g. blue
+            self.plotter_widget.add_points(
+                self.hit_polydata,
+                render_points_as_spheres=True,
+                point_size=5,
+                color=[0, 0, 1],
             )
-            self.polydata = subset
-        else:
-            self.info_panel.setText("No points to display with current filters.")
-            self.polydata = None
+        # Disable and re-enable picking to ensure a fresh start
+        self.plotter_widget.disable_picking()
+        # Still using use_mesh=True for now
+        self.plotter_widget.enable_point_picking(
+            callback=self.on_point_picked, show_message=True, use_mesh=True
+        )
+        # Restore the previously saved camera position
+        self.plotter_widget.camera_position = camera_position
 
         self.plotter_widget.show_axes()
 
-    def on_point_picked(self, picker, event):
+    def on_point_picked(self, mesh, point_id):
 
-        if point_id < 0 or self.polydata is None:
+        if point_id < 0:
+            return
+        # Determine if the picked mesh corresponds to clusters or hits
+        # The 'mesh' returned is a PyVista mesh subset. We need to check which one was picked.
+        # A simple approach: compare number of points and point positions or store references.
+        # If you have multiple calls to add_points, PyVista returns a composite mesh.
+        # In this simplified scenario, you might get the last added mesh. Consider comparing:
+        #    - If point_id < self.cluster_polydata.n_points: cluster was picked
+        # else it's from hit data if point_id < self.hit_polydata.n_points
+        #
+        # However, this approach may need refinement depending on how PyVista returns the picked mesh.
+        # Another approach: just compare the number of points.
+        # If both sets exist, you must determine which set the point belongs to.
+        #
+        # Let's assume PyVista returns the exact mesh we clicked on. Then:
+        picked_data = None
+        label = ""
+        # Check if mesh is cluster or hit mesh by identity or by comparing with stored polydata
+        # PyVista's enable_point_picking creates a new mesh for picked points. Checking identity may be tricky.
+        # Instead, check coordinates at point_id and see if they match cluster_polydata or hit_polydata.
+
+        # Extract picked point coordinates
+        picked_point = mesh.points[point_id]
+
+        # Check if this point exists in cluster_polydata
+        if self.cluster_polydata is not None:
+            cluster_coords = self.cluster_polydata.points
+            # Find matching point
+            c_indices = np.where((cluster_coords == picked_point).all(axis=1))[0]
+            if len(c_indices) > 0:
+                picked_data = self.cluster_polydata
+                pick_idx = c_indices[0]
+                label = "Cluster"
+
+        # If not found in clusters, check hits
+        if picked_data is None and self.hit_polydata is not None:
+            hit_coords = self.hit_polydata.points
+            h_indices = np.where((hit_coords == picked_point).all(axis=1))[0]
+            if len(h_indices) > 0:
+                picked_data = self.hit_polydata
+                pick_idx = h_indices[0]
+                label = "Hit"
+
+        if picked_data is None:
+            # Not found in either dataset; might be an error or the picking mesh is different
             return
 
-        info_text = f"Point ID: {point_id}\n"
-        for attr in self.polydata.point_data.keys():
-            value = self.polydata.point_data[attr][point_id]
+        # Display info
+        info_text = f"{label} (Point ID: {pick_idx})\n"
+        for attr in picked_data.point_data.keys():
+            value = picked_data.point_data[attr][pick_idx]
             info_text += f"{attr}: {value}\n"
 
         self.info_panel.setText(info_text)
