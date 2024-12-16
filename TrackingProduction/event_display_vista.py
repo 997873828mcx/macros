@@ -16,8 +16,11 @@ from PyQt5.QtWidgets import (
     QLabel,
     QSplitter,
     QFrame,
+    QFormLayout,
 )
 from PyQt5.QtCore import Qt
+import qt_material
+from qtrangeslider import QRangeSlider
 
 
 class MainWindow(QMainWindow):
@@ -43,21 +46,69 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(5, 5, 5, 5)
 
-        # Buttons and Checkboxes at the top
-        controls_layout = QHBoxLayout()
+        # === Control Area ===
+        control_area = QWidget()
+        control_layout = QVBoxLayout(control_area)
+        control_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Controls: Button to Load Data
         btn_load = QPushButton("Load ROOT File")
         btn_load.clicked.connect(self.load_data)
-        controls_layout.addWidget(btn_load)
+        control_layout.addWidget(btn_load)
 
-        # Show clusters checkbox
+        # Controls: Checkboxes
         self.show_clusters = QCheckBox("Show Clusters")
+        self.show_clusters.setChecked(True)
         self.show_clusters.stateChanged.connect(self.update_display)
-        controls_layout.addWidget(self.show_clusters)
+        control_layout.addWidget(self.show_clusters)
 
-        # Show hits checkbox
         self.show_hits = QCheckBox("Show Hits")
+        self.show_hits.setChecked(True)
         self.show_hits.stateChanged.connect(self.update_display)
-        controls_layout.addWidget(self.show_hits)
+        control_layout.addWidget(self.show_hits)
+
+        # Now let us add range slider to adjust the range
+        # Range sliders for X, Y, Z axes
+        range_layout = QFormLayout()
+        self.x_range_slider = QRangeSlider()
+        self.x_range_slider.setMinimum(-100)
+        self.x_range_slider.setMaximum(100)
+        self.x_range_slider.setValue([-100, 100])  # Initial range
+        self.x_range_slider.setOrientation(Qt.Horizontal)
+
+        self.y_range_slider = QRangeSlider()
+        self.y_range_slider.setMinimum(-100)
+        self.y_range_slider.setMaximum(100)
+        self.y_range_slider.setValue([-100, 100])
+        self.y_range_slider.setOrientation(Qt.Horizontal)
+
+        self.z_range_slider = QRangeSlider()
+        self.z_range_slider.setMinimum(-500)
+        self.z_range_slider.setMaximum(500)
+        self.z_range_slider.setValue([-200, 200])
+        self.z_range_slider.setOrientation(Qt.Horizontal)
+
+        # Labels to show the range dynamically
+        self.x_label = QLabel("X Range: [-100, 100]")
+        self.y_label = QLabel("Y Range: [-100, 100]")
+        self.z_label = QLabel("Z Range: [-200, 200]")
+
+        # Connect range slider signals
+        self.x_range_slider.valueChanged.connect(lambda v: self.update_label("X", v))
+        self.y_range_slider.valueChanged.connect(lambda v: self.update_label("Y", v))
+        self.z_range_slider.valueChanged.connect(lambda v: self.update_label("Z", v))
+
+        self.x_range_slider.valueChanged.connect(self.update_display)
+        self.y_range_slider.valueChanged.connect(self.update_display)
+        self.z_range_slider.valueChanged.connect(self.update_display)
+
+        # Add sliders and labels to form layout
+        range_layout.addRow(self.x_label, self.x_range_slider)
+        range_layout.addRow(self.y_label, self.y_range_slider)
+        range_layout.addRow(self.z_label, self.z_range_slider)
+        control_layout.addLayout(range_layout)
+
+        # controls_layout.addWidget()
 
         # Additional filters if needed (passed, used...)
         # For now, just remove or comment out if not relevant:
@@ -69,7 +120,7 @@ class MainWindow(QMainWindow):
         # self.show_used.stateChanged.connect(self.update_display)
         # controls_layout.addWidget(self.show_used)
 
-        left_layout.addLayout(controls_layout)
+        left_layout.addWidget(control_area)
 
         # 3D Visualization Area
         self.plotter_widget = QtInteractor()
@@ -161,6 +212,11 @@ class MainWindow(QMainWindow):
         # Clear the current plotter
         self.plotter_widget.clear()
 
+        # Retrieve range values
+        x_min, x_max = self.x_range_slider.value()
+        y_min, y_max = self.y_range_slider.value()
+        z_min, z_max = self.z_range_slider.value()
+
         # Determine what to show
         show_clusters = self.show_clusters.isChecked()
         show_hits = self.show_hits.isChecked()
@@ -176,25 +232,59 @@ class MainWindow(QMainWindow):
             and self.cluster_data is not None
             and self.cluster_data.n_points > 0
         ):
-            self.cluster_polydata = self.cluster_data
-            # Add cluster points in one color, e.g. red
 
-            self.plotter_widget.add_points(
-                self.cluster_polydata,
-                render_points_as_spheres=True,
-                point_size=5,
-                color=[1, 0, 0],
+            # Apply the slider range to filter points
+            points = self.cluster_data.points  # Get cluster points
+            mask = (
+                (points[:, 0] >= x_min)
+                & (points[:, 0] <= x_max)  # X range
+                & (points[:, 1] >= y_min)
+                & (points[:, 1] <= y_max)  # Y range
+                & (points[:, 2] >= z_min)
+                & (points[:, 2] <= z_max)  # Z range
             )
+            # Extract filtered points
+            filtered_points = self.cluster_data.extract_points(np.where(mask)[0])
+
+            if (
+                filtered_points.n_points > 0
+            ):  # Check if any points are left after filtering
+                self.cluster_polydata = filtered_points
+                # Add cluster points in one color, e.g., red
+                self.plotter_widget.add_points(
+                    self.cluster_polydata,
+                    render_points_as_spheres=True,
+                    point_size=5,
+                    color=[1, 0, 0],
+                )
             # Add hits if requested and we have data
         if show_hits and self.hit_data is not None and self.hit_data.n_points > 0:
-            self.hit_polydata = self.hit_data
-            # Add hit points in another color, e.g. blue
-            self.plotter_widget.add_points(
-                self.hit_polydata,
-                render_points_as_spheres=True,
-                point_size=5,
-                color=[0, 0, 1],
+
+            # Apply the slider range to filter points
+            points = self.hit_data.points  # Get hit points
+            mask = (
+                (points[:, 0] >= x_min)
+                & (points[:, 0] <= x_max)  # X range
+                & (points[:, 1] >= y_min)
+                & (points[:, 1] <= y_max)  # Y range
+                & (points[:, 2] >= z_min)
+                & (points[:, 2] <= z_max)  # Z range
             )
+
+            # Extract filtered points
+            filtered_points = self.hit_data.extract_points(np.where(mask)[0])
+
+            if (
+                filtered_points.n_points > 0
+            ):  # Check if any points are left after filtering
+                self.hit_polydata = filtered_points
+                # Add hit points in another color, e.g., blue
+                self.plotter_widget.add_points(
+                    self.hit_polydata,
+                    render_points_as_spheres=True,
+                    point_size=5,
+                    color=[0, 0, 1],
+                )
         # Disable and re-enable picking to ensure a fresh start
         self.plotter_widget.disable_picking()
         # Still using use_mesh=True for now
@@ -205,6 +295,15 @@ class MainWindow(QMainWindow):
         self.plotter_widget.camera_position = camera_position
 
         self.plotter_widget.show_axes()
+
+    def update_label(self, axis, value):
+        label = f"{axis} Range: [{value[0]}, {value[1]}]"
+        if axis == "X":
+            self.x_label.setText(label)
+        elif axis == "Y":
+            self.y_label.setText(label)
+        elif axis == "Z":
+            self.z_label.setText(label)
 
     def on_point_picked(self, mesh, point_id):
 
