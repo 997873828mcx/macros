@@ -19,7 +19,8 @@ from PyQt5.QtWidgets import (
     QFormLayout,
 )
 from PyQt5.QtCore import Qt
-import qt_material
+
+# import qt_material
 from qtrangeslider import QRangeSlider
 
 
@@ -69,38 +70,52 @@ class MainWindow(QMainWindow):
 
         # Now let us add range slider to adjust the range
         # Range sliders for X, Y, Z axes
-        range_layout = QFormLayout()
+        # range_layout = QFormLayout()
+        slider_width = 300
         self.x_range_slider = QRangeSlider()
         self.x_range_slider.setMinimum(-100)
         self.x_range_slider.setMaximum(100)
         self.x_range_slider.setValue([-100, 100])  # Initial range
+        self.x_range_slider.setBarMovesAllHandles(False)
         self.x_range_slider.setOrientation(Qt.Horizontal)
+
+        self.x_range_slider.setFixedWidth(slider_width)
+
+        self.x_range_slider.sliderReleased.connect(self.update_display)
 
         self.y_range_slider = QRangeSlider()
         self.y_range_slider.setMinimum(-100)
         self.y_range_slider.setMaximum(100)
         self.y_range_slider.setValue([-100, 100])
         self.y_range_slider.setOrientation(Qt.Horizontal)
+        self.y_range_slider.setFixedWidth(slider_width)
+        self.y_range_slider.sliderReleased.connect(self.update_display)
 
         self.z_range_slider = QRangeSlider()
-        self.z_range_slider.setMinimum(-500)
-        self.z_range_slider.setMaximum(500)
+        self.z_range_slider.setMinimum(-200)
+        self.z_range_slider.setMaximum(200)
         self.z_range_slider.setValue([-200, 200])
         self.z_range_slider.setOrientation(Qt.Horizontal)
+        self.z_range_slider.setFixedWidth(slider_width)
+        self.z_range_slider.sliderReleased.connect(self.update_display)
 
         # Labels to show the range dynamically
         self.x_label = QLabel("X Range: [-100, 100]")
         self.y_label = QLabel("Y Range: [-100, 100]")
         self.z_label = QLabel("Z Range: [-200, 200]")
 
+        # Set fixed widths for labels so that their size does not change with text length
+        label_width = 150
+        self.x_label.setFixedWidth(label_width)
+        self.y_label.setFixedWidth(label_width)
+        self.z_label.setFixedWidth(label_width)
+
         # Connect range slider signals
         self.x_range_slider.valueChanged.connect(lambda v: self.update_label("X", v))
         self.y_range_slider.valueChanged.connect(lambda v: self.update_label("Y", v))
         self.z_range_slider.valueChanged.connect(lambda v: self.update_label("Z", v))
 
-        self.x_range_slider.valueChanged.connect(self.update_display)
-        self.y_range_slider.valueChanged.connect(self.update_display)
-        self.z_range_slider.valueChanged.connect(self.update_display)
+        range_layout = QFormLayout()
 
         # Add sliders and labels to form layout
         range_layout.addRow(self.x_label, self.x_range_slider)
@@ -309,6 +324,7 @@ class MainWindow(QMainWindow):
 
         if point_id < 0:
             return
+        picked_point = mesh.points[point_id]
         # Determine if the picked mesh corresponds to clusters or hits
         # The 'mesh' returned is a PyVista mesh subset. We need to check which one was picked.
         # A simple approach: compare number of points and point positions or store references.
@@ -323,6 +339,7 @@ class MainWindow(QMainWindow):
         #
         # Let's assume PyVista returns the exact mesh we clicked on. Then:
         picked_data = None
+        pick_idx = None
         label = ""
         # Check if mesh is cluster or hit mesh by identity or by comparing with stored polydata
         # PyVista's enable_point_picking creates a new mesh for picked points. Checking identity may be tricky.
