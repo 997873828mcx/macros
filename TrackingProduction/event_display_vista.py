@@ -3,7 +3,7 @@ import numpy as np
 import uproot
 import pyvista as pv
 from pyvistaqt import QtInteractor
-from PyQt5.QtWidgets import (
+from qtpy.QtWidgets import (
     QApplication,
     QMainWindow,
     QWidget,
@@ -18,10 +18,8 @@ from PyQt5.QtWidgets import (
     QFrame,
     QFormLayout,
 )
-from PyQt5.QtCore import Qt
-
-# import qt_material
-from qtrangeslider import QRangeSlider
+from qtpy.QtCore import Qt
+from superqt import QRangeSlider
 
 
 class MainWindow(QMainWindow):
@@ -72,30 +70,31 @@ class MainWindow(QMainWindow):
         # Range sliders for X, Y, Z axes
         # range_layout = QFormLayout()
         slider_width = 300
-        self.x_range_slider = QRangeSlider()
+        # self.x_range_slider = QRangeSlider()
+        self.x_range_slider = QRangeSlider(Qt.Horizontal)
         self.x_range_slider.setMinimum(-100)
         self.x_range_slider.setMaximum(100)
         self.x_range_slider.setValue([-100, 100])  # Initial range
-        self.x_range_slider.setBarMovesAllHandles(False)
-        self.x_range_slider.setOrientation(Qt.Horizontal)
+        # self.x_range_slider.setBarMovesAllHandles(False)
+        # self.x_range_slider.setOrientation(Qt.Horizontal)
 
         self.x_range_slider.setFixedWidth(slider_width)
 
         self.x_range_slider.sliderReleased.connect(self.update_display)
 
-        self.y_range_slider = QRangeSlider()
+        self.y_range_slider = QRangeSlider(Qt.Horizontal)
         self.y_range_slider.setMinimum(-100)
         self.y_range_slider.setMaximum(100)
         self.y_range_slider.setValue([-100, 100])
-        self.y_range_slider.setOrientation(Qt.Horizontal)
+        # self.y_range_slider.setOrientation(Qt.Horizontal)
         self.y_range_slider.setFixedWidth(slider_width)
         self.y_range_slider.sliderReleased.connect(self.update_display)
 
-        self.z_range_slider = QRangeSlider()
+        self.z_range_slider = QRangeSlider(Qt.Horizontal)
         self.z_range_slider.setMinimum(-200)
         self.z_range_slider.setMaximum(200)
         self.z_range_slider.setValue([-200, 200])
-        self.z_range_slider.setOrientation(Qt.Horizontal)
+        # self.z_range_slider.setOrientation(Qt.Horizontal)
         self.z_range_slider.setFixedWidth(slider_width)
         self.z_range_slider.sliderReleased.connect(self.update_display)
 
@@ -266,11 +265,12 @@ class MainWindow(QMainWindow):
             ):  # Check if any points are left after filtering
                 self.cluster_polydata = filtered_points
                 # Add cluster points in one color, e.g., red
-                self.plotter_widget.add_points(
+                self.plotter_widget.add_mesh(
                     self.cluster_polydata,
-                    render_points_as_spheres=True,
+                    # render_points_as_spheres=True,
+                    style="points",
                     point_size=5,
-                    color=[1, 0, 0],
+                    color="red",
                 )
             # Add hits if requested and we have data
         if show_hits and self.hit_data is not None and self.hit_data.n_points > 0:
@@ -294,11 +294,8 @@ class MainWindow(QMainWindow):
             ):  # Check if any points are left after filtering
                 self.hit_polydata = filtered_points
                 # Add hit points in another color, e.g., blue
-                self.plotter_widget.add_points(
-                    self.hit_polydata,
-                    render_points_as_spheres=True,
-                    point_size=5,
-                    color=[0, 0, 1],
+                self.plotter_widget.add_mesh(
+                    self.hit_polydata, style="points", point_size=5, color="blue"
                 )
         # Disable and re-enable picking to ensure a fresh start
         self.plotter_widget.disable_picking()
