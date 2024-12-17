@@ -73,8 +73,8 @@ R__LOAD_LIBRARY(libtpcqa.so)
 
 void Fun4All_FullReconstruction(
         const int nIn = 1,
-    const std::string tpcfilename = "DST_STREAMING_EVENT_run2pp_new_2024p002-00053217-00000.root",
-    const std::string tpcdir = "/sphenix/lustre01/sphnxpro/physics/slurp/streaming/physics/new_2024p002/run_00053200_00053300/",
+    const std::string tpcfilename = "DST_STREAMING_EVENT_run2pp_new_2024p002-00052077-00000.root",
+    const std::string tpcdir = "/sphenix/lustre01/sphnxpro/physics/slurp/streaming/physics/new_2024p002/run_00052000_00052100/",
     const std::string outfilename = "clusters_seeds",
     const bool convertSeeds = false,
         const int nEvents = 1)
@@ -219,7 +219,7 @@ void Fun4All_FullReconstruction(
   /*
    * Tpc Seeding
    */
-    TString outfileSeed = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusters_edgeOn_staticOff_1211_0.root";
+    TString outfileSeed = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusters_edgeOn_staticOff_1216_0.root";
     std::string outstring(outfileSeed.Data());
   auto seeder = new PHCASeeding("PHCASeeding");
   double fieldstrength = std::numeric_limits<double>::quiet_NaN();  // set by isConstantField if constant
@@ -419,7 +419,7 @@ void Fun4All_FullReconstruction(
       se->registerSubsystem(kfparticle);
       std::cout << "KFParticle output file: " << outputRecoFile << std::endl;*/
 
-  TString residoutfile = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_resid_edgeOn_staticOff.root";
+  TString residoutfile = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_resid_edgeOn_staticOff_1216_0.root";
   std::string residstring(residoutfile.Data());
 
   auto resid = new TrackResiduals("TrackResiduals");
@@ -441,20 +441,17 @@ void Fun4All_FullReconstruction(
   resid->Verbosity(0);
   se->registerSubsystem(resid);
 
-    auto ks0reco = new KshortReconstruction("KshortReconstruction");
+   /*  auto ks0reco = new KshortReconstruction("KshortReconstruction");
   ks0reco->Verbosity(5);
 
   ks0reco->setPtCut(0.000000001);
-    /*ks0reco->setApplyInvariantPtCut(false);
-    ks0reco->setApplyQualityCut(false);
-    ks0reco->setApplyDCACut(false);
-    ks0reco->setApplyPairDCACut(false);*/
+
     ks0reco->setRequireMVTX(false);
     ks0reco->setTrackQualityCut(10000000000000000);
     ks0reco->setPairDCACut(10000000000000);
     ks0reco->setTrackDCACut(0.0000000000000001);
     ks0reco->set_output_file(outputRecoFile);
-    se->registerSubsystem(ks0reco);
+    se->registerSubsystem(ks0reco); */
     //tree->Draw("pt", "pdg==11");
 
   //auto ntuplizer = new TrkrNtuplizer("TrkrNtuplizer");
@@ -481,7 +478,7 @@ void Fun4All_FullReconstruction(
   se->PrintTimer();
 
        ifstream file(outputRecoFile.c_str());
-      if (file.good())
+/*       if (file.good())
       {
           std::cout << "Output file found: " << outputRecoFile << std::endl;
           string moveOutput = "mv " + outputRecoFile + " " + outDir;
@@ -489,7 +486,7 @@ void Fun4All_FullReconstruction(
           std::cout << "Moved output file to: " << outDir << std::endl;
       } else {
           std::cout << "Output file not found: " << outputRecoFile << std::endl;
-      }
+      } */
 
   if (Enable::QA)
   {

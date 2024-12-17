@@ -93,7 +93,7 @@ class MainWindow(QMainWindow):
         self.z_range_slider = QRangeSlider(Qt.Horizontal)
         self.z_range_slider.setMinimum(-200)
         self.z_range_slider.setMaximum(200)
-        self.z_range_slider.setValue([-200, 200])
+        self.z_range_slider.setValue([-400, 400])
         # self.z_range_slider.setOrientation(Qt.Horizontal)
         self.z_range_slider.setFixedWidth(slider_width)
         self.z_range_slider.sliderReleased.connect(self.update_display)
@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
         # Labels to show the range dynamically
         self.x_label = QLabel("X Range: [-100, 100]")
         self.y_label = QLabel("Y Range: [-100, 100]")
-        self.z_label = QLabel("Z Range: [-200, 200]")
+        self.z_label = QLabel("Z Range: [-400, 400]")
 
         # Set fixed widths for labels so that their size does not change with text length
         label_width = 150
@@ -188,15 +188,18 @@ class MainWindow(QMainWindow):
             cluster_data = cluster_tree.arrays(library="np")
 
             # Create cluster polydata
-            cx = cluster_data["seed_x"]
-            cy = cluster_data["seed_y"]
-            cz = cluster_data["seed_z"]
+            cx = cluster_data["gx"]
+            cy = cluster_data["gy"]
+            cz = cluster_data["gz"]
             cpoints = np.column_stack([cx, cy, cz])
             cluster_polydata = pv.PolyData(cpoints)
             for name in cluster_data.keys():
-                if name not in ("seed_x", "seed_y", "seed_z"):
+                if name not in ("gx", "gy", "gz"):
                     cluster_polydata.point_data[name] = cluster_data[name]
 
+            cluster_polydata.point_data["data_type"] = np.zeros(
+                cluster_polydata.n_points, dtype=int
+            )
             self.cluster_data = cluster_polydata
 
             # Load hits tree
@@ -214,6 +217,10 @@ class MainWindow(QMainWindow):
                 if name not in ("gx", "gy", "gz"):
                     hit_polydata.point_data[name] = hits_data[name]
 
+            # Add a dataset type attribute (1 for hits)
+            hit_polydata.point_data["data_type"] = np.ones(
+                hit_polydata.n_points, dtype=int
+            )
             self.hit_data = hit_polydata
             self.update_display()
 
@@ -295,7 +302,10 @@ class MainWindow(QMainWindow):
                 self.hit_polydata = filtered_points
                 # Add hit points in another color, e.g., blue
                 self.plotter_widget.add_mesh(
-                    self.hit_polydata, style="points", point_size=5, color="blue"
+                    self.hit_polydata,
+                    style="points",
+                    point_size=5,
+                    color="blue",
                 )
         # Disable and re-enable picking to ensure a fresh start
         self.plotter_widget.disable_picking()
@@ -321,57 +331,20 @@ class MainWindow(QMainWindow):
 
         if point_id < 0:
             return
-        picked_point = mesh.points[point_id]
-        # Determine if the picked mesh corresponds to clusters or hits
-        # The 'mesh' returned is a PyVista mesh subset. We need to check which one was picked.
-        # A simple approach: compare number of points and point positions or store references.
-        # If you have multiple calls to add_points, PyVista returns a composite mesh.
-        # In this simplified scenario, you might get the last added mesh. Consider comparing:
-        #    - If point_id < self.cluster_polydata.n_points: cluster was picked
-        # else it's from hit data if point_id < self.hit_polydata.n_points
-        #
-        # However, this approach may need refinement depending on how PyVista returns the picked mesh.
-        # Another approach: just compare the number of points.
-        # If both sets exist, you must determine which set the point belongs to.
-        #
-        # Let's assume PyVista returns the exact mesh we clicked on. Then:
-        picked_data = None
-        pick_idx = None
-        label = ""
-        # Check if mesh is cluster or hit mesh by identity or by comparing with stored polydata
-        # PyVista's enable_point_picking creates a new mesh for picked points. Checking identity may be tricky.
-        # Instead, check coordinates at point_id and see if they match cluster_polydata or hit_polydata.
-
-        # Extract picked point coordinates
-        picked_point = mesh.points[point_id]
-
-        # Check if this point exists in cluster_polydata
-        if self.cluster_polydata is not None:
-            cluster_coords = self.cluster_polydata.points
-            # Find matching point
-            c_indices = np.where((cluster_coords == picked_point).all(axis=1))[0]
-            if len(c_indices) > 0:
-                picked_data = self.cluster_polydata
-                pick_idx = c_indices[0]
-                label = "Cluster"
-
-        # If not found in clusters, check hits
-        if picked_data is None and self.hit_polydata is not None:
-            hit_coords = self.hit_polydata.points
-            h_indices = np.where((hit_coords == picked_point).all(axis=1))[0]
-            if len(h_indices) > 0:
-                picked_data = self.hit_polydata
-                pick_idx = h_indices[0]
-                label = "Hit"
-
-        if picked_data is None:
-            # Not found in either dataset; might be an error or the picking mesh is different
-            return
+        # picked_point = mesh.points[point_id]
+        data_type = mesh.point_data["data_type"][point_id]
+        # picked_data = None
+        # pick_idx = None
+        # label = ""
+        if data_type == 0:
+            label = "Cluster"
+        else:
+            label = "Hit"
 
         # Display info
-        info_text = f"{label} (Point ID: {pick_idx})\n"
-        for attr in picked_data.point_data.keys():
-            value = picked_data.point_data[attr][pick_idx]
+        info_text = f"{label} (Point ID: {point_id})\n"
+        for attr in mesh.point_data.keys():
+            value = mesh.point_data[attr][point_id]
             info_text += f"{attr}: {value}\n"
 
         self.info_panel.setText(info_text)
