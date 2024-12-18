@@ -17,6 +17,7 @@ from qtpy.QtWidgets import (
     QSplitter,
     QFrame,
     QFormLayout,
+    QGroupBox,  # Added for grouping side checkboxes
 )
 from qtpy.QtCore import Qt
 from superqt import QRangeSlider
@@ -55,7 +56,7 @@ class MainWindow(QMainWindow):
         btn_load.clicked.connect(self.load_data)
         control_layout.addWidget(btn_load)
 
-        # Controls: Checkboxes
+        # Controls: Checkboxes for showing clusters and hits
         self.show_clusters = QCheckBox("Show Clusters")
         self.show_clusters.setChecked(True)
         self.show_clusters.stateChanged.connect(self.update_display)
@@ -65,6 +66,23 @@ class MainWindow(QMainWindow):
         self.show_hits.setChecked(True)
         self.show_hits.stateChanged.connect(self.update_display)
         control_layout.addWidget(self.show_hits)
+
+        # === Side Selection Area ===
+        side_group = QGroupBox("Select Side")
+        side_layout = QVBoxLayout()
+        side_group.setLayout(side_layout)
+
+        self.side0_checkbox = QCheckBox("Side 0")
+        self.side0_checkbox.setChecked(True)
+        self.side0_checkbox.stateChanged.connect(self.update_display)
+        side_layout.addWidget(self.side0_checkbox)
+
+        self.side1_checkbox = QCheckBox("Side 1")
+        self.side1_checkbox.setChecked(True)
+        self.side1_checkbox.stateChanged.connect(self.update_display)
+        side_layout.addWidget(self.side1_checkbox)
+
+        control_layout.addWidget(side_group)
 
         # Now let us add range slider to adjust the range
         # Range sliders for X, Y, Z axes
@@ -187,6 +205,10 @@ class MainWindow(QMainWindow):
             cluster_tree = file["combined_clusters"]
             cluster_data = cluster_tree.arrays(library="np")
 
+            # Ensure 'side' branch exists
+            if "side" not in cluster_data:
+                raise ValueError("The 'side' branch is missing in the cluster data.")
+
             # Create cluster polydata
             cx = cluster_data["gx"]
             cy = cluster_data["gy"]
@@ -205,6 +227,10 @@ class MainWindow(QMainWindow):
             # Load hits tree
             hits_tree = file["combined_hits"]
             hits_data = hits_tree.arrays(library="np")
+
+            # Ensure 'side' branch exists
+            if "side" not in hits_data:
+                raise ValueError("The 'side' branch is missing in the hit data.")
 
             hx = hits_data["gx"]
             hy = hits_data["gy"]
@@ -242,6 +268,19 @@ class MainWindow(QMainWindow):
         show_clusters = self.show_clusters.isChecked()
         show_hits = self.show_hits.isChecked()
 
+        # Retrieve selected sides
+        selected_sides = []
+        if self.side0_checkbox.isChecked():
+            selected_sides.append(0)
+        if self.side1_checkbox.isChecked():
+            selected_sides.append(1)
+
+        # Handle case when no sides are selected
+        if not selected_sides:
+            # Optionally, you can decide to show nothing or all sides
+            # Here, we'll show nothing
+            selected_sides = []
+
         # Keep track of polydata items added to the scene
         # so we know which is which when picking
         self.cluster_polydata = None
@@ -256,6 +295,13 @@ class MainWindow(QMainWindow):
 
             # Apply the slider range to filter points
             points = self.cluster_data.points  # Get cluster points
+            side = self.cluster_data.point_data["side"]  # Get side data
+
+            if selected_sides:
+                side_mask = np.isin(side, selected_sides)
+            else:
+                side_mask = False  # No sides selected, no points
+
             mask = (
                 (points[:, 0] >= x_min)
                 & (points[:, 0] <= x_max)  # X range
@@ -263,9 +309,11 @@ class MainWindow(QMainWindow):
                 & (points[:, 1] <= y_max)  # Y range
                 & (points[:, 2] >= z_min)
                 & (points[:, 2] <= z_max)  # Z range
+                & side_mask  # Side filter
             )
             # Extract filtered points
-            filtered_points = self.cluster_data.extract_points(np.where(mask)[0])
+            filtered_indices = np.where(mask)[0]
+            filtered_points = self.cluster_data.extract_points(filtered_indices)
 
             if (
                 filtered_points.n_points > 0
@@ -284,6 +332,13 @@ class MainWindow(QMainWindow):
 
             # Apply the slider range to filter points
             points = self.hit_data.points  # Get hit points
+            side = self.hit_data.point_data["side"]  # Get side data
+
+            if selected_sides:
+                side_mask = np.isin(side, selected_sides)
+            else:
+                side_mask = False  # No sides selected, no points
+
             mask = (
                 (points[:, 0] >= x_min)
                 & (points[:, 0] <= x_max)  # X range
@@ -291,10 +346,12 @@ class MainWindow(QMainWindow):
                 & (points[:, 1] <= y_max)  # Y range
                 & (points[:, 2] >= z_min)
                 & (points[:, 2] <= z_max)  # Z range
+                & side_mask  # Side filter
             )
 
             # Extract filtered points
-            filtered_points = self.hit_data.extract_points(np.where(mask)[0])
+            filtered_indices = np.where(mask)[0]
+            filtered_points = self.hit_data.extract_points(filtered_indices)
 
             if (
                 filtered_points.n_points > 0
