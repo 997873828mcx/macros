@@ -91,8 +91,8 @@ class MainWindow(QMainWindow):
         self.y_range_slider.sliderReleased.connect(self.update_display)
 
         self.z_range_slider = QRangeSlider(Qt.Horizontal)
-        self.z_range_slider.setMinimum(-200)
-        self.z_range_slider.setMaximum(200)
+        self.z_range_slider.setMinimum(-400)
+        self.z_range_slider.setMaximum(400)
         self.z_range_slider.setValue([-400, 400])
         # self.z_range_slider.setOrientation(Qt.Horizontal)
         self.z_range_slider.setFixedWidth(slider_width)
