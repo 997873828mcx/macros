@@ -173,8 +173,11 @@ void Fun4All_FullReconstruction(
   Intt_Clustering();
 
   Tpc_LaserEventIdentifying();
+  TString outfileTpcClusterizer = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusterizer_edgeOn_staticOff_1218_0.root";
+  std::string outTpcClusterizerString(outfileTpcClusterizer.Data());
   auto tpcclusterizer = new TpcClusterizer;//把hit打包成cluster
   tpcclusterizer->Verbosity(0);
+  tpcclusterizer->set_outfileName(outTpcClusterizerString);
   tpcclusterizer->set_do_hit_association(G4TPC::DO_HIT_ASSOCIATION);
   tpcclusterizer->set_rawdata_reco();
   se->registerSubsystem(tpcclusterizer);
