@@ -178,7 +178,7 @@ void Fun4All_FullReconstruction(
   auto tpcclusterizer = new TpcClusterizer;//把hit打包成cluster
   tpcclusterizer->Verbosity(0);
   tpcclusterizer->set_outfileName(outTpcClusterizerString);
-  tpcclusterizer->set_do_hit_association(G4TPC::DO_HIT_ASSOCIATION);
+  //tpcclusterizer->set_do_hit_association(G4TPC::DO_HIT_ASSOCIATION);
   tpcclusterizer->set_rawdata_reco();
   se->registerSubsystem(tpcclusterizer);
 
@@ -380,47 +380,6 @@ void Fun4All_FullReconstruction(
   se->registerSubsystem(finder);
 
 
-    /*    //KFParticle setup
-      KFParticle_sPHENIX *kfparticle = new KFParticle_sPHENIX("myKShortReco");
-      kfparticle->Verbosity(1);
-      kfparticle->setDecayDescriptor("K_S0 -> pi^+ pi^-");
-
-      //Basic node selection and configuration
-      kfparticle->magFieldFile("FIELDMAP_TRACKING");
-      kfparticle->getAllPVInfo(false);
-      kfparticle->allowZeroMassTracks(true);
-      kfparticle->useFakePrimaryVertex(true);
-
-      kfparticle->constrainToPrimaryVertex(false);
-      kfparticle->setMotherIPchi2(FLT_MAX);                               //不对IP chi2进行任何限制
-      kfparticle->setFlightDistancechi2(-1.);
-      kfparticle->setMinDIRA(-1.1);
-      kfparticle->setDecayLengthRange(0., FLT_MAX);
-      kfparticle->setDecayTimeRange(-1 * FLT_MAX, FLT_MAX);
-
-      //Track parameters
-      kfparticle->setMinMVTXhits(0);
-      kfparticle->setMinTPChits(20);
-      kfparticle->setMinimumTrackPT(-1.);
-      kfparticle->setMaximumTrackPTchi2(FLT_MAX);
-      kfparticle->setMinimumTrackIPchi2(-1.);
-      kfparticle->setMinimumTrackIP(-1.);
-      kfparticle->setMaximumTrackchi2nDOF(20.);
-
-      //Vertex parameters
-      kfparticle->setMaximumVertexchi2nDOF(50);
-      kfparticle->setMaximumDaughterDCA(1.);
-
-      //Parent parameters
-      kfparticle->setMotherPT(0);
-      kfparticle->setMinimumMass(0.300);
-      kfparticle->setMaximumMass(0.700);
-      kfparticle->setMaximumMotherVertexVolume(0.1);
-
-      kfparticle->setOutputName(outputRecoFile);
-
-      se->registerSubsystem(kfparticle);
-      std::cout << "KFParticle output file: " << outputRecoFile << std::endl;*/
 
   TString residoutfile = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_resid_edgeOn_staticOff_1216_0.root";
   std::string residstring(residoutfile.Data());
@@ -444,24 +403,7 @@ void Fun4All_FullReconstruction(
   resid->Verbosity(0);
   se->registerSubsystem(resid);
 
-   /*  auto ks0reco = new KshortReconstruction("KshortReconstruction");
-  ks0reco->Verbosity(5);
-
-  ks0reco->setPtCut(0.000000001);
-
-    ks0reco->setRequireMVTX(false);
-    ks0reco->setTrackQualityCut(10000000000000000);
-    ks0reco->setPairDCACut(10000000000000);
-    ks0reco->setTrackDCACut(0.0000000000000001);
-    ks0reco->set_output_file(outputRecoFile);
-    se->registerSubsystem(ks0reco); */
-    //tree->Draw("pt", "pdg==11");
-
-  //auto ntuplizer = new TrkrNtuplizer("TrkrNtuplizer");
-  //se->registerSubsystem(ntuplizer);
-
-  // Fun4AllOutputManager *out = new Fun4AllDstOutputManager("out", "/sphenix/tg/tg01/hf/jdosbo/tracking_development/Run24/Beam/41626/hitsets.root");
-  // se->registerOutputManager(out);
+  
   if (Enable::QA)
   {
     se->registerSubsystem(new TpcRawHitQA);
@@ -481,15 +423,7 @@ void Fun4All_FullReconstruction(
   se->PrintTimer();
 
        ifstream file(outputRecoFile.c_str());
-/*       if (file.good())
-      {
-          std::cout << "Output file found: " << outputRecoFile << std::endl;
-          string moveOutput = "mv " + outputRecoFile + " " + outDir;
-          system(moveOutput.c_str());
-          std::cout << "Moved output file to: " << outDir << std::endl;
-      } else {
-          std::cout << "Output file not found: " << outputRecoFile << std::endl;
-      } */
+
 
   if (Enable::QA)
   {
