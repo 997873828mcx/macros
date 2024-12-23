@@ -20,8 +20,9 @@ from qtpy.QtWidgets import (
     QGroupBox,
     QDoubleSpinBox,
     QMessageBox,
+    QRadioButton,
 )
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, QTimer
 from superqt import QRangeSlider
 from scipy.spatial import cKDTree
 
@@ -31,6 +32,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Event Display")
         self.resize(1400, 800)
+
+        # Initialize pick mode
+        self.pick_mode = "info"  # Default mode
 
         # Main container widget
         main_widget = QWidget()
@@ -59,16 +63,24 @@ class MainWindow(QMainWindow):
         btn_load.clicked.connect(self.load_data)
         control_layout.addWidget(btn_load)
 
+        mode_layout = QHBoxLayout()
+
+        input_group = QGroupBox("Input")
+        input_layout = QVBoxLayout()
+        input_group.setLayout(input_layout)
+
         # --- Checkboxes for Clusters and Hits ---
-        self.show_clusters = QCheckBox("Show Clusters")
+        self.show_clusters = QCheckBox("Clusters")
         self.show_clusters.setChecked(True)
         self.show_clusters.stateChanged.connect(self.update_display)
-        control_layout.addWidget(self.show_clusters)
+        input_layout.addWidget(self.show_clusters)
 
-        self.show_hits = QCheckBox("Show Hits")
+        self.show_hits = QCheckBox("Hits")
         self.show_hits.setChecked(True)
         self.show_hits.stateChanged.connect(self.update_display)
-        control_layout.addWidget(self.show_hits)
+        input_layout.addWidget(self.show_hits)
+
+        mode_layout.addWidget(input_group)
 
         # --- Side Selection ---
         side_group = QGroupBox("Select Side")
@@ -85,16 +97,36 @@ class MainWindow(QMainWindow):
         self.side1_checkbox.stateChanged.connect(self.update_display)
         side_layout.addWidget(self.side1_checkbox)
 
-        control_layout.addWidget(side_group)
+        mode_layout.addWidget(side_group)
+
+        # === Pick Mode Selection Area ===
+        pick_mode_group = QGroupBox("Pick Mode")
+        pick_mode_layout = QVBoxLayout()
+        pick_mode_group.setLayout(pick_mode_layout)
+
+        # Radio Button for Viewing Point Info
+        self.radio_view_info = QRadioButton("View Point Info")
+        self.radio_view_info.setChecked(True)  # Default selection
+        self.radio_view_info.toggled.connect(self.on_pick_mode_changed)
+        pick_mode_layout.addWidget(self.radio_view_info)
+
+        # Radio Button for Picking Points for Helix Fitting
+        self.radio_pick_helix = QRadioButton("Pick for Helix Fitting")
+        self.radio_pick_helix.toggled.connect(self.on_pick_mode_changed)
+        pick_mode_layout.addWidget(self.radio_pick_helix)
+
+        mode_layout.addWidget(pick_mode_group)
+        control_layout.addLayout(mode_layout)
 
         # === Range Selection Area ===
         range_group = QGroupBox("Axis Range Selection")
-        range_layout = QFormLayout()
+        # range_layout = QFormLayout()
+        range_layout = QHBoxLayout()
         range_group.setLayout(range_layout)
 
-        slider_width = 300
-        label_width = 80
-        spinbox_width = 60
+        slider_width = 200
+        label_width = 30
+        spinbox_width = 50
 
         # Define overall ranges for each axis
         overall_ranges = {"X": (-150, 150), "Y": (-150, 150), "Z": (-400, 400)}
@@ -103,9 +135,9 @@ class MainWindow(QMainWindow):
         def create_axis_controls(
             axis_label, initial_min, initial_max, overall_min, overall_max
         ):
-            label = QLabel(f"{axis_label} Range:")
+            label = QLabel(f"{axis_label}")
             label.setFixedWidth(label_width)
-
+            # label.setAlignment(Qt.AlignCenter)
             min_spin = QDoubleSpinBox()
             min_spin.setRange(overall_min, overall_max)
             min_spin.setDecimals(0)
@@ -160,9 +192,40 @@ class MainWindow(QMainWindow):
                 self.update_display()
 
             slider.valueChanged.connect(on_slider_change)
+            hbox = QHBoxLayout()
+            hbox.addWidget(label)
+            hbox.addWidget(min_spin)
+            hbox.addWidget(max_spin)
+            hbox.addWidget(slider)
+            container = QWidget()
+            container.setLayout(hbox)
 
-            return label, min_spin, max_spin, slider
+            # Assign the slider to the corresponding instance attribute
+            if axis_label == "X":
+                self.x_range_slider = slider
+            elif axis_label == "Y":
+                self.y_range_slider = slider
+            elif axis_label == "Z":
+                self.z_range_slider = slider
 
+            return container
+            # return label, min_spin, max_spin, slider
+
+        """
+        x_axis_container = create_axis_controls(
+            "X", -100, 100, overall_ranges["X"][0], overall_ranges["X"][1]
+        )
+        y_axis_container = create_axis_controls(
+            "Y", -100, 100, overall_ranges["Y"][0], overall_ranges["Y"][1]
+        )
+        z_axis_container = create_axis_controls(
+            "Z", -400, 400, overall_ranges["Z"][0], overall_ranges["Z"][1]
+        )
+        range_layout.addWidget(x_axis_container)
+        range_layout.addWidget(y_axis_container)
+        range_layout.addWidget(z_axis_container)
+        """
+        """
         # X Axis
         x_initial_min, x_initial_max = -100, 100
         x_label, self.x_min_spin, self.x_max_spin, self.x_range_slider = (
@@ -178,7 +241,8 @@ class MainWindow(QMainWindow):
         x_hbox.addWidget(self.x_min_spin)
         x_hbox.addWidget(self.x_max_spin)
         x_hbox.addWidget(self.x_range_slider)
-        range_layout.addRow(x_label, x_hbox)
+        range_layout.addLayout(x_label)
+        range_layout.addLayout(x_hbox)
 
         # Y Axis
         y_initial_min, y_initial_max = -100, 100
@@ -195,7 +259,8 @@ class MainWindow(QMainWindow):
         y_hbox.addWidget(self.y_min_spin)
         y_hbox.addWidget(self.y_max_spin)
         y_hbox.addWidget(self.y_range_slider)
-        range_layout.addRow(y_label, y_hbox)
+        range_layout.addLayout(y_label)
+        range_layout.addLayout(y_hbox)
 
         # Z Axis
         z_initial_min, z_initial_max = -400, 400
@@ -212,8 +277,22 @@ class MainWindow(QMainWindow):
         z_hbox.addWidget(self.z_min_spin)
         z_hbox.addWidget(self.z_max_spin)
         z_hbox.addWidget(self.z_range_slider)
-        range_layout.addRow(z_label, z_hbox)
-
+        range_layout.addLayout(z_label)
+        range_layout.addLayout(z_hbox)
+        """
+        # Create and add axis controls horizontally
+        x_axis_widget = create_axis_controls(
+            "X", -100, 100, overall_ranges["X"][0], overall_ranges["X"][1]
+        )
+        y_axis_widget = create_axis_controls(
+            "Y", -100, 100, overall_ranges["Y"][0], overall_ranges["Y"][1]
+        )
+        z_axis_widget = create_axis_controls(
+            "Z", -400, 400, overall_ranges["Z"][0], overall_ranges["Z"][1]
+        )
+        range_layout.addWidget(x_axis_widget)
+        range_layout.addWidget(y_axis_widget)
+        range_layout.addWidget(z_axis_widget)
         control_layout.addWidget(range_group)
 
         # === Helix Fitting Controls ===
@@ -232,6 +311,9 @@ class MainWindow(QMainWindow):
         helix_layout.addWidget(self.btn_reset_helix)
 
         control_layout.addWidget(helix_group)
+
+        # === Clear Helix Selection Button (Optional) ===
+        # You can add more buttons if needed for enhanced functionality
 
         left_layout.addWidget(control_area)
 
@@ -268,74 +350,223 @@ class MainWindow(QMainWindow):
         self.cluster_polydata = None
         self.hit_polydata = None
 
-        self.selected_points = []  # Store 3 picked points
+        self.selected_points = []  # Store 3 picked points for helix fitting
         self.helix_tube = None  # Store the helix tube (for visualization)
 
         # Show axes
         self.plotter_widget.show_axes()
 
-    def load_data(self):
+        # Enable initial point picking for info mode
+        self.update_point_picking()
 
+    # --- New Method to Handle Mode Changes ---
+    def on_pick_mode_changed(self):
+        """Handle changes in the pick mode based on radio button selection."""
+        if self.radio_view_info.isChecked():
+            self.pick_mode = "info"
+            # Optionally, clear any existing helix selections
+            self.selected_points.clear()
+            self.helix_tube = None
+            self.update_display()
+        elif self.radio_pick_helix.isChecked():
+            self.pick_mode = "helix"
+            # Optionally, clear any existing helix selections
+            self.selected_points.clear()
+            self.helix_tube = None
+            self.update_display()
+
+        # Update the point picking callback based on the mode
+        self.update_point_picking()
+
+    def update_point_picking(self):
+        """Update the point picking callback based on the current mode."""
+        # Disable and re-enable picking to ensure a fresh start
+        self.plotter_widget.disable_picking()
+
+        if self.pick_mode == "info":
+            # Enable point picking for viewing info
+            self.plotter_widget.enable_point_picking(
+                callback=self.on_point_picked_info, show_message=True, use_picker=True
+            )
+        elif self.pick_mode == "helix":
+            # Enable point picking for helix fitting
+            self.plotter_widget.enable_point_picking(
+                callback=self.on_point_picked_helix, show_message=True, use_picker=True
+            )
+
+        # Restore the camera position
+        # Note: If camera_position needs to be preserved, store and restore it here
+        # Example:
+        # camera_position = self.plotter_widget.camera_position
+        # self.plotter_widget.camera_position = camera_position
+
+    # --- New Callback Methods ---
+
+    def on_point_picked_info(self, picked_point, picker):
+        """
+        Callback function for viewing point information.
+        Displays info without affecting helix fitting.
+        """
+        # Extract the point ID from the picker
+        point_id = picker.GetPointId()
+
+        # Extract the mesh (dataset) from the picker
+        mesh = picker.GetDataSet()
+
+        # Validate the picked point
+        if point_id < 0:
+            return  # No valid point was picked
+
+        if mesh is None:
+            return  # No mesh was picked
+
+        # Ensure 'data_type' exists in the mesh's point data
+        if "data_type" not in mesh.point_data:
+            return  # Ignore picking on meshes without 'data_type'
+
+        # Retrieve the data_type for the picked point
+        data_type = mesh.point_data["data_type"][point_id]
+        label = "Cluster" if data_type == 0 else "Hit"
+
+        # Display information about the picked point
+        info_text = f"{label} (Point ID: {point_id})\n"
+        for attr in mesh.point_data.keys():
+            value = mesh.point_data[attr][point_id]
+            info_text += f"{attr}: {value}\n"
+
+        self.info_panel.setText(info_text)
+
+    def on_point_picked_helix(self, picked_point, picker):
+        """
+        Callback function for picking points for helix fitting.
+        Stores selected points and displays info.
+        """
+        # Extract the point ID from the picker
+        point_id = picker.GetPointId()
+
+        # Extract the mesh (dataset) from the picker
+        mesh = picker.GetDataSet()
+
+        # Validate the picked point
+        if point_id < 0:
+            return  # No valid point was picked
+
+        if mesh is None:
+            return  # No mesh was picked
+
+        # Ensure 'data_type' exists in the mesh's point data
+        if "data_type" not in mesh.point_data:
+            return  # Ignore picking on meshes without 'data_type'
+
+        # Retrieve the data_type for the picked point
+        data_type = mesh.point_data["data_type"][point_id]
+        label = "Cluster" if data_type == 0 else "Hit"
+
+        # Display information about the picked point
+        info_text = f"{label} (Point ID: {point_id})\n"
+        for attr in mesh.point_data.keys():
+            value = mesh.point_data[attr][point_id]
+            info_text += f"{attr}: {value}\n"
+
+        self.info_panel.setText(info_text)
+
+        # Store the picked point for helix fitting
+        # mesh.points is a numpy array containing the coordinates
+        picked_coordinates = mesh.points[point_id]
+        self.selected_points.append(picked_coordinates)
+
+        # Optionally, provide visual feedback by highlighting the selected point
+        # For example, change its color or add a marker (without using spheres)
+
+        # Inform the user if three points have been selected
+        if len(self.selected_points) == 3:
+            QMessageBox.information(
+                self,
+                "Helix Fit",
+                "Three points selected. Click 'Fit Helix' to proceed.",
+            )
+
+    def load_data(self):
+        """
+        Load data from a ROOT file, process it, and display it in the 3D view.
+        """
         filename, _ = QFileDialog.getOpenFileName(
             self, "Open ROOT File", "", "ROOT files (*.root)"
         )
         if not filename:
-            return
+            return  # User canceled the file dialog
 
         try:
-
+            # Open the ROOT file using uproot
             file = uproot.open(filename)
 
+            # Load cluster data from 'combined_clusters' tree
             cluster_tree = file["combined_clusters"]
             cluster_data = cluster_tree.arrays(library="np")
 
+            # Validate the presence of 'side' branch
             if "side" not in cluster_data:
                 raise ValueError("The 'side' branch is missing in the cluster data.")
 
+            # Extract cluster coordinates
             cx = cluster_data["gx"]
             cy = cluster_data["gy"]
             cz = cluster_data["gz"]
             cpoints = np.column_stack([cx, cy, cz])
+
+            # Create PolyData for clusters
             cluster_polydata = pv.PolyData(cpoints)
             for name in cluster_data.keys():
                 if name not in ("gx", "gy", "gz"):
                     cluster_polydata.point_data[name] = cluster_data[name]
 
+            # Add a 'data_type' attribute to distinguish clusters
             cluster_polydata.point_data["data_type"] = np.zeros(
                 cluster_polydata.n_points, dtype=int
             )
             self.cluster_data = cluster_polydata
 
-            # Load hits tree
+            # Load hit data from 'combined_hits' tree
             hits_tree = file["combined_hits"]
             hits_data = hits_tree.arrays(library="np")
 
-            # Ensure 'side' branch exists
+            # Validate the presence of 'side' branch
             if "side" not in hits_data:
                 raise ValueError("The 'side' branch is missing in the hit data.")
 
+            # Extract hit coordinates
             hx = hits_data["gx"]
             hy = hits_data["gy"]
             hz = hits_data["gz"]
             hpoints = np.column_stack([hx, hy, hz])
+
+            # Create PolyData for hits
             hit_polydata = pv.PolyData(hpoints)
 
-            # Add other attributes
+            # Add other hit attributes
             for name in hits_data.keys():
                 if name not in ("gx", "gy", "gz"):
                     hit_polydata.point_data[name] = hits_data[name]
 
-            # Add a dataset type attribute (1 for hits)
+            # Add a 'data_type' attribute to distinguish hits
             hit_polydata.point_data["data_type"] = np.ones(
                 hit_polydata.n_points, dtype=int
             )
             self.hit_data = hit_polydata
+
+            # Update the visualization with the loaded data
             self.update_display()
 
         except Exception as e:
-            self.info_panel.setText(f"Error loading file:\n{e}")
+            # Display any errors that occur during loading
+            QMessageBox.critical(
+                self, "Load Error", f"An error occurred while loading the file:\n{e}"
+            )
 
     def update_display(self):
+        """
+        Update the 3D visualization based on loaded data and current settings.
+        """
         # Save current camera position
         camera_position = self.plotter_widget.camera_position
         # Clear the current plotter
@@ -362,11 +593,6 @@ class MainWindow(QMainWindow):
             # Optionally, you can decide to show nothing or all sides
             # Here, we'll show nothing
             selected_sides = []
-
-        # Keep track of polydata items added to the scene
-        # so we know which is which when picking
-        self.cluster_polydata = None
-        self.hit_polydata = None
 
         # --- Clusters ---
         if (
@@ -404,7 +630,6 @@ class MainWindow(QMainWindow):
                 # Add cluster points in one color, e.g., red
                 self.plotter_widget.add_mesh(
                     self.cluster_polydata,
-                    # render_points_as_spheres=True,
                     style="points",
                     point_size=5,
                     color="red",
@@ -457,69 +682,12 @@ class MainWindow(QMainWindow):
             )
         # Disable and re-enable picking to ensure a fresh start
         self.plotter_widget.disable_picking()
-        # Still using use_mesh=True for now
-        self.plotter_widget.enable_point_picking(
-            callback=self.on_point_picked, show_message=True, use_picker=True
-        )
+        # Enable point picking based on current mode
+        self.update_point_picking()
         # Restore the previously saved camera position
         self.plotter_widget.camera_position = camera_position
 
         self.plotter_widget.show_axes()
-
-    def on_point_picked(self, picked_point, picker):
-        """
-        Callback function triggered when a point is picked.
-
-        Parameters:
-        - picked_point: The coordinates of the picked point.
-        - picker: The vtkPointPicker object containing information about the pick.
-        """
-        # Extract the point ID from the picker
-        point_id = picker.GetPointId()
-
-        # Extract the mesh (dataset) from the picker
-        mesh = picker.GetDataSet()
-
-        # Validate the picked point
-        if point_id < 0:
-            return  # No valid point was picked
-
-        if mesh is None:
-            return  # No mesh was picked
-
-        # Ensure 'data_type' exists in the mesh's point data
-        if "data_type" not in mesh.point_data:
-            return  # Ignore picking on meshes without 'data_type'
-
-        # Retrieve the data_type for the picked point
-        data_type = mesh.point_data["data_type"][point_id]
-        label = "Cluster" if data_type == 0 else "Hit"
-
-        # Display information about the picked point
-        info_text = f"{label} (Point ID: {point_id})\n"
-        for attr in mesh.point_data.keys():
-            value = mesh.point_data[attr][point_id]
-            info_text += f"{attr}: {value}\n"
-
-        self.info_panel.setText(info_text)
-
-        # Store the picked point for helix fitting
-        # Ensure that 'points' is accessible; if mesh is a PolyData, use mesh.points
-        if isinstance(mesh, pv.PolyData) or isinstance(mesh, pv.UnstructuredGrid):
-            picked_coordinates = mesh.points[point_id]
-        else:
-            # If mesh is another type, adjust accordingly
-            picked_coordinates = np.array(picked_point)
-
-        self.selected_points.append(picked_coordinates)
-
-        # Inform the user if three points have been selected
-        if len(self.selected_points) == 3:
-            QMessageBox.information(
-                self,
-                "Helix Fit",
-                "Three points selected. Click 'Fit Helix' to proceed.",
-            )
 
     def initiate_helix_fit(self):
         """Triggered when the user clicks the 'Fit Helix' button."""
@@ -542,9 +710,9 @@ class MainWindow(QMainWindow):
                 self.plotter_widget.add_mesh(
                     self.helix_tube, color="green", opacity=0.5, pickable=False
                 )
-                QMessageBox.information(
-                    self, "Helix Fit", "Helix fitted and displayed successfully."
-                )
+                # QMessageBox.information(
+                #    self, "Helix Fit", "Helix fitted and displayed successfully."
+                # )
             else:
                 QMessageBox.warning(
                     self, "Helix Fit", "Failed to create helix visualization."
