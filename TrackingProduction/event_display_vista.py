@@ -17,13 +17,14 @@ from qtpy.QtWidgets import (
     QSplitter,
     QFrame,
     QFormLayout,
-    QGroupBox,  
+    QGroupBox,
     QDoubleSpinBox,
-    QMessageBox
+    QMessageBox,
 )
 from qtpy.QtCore import Qt
 from superqt import QRangeSlider
 from scipy.spatial import cKDTree
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -94,7 +95,7 @@ class MainWindow(QMainWindow):
         slider_width = 300
         label_width = 80
         spinbox_width = 60
-        
+
         # Define overall ranges for each axis
         overall_ranges = {"X": (-150, 150), "Y": (-150, 150), "Z": (-400, 400)}
 
@@ -116,7 +117,7 @@ class MainWindow(QMainWindow):
             max_spin.setDecimals(0)
             max_spin.setValue(initial_max)
             max_spin.setFixedWidth(spinbox_width)
-        
+
             slider = QRangeSlider(Qt.Horizontal)
             slider.setMinimum(overall_min)
             slider.setMaximum(overall_max)
@@ -133,6 +134,7 @@ class MainWindow(QMainWindow):
                     value = current_max
                 slider.setValue([value, current_max])  # Only update handle positions
                 self.update_display()
+
             def on_max_spin_change(value):
                 current_min = slider.value()[0]
                 if value < current_min:
@@ -142,8 +144,10 @@ class MainWindow(QMainWindow):
                     value = current_min
                 slider.setValue([current_min, value])  # Only update handle positions
                 self.update_display()
+
             min_spin.valueChanged.connect(on_min_spin_change)
             max_spin.valueChanged.connect(on_max_spin_change)
+
             # Connect slider to spin boxes
             def on_slider_change(values):
                 min_val, max_val = values
@@ -158,30 +162,34 @@ class MainWindow(QMainWindow):
             slider.valueChanged.connect(on_slider_change)
 
             return label, min_spin, max_spin, slider
-        
+
         # X Axis
         x_initial_min, x_initial_max = -100, 100
-        x_label, self.x_min_spin, self.x_max_spin, self.x_range_slider = create_axis_controls(
-            "X",
-            x_initial_min,
-            x_initial_max,
-            overall_ranges["X"][0],
-            overall_ranges["X"][1],
+        x_label, self.x_min_spin, self.x_max_spin, self.x_range_slider = (
+            create_axis_controls(
+                "X",
+                x_initial_min,
+                x_initial_max,
+                overall_ranges["X"][0],
+                overall_ranges["X"][1],
+            )
         )
         x_hbox = QHBoxLayout()
         x_hbox.addWidget(self.x_min_spin)
         x_hbox.addWidget(self.x_max_spin)
         x_hbox.addWidget(self.x_range_slider)
         range_layout.addRow(x_label, x_hbox)
-        
+
         # Y Axis
         y_initial_min, y_initial_max = -100, 100
-        y_label, self.y_min_spin, self.y_max_spin, self.y_range_slider = create_axis_controls(
-            "Y",
-            y_initial_min,
-            y_initial_max,
-            overall_ranges["Y"][0],
-            overall_ranges["Y"][1],
+        y_label, self.y_min_spin, self.y_max_spin, self.y_range_slider = (
+            create_axis_controls(
+                "Y",
+                y_initial_min,
+                y_initial_max,
+                overall_ranges["Y"][0],
+                overall_ranges["Y"][1],
+            )
         )
         y_hbox = QHBoxLayout()
         y_hbox.addWidget(self.y_min_spin)
@@ -191,12 +199,14 @@ class MainWindow(QMainWindow):
 
         # Z Axis
         z_initial_min, z_initial_max = -400, 400
-        z_label, self.z_min_spin, self.z_max_spin, self.z_range_slider = create_axis_controls(
-            "Z",
-            z_initial_min,
-            z_initial_max,
-            overall_ranges["Z"][0],
-            overall_ranges["Z"][1],
+        z_label, self.z_min_spin, self.z_max_spin, self.z_range_slider = (
+            create_axis_controls(
+                "Z",
+                z_initial_min,
+                z_initial_max,
+                overall_ranges["Z"][0],
+                overall_ranges["Z"][1],
+            )
         )
         z_hbox = QHBoxLayout()
         z_hbox.addWidget(self.z_min_spin)
@@ -205,7 +215,7 @@ class MainWindow(QMainWindow):
         range_layout.addRow(z_label, z_hbox)
 
         control_layout.addWidget(range_group)
-        
+
         # === Helix Fitting Controls ===
         helix_group = QGroupBox("Helix Fitting")
         helix_layout = QHBoxLayout()
@@ -222,7 +232,6 @@ class MainWindow(QMainWindow):
         helix_layout.addWidget(self.btn_reset_helix)
 
         control_layout.addWidget(helix_group)
-        
 
         left_layout.addWidget(control_area)
 
@@ -258,15 +267,15 @@ class MainWindow(QMainWindow):
         self.hit_data = None
         self.cluster_polydata = None
         self.hit_polydata = None
-        
+
         self.selected_points = []  # Store 3 picked points
-        self.helix_tube = None     # Store the helix tube (for visualization)
+        self.helix_tube = None  # Store the helix tube (for visualization)
 
         # Show axes
         self.plotter_widget.show_axes()
 
     def load_data(self):
-        
+
         filename, _ = QFileDialog.getOpenFileName(
             self, "Open ROOT File", "", "ROOT files (*.root)"
         )
@@ -274,17 +283,15 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            
+
             file = uproot.open(filename)
-            
+
             cluster_tree = file["combined_clusters"]
             cluster_data = cluster_tree.arrays(library="np")
 
-            
             if "side" not in cluster_data:
                 raise ValueError("The 'side' branch is missing in the cluster data.")
 
-            
             cx = cluster_data["gx"]
             cy = cluster_data["gy"]
             cz = cluster_data["gz"]
@@ -439,71 +446,88 @@ class MainWindow(QMainWindow):
                     point_size=5,
                     color="blue",
                 )
-                
+
         # If a helix tube is already generated, re-add it (ensure it's not pickable)
         if self.helix_tube is not None:
             self.plotter_widget.add_mesh(
                 self.helix_tube,
-                color='green',
+                color="green",
                 opacity=0.5,
-                pickable=False  # Prevent picking on the helix
+                pickable=False,  # Prevent picking on the helix
             )
         # Disable and re-enable picking to ensure a fresh start
         self.plotter_widget.disable_picking()
         # Still using use_mesh=True for now
         self.plotter_widget.enable_point_picking(
-            callback=self.on_point_picked, show_message=True, use_mesh=True
+            callback=self.on_point_picked, show_message=True, use_picker=True
         )
         # Restore the previously saved camera position
         self.plotter_widget.camera_position = camera_position
 
         self.plotter_widget.show_axes()
 
-    
+    def on_point_picked(self, picked_point, picker):
+        """
+        Callback function triggered when a point is picked.
 
-    def on_point_picked(self, mesh, point_id):
+        Parameters:
+        - picked_point: The coordinates of the picked point.
+        - picker: The vtkPointPicker object containing information about the pick.
+        """
+        # Extract the point ID from the picker
+        point_id = picker.GetPointId()
 
+        # Extract the mesh (dataset) from the picker
+        mesh = picker.GetDataSet()
+
+        # Validate the picked point
         if point_id < 0:
-            return
-        # picked_point = mesh.points[point_id]
-        if 'data_type' not in mesh.point_data:
+            return  # No valid point was picked
+
+        if mesh is None:
+            return  # No mesh was picked
+
+        # Ensure 'data_type' exists in the mesh's point data
+        if "data_type" not in mesh.point_data:
             return  # Ignore picking on meshes without 'data_type'
+
+        # Retrieve the data_type for the picked point
         data_type = mesh.point_data["data_type"][point_id]
-        # picked_data = None
-        # pick_idx = None
-        # label = ""
         label = "Cluster" if data_type == 0 else "Hit"
 
-        # Display info
+        # Display information about the picked point
         info_text = f"{label} (Point ID: {point_id})\n"
         for attr in mesh.point_data.keys():
             value = mesh.point_data[attr][point_id]
             info_text += f"{attr}: {value}\n"
 
         self.info_panel.setText(info_text)
-        
-        # Store this point for helix fitting
-        picked_point = mesh.points[point_id]
-        self.selected_points.append(picked_point)
 
-        # Add a smaller sphere to mark the selected point
-        sphere = pv.Sphere(radius=0.3, center=picked_point)  # Reduced radius
-        self.plotter_widget.add_mesh(sphere, color='yellow', opacity=0.8)
+        # Store the picked point for helix fitting
+        # Ensure that 'points' is accessible; if mesh is a PolyData, use mesh.points
+        if isinstance(mesh, pv.PolyData) or isinstance(mesh, pv.UnstructuredGrid):
+            picked_coordinates = mesh.points[point_id]
+        else:
+            # If mesh is another type, adjust accordingly
+            picked_coordinates = np.array(picked_point)
 
-        # If three points are selected, inform the user
+        self.selected_points.append(picked_coordinates)
+
+        # Inform the user if three points have been selected
         if len(self.selected_points) == 3:
             QMessageBox.information(
-                self, "Helix Fit",
-                "Three points selected. Click 'Fit Helix' to proceed."
+                self,
+                "Helix Fit",
+                "Three points selected. Click 'Fit Helix' to proceed.",
             )
-
 
     def initiate_helix_fit(self):
         """Triggered when the user clicks the 'Fit Helix' button."""
         if len(self.selected_points) != 3:
             QMessageBox.warning(
-                self, "Helix Fit",
-                "Please select exactly three points before fitting a helix."
+                self,
+                "Helix Fit",
+                "Please select exactly three points before fitting a helix.",
             )
             return
 
@@ -516,29 +540,31 @@ class MainWindow(QMainWindow):
             self.helix_tube = self.create_helix_tube(helix_points)
             if self.helix_tube is not None:
                 self.plotter_widget.add_mesh(
-                    self.helix_tube, color='green', opacity=0.5, pickable=False
+                    self.helix_tube, color="green", opacity=0.5, pickable=False
                 )
                 QMessageBox.information(
-                    self, "Helix Fit",
-                    "Helix fitted and displayed successfully."
+                    self, "Helix Fit", "Helix fitted and displayed successfully."
                 )
             else:
-                QMessageBox.warning(self, "Helix Fit", "Failed to create helix visualization.")
+                QMessageBox.warning(
+                    self, "Helix Fit", "Failed to create helix visualization."
+                )
 
         # Clear selected points for next usage
         self.selected_points.clear()
         self.update_display()
-        
+
     def reset_helix(self):
         """Clears the fitted helix and resets the selection."""
         self.helix_tube = None
         self.selected_points.clear()
         self.update_display()
         QMessageBox.information(
-            self, "Helix Reset",
-            "Helix has been reset. You can select new points and fit again."
+            self,
+            "Helix Reset",
+            "Helix has been reset. You can select new points and fit again.",
         )
-        
+
     def fit_helix(self, points):
         """
         Fit a helix to exactly three points.
@@ -572,8 +598,9 @@ class MainWindow(QMainWindow):
         # --- 4. Check if points span multiple turns ---
         if thetas[-1] - thetas[0] > 2 * np.pi:
             QMessageBox.warning(
-                self, "Helix Fit",
-                "Selected points span multiple helical turns. Please select three points within the same turn."
+                self,
+                "Helix Fit",
+                "Selected points span multiple helical turns. Please select three points within the same turn.",
             )
             return None
 
@@ -586,21 +613,21 @@ class MainWindow(QMainWindow):
             return None
 
         pitch = slope * (2 * np.pi)  # pitch for a 2pi rotation
-        t0 = thetas[0]               # phase offset
+        t0 = thetas[0]  # phase offset
         center_z = z0
 
         return [radius, pitch, t0, center_xy[0], center_xy[1], center_z]
-    
+
     def fit_circle_2d(self, p1, p2, p3):
         """
         Fit a circle to three points (2D). Return (center, radius) or (None, None).
         """
         A = 2 * (p2[0] - p1[0])
         B = 2 * (p2[1] - p1[1])
-        C = p2[0]**2 + p2[1]**2 - p1[0]**2 - p1[1]**2
+        C = p2[0] ** 2 + p2[1] ** 2 - p1[0] ** 2 - p1[1] ** 2
         D = 2 * (p3[0] - p1[0])
         E = 2 * (p3[1] - p1[1])
-        F = p3[0]**2 + p3[1]**2 - p1[0]**2 - p1[1]**2
+        F = p3[0] ** 2 + p3[1] ** 2 - p1[0] ** 2 - p1[1] ** 2
 
         det = A * E - B * D
         if abs(det) < 1e-9:
@@ -608,10 +635,9 @@ class MainWindow(QMainWindow):
 
         cx = (C * E - B * F) / det
         cy = (A * F - C * D) / det
-        r = np.sqrt((p1[0] - cx)**2 + (p1[1] - cy)**2)
+        r = np.sqrt((p1[0] - cx) ** 2 + (p1[1] - cy) ** 2)
         return np.array([cx, cy]), r
-    
-    
+
     def generate_helix_points(self, params, num_points=500):
         """
         From helix parameters [r, pitch, t0, cx, cy, cz], generate helix points.
@@ -623,6 +649,7 @@ class MainWindow(QMainWindow):
         y = cy + r * np.sin(t)
         z = cz + (pitch / (2 * np.pi)) * t
         return np.column_stack((x, y, z))
+
     def create_helix_tube(self, helix_points, tube_radius=0.1):
         """
         Create a tubular mesh around the helix points for visualization.
@@ -632,7 +659,9 @@ class MainWindow(QMainWindow):
 
         helix_poly = pv.PolyData(helix_points)
         # Create a single polyline connecting all points
-        lines = np.hstack(([helix_points.shape[0]], np.arange(helix_points.shape[0]))).astype(np.int64)
+        lines = np.hstack(
+            ([helix_points.shape[0]], np.arange(helix_points.shape[0]))
+        ).astype(np.int64)
         helix_poly.lines = lines
         try:
             tube = helix_poly.tube(radius=tube_radius)
@@ -642,6 +671,7 @@ class MainWindow(QMainWindow):
             return None
 
     # --------------------------- END HELIX FITTING FUNCTIONS ---------------------------
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
