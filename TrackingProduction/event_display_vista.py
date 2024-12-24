@@ -533,7 +533,7 @@ class MainWindow(QMainWindow):
             selected_sides = []
 
         # Define tube radius (should match the helix tube radius)
-        tube_radius = 0.1  # Adjust as needed
+        tube_radius = 0.5  # Adjust as needed
 
         # Determine whether to apply tube filtering based on the toggle
         apply_tube_filter = False
@@ -799,7 +799,7 @@ class MainWindow(QMainWindow):
         z = cz + (pitch / (2 * np.pi)) * t
         return np.column_stack((x, y, z))
 
-    def create_helix_tube(self, helix_points, tube_radius=0.1):
+    def create_helix_tube(self, helix_points, tube_radius=0.5):
         """
         Create a tubular mesh around the helix points for visualization.
         """
