@@ -120,7 +120,6 @@ class MainWindow(QMainWindow):
 
         # === Range Selection Area ===
         range_group = QGroupBox("Axis Range Selection")
-        # range_layout = QFormLayout()
         range_layout = QHBoxLayout()
         range_group.setLayout(range_layout)
 
@@ -137,7 +136,6 @@ class MainWindow(QMainWindow):
         ):
             label = QLabel(f"{axis_label}")
             label.setFixedWidth(label_width)
-            # label.setAlignment(Qt.AlignCenter)
             min_spin = QDoubleSpinBox()
             min_spin.setRange(overall_min, overall_max)
             min_spin.setDecimals(0)
@@ -209,77 +207,7 @@ class MainWindow(QMainWindow):
                 self.z_range_slider = slider
 
             return container
-            # return label, min_spin, max_spin, slider
 
-        """
-        x_axis_container = create_axis_controls(
-            "X", -100, 100, overall_ranges["X"][0], overall_ranges["X"][1]
-        )
-        y_axis_container = create_axis_controls(
-            "Y", -100, 100, overall_ranges["Y"][0], overall_ranges["Y"][1]
-        )
-        z_axis_container = create_axis_controls(
-            "Z", -400, 400, overall_ranges["Z"][0], overall_ranges["Z"][1]
-        )
-        range_layout.addWidget(x_axis_container)
-        range_layout.addWidget(y_axis_container)
-        range_layout.addWidget(z_axis_container)
-        """
-        """
-        # X Axis
-        x_initial_min, x_initial_max = -100, 100
-        x_label, self.x_min_spin, self.x_max_spin, self.x_range_slider = (
-            create_axis_controls(
-                "X",
-                x_initial_min,
-                x_initial_max,
-                overall_ranges["X"][0],
-                overall_ranges["X"][1],
-            )
-        )
-        x_hbox = QHBoxLayout()
-        x_hbox.addWidget(self.x_min_spin)
-        x_hbox.addWidget(self.x_max_spin)
-        x_hbox.addWidget(self.x_range_slider)
-        range_layout.addLayout(x_label)
-        range_layout.addLayout(x_hbox)
-
-        # Y Axis
-        y_initial_min, y_initial_max = -100, 100
-        y_label, self.y_min_spin, self.y_max_spin, self.y_range_slider = (
-            create_axis_controls(
-                "Y",
-                y_initial_min,
-                y_initial_max,
-                overall_ranges["Y"][0],
-                overall_ranges["Y"][1],
-            )
-        )
-        y_hbox = QHBoxLayout()
-        y_hbox.addWidget(self.y_min_spin)
-        y_hbox.addWidget(self.y_max_spin)
-        y_hbox.addWidget(self.y_range_slider)
-        range_layout.addLayout(y_label)
-        range_layout.addLayout(y_hbox)
-
-        # Z Axis
-        z_initial_min, z_initial_max = -400, 400
-        z_label, self.z_min_spin, self.z_max_spin, self.z_range_slider = (
-            create_axis_controls(
-                "Z",
-                z_initial_min,
-                z_initial_max,
-                overall_ranges["Z"][0],
-                overall_ranges["Z"][1],
-            )
-        )
-        z_hbox = QHBoxLayout()
-        z_hbox.addWidget(self.z_min_spin)
-        z_hbox.addWidget(self.z_max_spin)
-        z_hbox.addWidget(self.z_range_slider)
-        range_layout.addLayout(z_label)
-        range_layout.addLayout(z_hbox)
-        """
         # Create and add axis controls horizontally
         x_axis_widget = create_axis_controls(
             "X", -100, 100, overall_ranges["X"][0], overall_ranges["X"][1]
@@ -309,6 +237,12 @@ class MainWindow(QMainWindow):
         self.btn_reset_helix = QPushButton("Reset Helix")
         self.btn_reset_helix.clicked.connect(self.reset_helix)
         helix_layout.addWidget(self.btn_reset_helix)
+
+        # --- New Toggle Checkbox ---
+        self.toggle_filter_checkbox = QCheckBox("Show Points Outside Tube")
+        self.toggle_filter_checkbox.setChecked(True)  # Default to showing all points
+        self.toggle_filter_checkbox.stateChanged.connect(self.update_display)
+        helix_layout.addWidget(self.toggle_filter_checkbox)
 
         control_layout.addWidget(helix_group)
 
@@ -352,6 +286,7 @@ class MainWindow(QMainWindow):
 
         self.selected_points = []  # Store 3 picked points for helix fitting
         self.helix_tube = None  # Store the helix tube (for visualization)
+        self.helix_points = None  # Store helix points for distance calculations
 
         # Show axes
         self.plotter_widget.show_axes()
@@ -367,12 +302,14 @@ class MainWindow(QMainWindow):
             # Optionally, clear any existing helix selections
             self.selected_points.clear()
             self.helix_tube = None
+            self.helix_points = None  # Clear helix points
             self.update_display()
         elif self.radio_pick_helix.isChecked():
             self.pick_mode = "helix"
             # Optionally, clear any existing helix selections
             self.selected_points.clear()
             self.helix_tube = None
+            self.helix_points = None  # Clear helix points
             self.update_display()
 
         # Update the point picking callback based on the mode
@@ -566,6 +503,7 @@ class MainWindow(QMainWindow):
     def update_display(self):
         """
         Update the 3D visualization based on loaded data and current settings.
+        Includes optional filtering based on helix tube.
         """
         # Save current camera position
         camera_position = self.plotter_widget.camera_position
@@ -593,6 +531,15 @@ class MainWindow(QMainWindow):
             # Optionally, you can decide to show nothing or all sides
             # Here, we'll show nothing
             selected_sides = []
+
+        # Define tube radius (should match the helix tube radius)
+        tube_radius = 0.1  # Adjust as needed
+
+        # Determine whether to apply tube filtering based on the toggle
+        apply_tube_filter = False
+        if self.helix_tube is not None and not self.toggle_filter_checkbox.isChecked():
+            # If helix is present and the user does not want to show points outside the tube
+            apply_tube_filter = True
 
         # --- Clusters ---
         if (
@@ -622,6 +569,21 @@ class MainWindow(QMainWindow):
             # Extract filtered points
             filtered_indices = np.where(mask)[0]
             filtered_points = self.cluster_data.extract_points(filtered_indices)
+
+            # Apply helix tube filtering if required
+            if apply_tube_filter and self.helix_points is not None:
+                # Build KDTree from helix points
+                helix_tree = cKDTree(self.helix_points)
+
+                # Query the nearest distance for each point
+                distances, _ = helix_tree.query(filtered_points.points, k=1)
+
+                # Create a mask for points within the tube radius
+                distance_mask = distances <= tube_radius
+
+                # Apply the distance mask
+                filtered_indices = filtered_indices[distance_mask]
+                filtered_points = self.cluster_data.extract_points(filtered_indices)
 
             if (
                 filtered_points.n_points > 0
@@ -659,6 +621,21 @@ class MainWindow(QMainWindow):
             # Extract filtered points
             filtered_indices = np.where(mask)[0]
             filtered_points = self.hit_data.extract_points(filtered_indices)
+
+            # Apply helix tube filtering if required
+            if apply_tube_filter and self.helix_points is not None:
+                # Build KDTree from helix points
+                helix_tree = cKDTree(self.helix_points)
+
+                # Query the nearest distance for each point
+                distances, _ = helix_tree.query(filtered_points.points, k=1)
+
+                # Create a mask for points within the tube radius
+                distance_mask = distances <= tube_radius
+
+                # Apply the distance mask
+                filtered_indices = filtered_indices[distance_mask]
+                filtered_points = self.hit_data.extract_points(filtered_indices)
 
             if (
                 filtered_points.n_points > 0
@@ -705,6 +682,9 @@ class MainWindow(QMainWindow):
         else:
             # Generate helix points and create a tube
             helix_points = self.generate_helix_points(helix_params)
+            self.helix_points = (
+                helix_points  # Store helix points for distance calculations
+            )
             self.helix_tube = self.create_helix_tube(helix_points)
             if self.helix_tube is not None:
                 self.plotter_widget.add_mesh(
@@ -725,6 +705,7 @@ class MainWindow(QMainWindow):
     def reset_helix(self):
         """Clears the fitted helix and resets the selection."""
         self.helix_tube = None
+        self.helix_points = None  # Clear helix points
         self.selected_points.clear()
         self.update_display()
         QMessageBox.information(
