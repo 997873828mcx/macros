@@ -16,22 +16,25 @@ from qtpy.QtWidgets import (
     QLabel,
     QSplitter,
     QFrame,
-    QFormLayout,
     QGroupBox,
     QDoubleSpinBox,
     QMessageBox,
     QRadioButton,
 )
-from qtpy.QtCore import Qt, QTimer
+from qtpy.QtCore import Qt
 from superqt import QRangeSlider
 from scipy.spatial import cKDTree
+from scipy.optimize import least_squares
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Event Display")
-        self.resize(1400, 800)
+        self.resize(1600, 900)  # Increased size for better visibility
+
+        # Initialize fitting step (1: initial fitting, 2: direct fitting)
+        self.fitting_step = 1
 
         # Initialize pick mode
         self.pick_mode = "info"  # Default mode
@@ -42,7 +45,7 @@ class MainWindow(QMainWindow):
 
         # Horizontal layout for the main interface
         main_layout = QHBoxLayout(main_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setContentsMargins(5, 5, 5, 5)  # Added margins for aesthetics
 
         # Use a QSplitter to allow resizing between the 3D view and the sidebar
         splitter = QSplitter(Qt.Horizontal)
@@ -244,10 +247,13 @@ class MainWindow(QMainWindow):
         self.toggle_filter_checkbox.stateChanged.connect(self.update_display)
         helix_layout.addWidget(self.toggle_filter_checkbox)
 
-        control_layout.addWidget(helix_group)
+        # --- Instruction Label (Optional) ---
+        self.instruction_label = QLabel(
+            "Instruction: Select 3 points for initial helix fitting."
+        )
+        helix_layout.addWidget(self.instruction_label)
 
-        # === Clear Helix Selection Button (Optional) ===
-        # You can add more buttons if needed for enhanced functionality
+        control_layout.addWidget(helix_group)
 
         left_layout.addWidget(control_area)
 
@@ -284,9 +290,16 @@ class MainWindow(QMainWindow):
         self.cluster_polydata = None
         self.hit_polydata = None
 
-        self.selected_points = []  # Store 3 picked points for helix fitting
+        self.selected_points_first = (
+            []
+        )  # Store 3 picked points for initial helix fitting
+        self.selected_points_second = (
+            []
+        )  # Store additional picked points for direct helix fitting
         self.helix_tube = None  # Store the helix tube (for visualization)
         self.helix_points = None  # Store helix points for distance calculations
+        self.helix_params_initial = None  # Store initial helix parameters
+        self.helix_params_refined = None  # Store refined helix parameters
 
         # Show axes
         self.plotter_widget.show_axes()
@@ -294,22 +307,36 @@ class MainWindow(QMainWindow):
         # Enable initial point picking for info mode
         self.update_point_picking()
 
-    # --- New Method to Handle Mode Changes ---
+    # --- Method to Handle Mode Changes ---
     def on_pick_mode_changed(self):
         """Handle changes in the pick mode based on radio button selection."""
         if self.radio_view_info.isChecked():
             self.pick_mode = "info"
             # Optionally, clear any existing helix selections
-            self.selected_points.clear()
+            self.selected_points_first.clear()
+            self.selected_points_second.clear()
             self.helix_tube = None
             self.helix_points = None  # Clear helix points
+            self.helix_params_initial = None
+            self.helix_params_refined = None
+            self.fitting_step = 1  # Reset fitting step
+            self.instruction_label.setText(
+                "Instruction: Select 3 points for initial helix fitting."
+            )
             self.update_display()
         elif self.radio_pick_helix.isChecked():
             self.pick_mode = "helix"
             # Optionally, clear any existing helix selections
-            self.selected_points.clear()
+            self.selected_points_first.clear()
+            self.selected_points_second.clear()
             self.helix_tube = None
             self.helix_points = None  # Clear helix points
+            self.helix_params_initial = None
+            self.helix_params_refined = None
+            self.fitting_step = 1  # Reset fitting step
+            self.instruction_label.setText(
+                "Instruction: Select 3 points for initial helix fitting."
+            )
             self.update_display()
 
         # Update the point picking callback based on the mode
@@ -331,13 +358,7 @@ class MainWindow(QMainWindow):
                 callback=self.on_point_picked_helix, show_message=True, use_picker=True
             )
 
-        # Restore the camera position
-        # Note: If camera_position needs to be preserved, store and restore it here
-        # Example:
-        # camera_position = self.plotter_widget.camera_position
-        # self.plotter_widget.camera_position = camera_position
-
-    # --- New Callback Methods ---
+    # --- Callback Methods ---
 
     def on_point_picked_info(self, picked_point, picker):
         """
@@ -410,18 +431,26 @@ class MainWindow(QMainWindow):
         # Store the picked point for helix fitting
         # mesh.points is a numpy array containing the coordinates
         picked_coordinates = mesh.points[point_id]
-        self.selected_points.append(picked_coordinates)
 
-        # Optionally, provide visual feedback by highlighting the selected point
-        # For example, change its color or add a marker (without using spheres)
-
-        # Inform the user if three points have been selected
-        if len(self.selected_points) == 3:
-            QMessageBox.information(
-                self,
-                "Helix Fit",
-                "Three points selected. Click 'Fit Helix' to proceed.",
+        if self.fitting_step == 1:
+            # First fitting step: store in selected_points_first
+            self.selected_points_first.append(picked_coordinates)
+            self.instruction_label.setText(
+                f"Selected {len(self.selected_points_first)}/3 points for initial helix fitting."
             )
+            if len(self.selected_points_first) == 3:
+                QMessageBox.information(
+                    self,
+                    "Helix Fit",
+                    "Three points selected. Click 'Fit Helix' to perform initial helix fitting.",
+                )
+        elif self.fitting_step == 2:
+            # Second fitting step: store in selected_points_second
+            self.selected_points_second.append(picked_coordinates)
+            self.instruction_label.setText(
+                f"Selected {len(self.selected_points_second)} points for direct helix fitting."
+            )
+            # Optionally, inform user after a certain number of points or let user decide
 
     def load_data(self):
         """
@@ -668,20 +697,34 @@ class MainWindow(QMainWindow):
 
     def initiate_helix_fit(self):
         """Triggered when the user clicks the 'Fit Helix' button."""
-        if len(self.selected_points) != 3:
+        if self.pick_mode != "helix":
             QMessageBox.warning(
                 self,
                 "Helix Fit",
-                "Please select exactly three points before fitting a helix.",
+                "Please switch to 'Pick for Helix Fitting' mode to fit a helix.",
             )
             return
 
-        helix_params = self.fit_helix(self.selected_points)
-        if helix_params is None:
-            QMessageBox.warning(self, "Helix Fit", "Helix fitting failed.")
-        else:
+        if self.fitting_step == 1:
+            # First fitting step: initial helix fit with three points
+            if len(self.selected_points_first) != 3:
+                QMessageBox.warning(
+                    self,
+                    "Helix Fit",
+                    "Please select exactly three points before fitting a helix.",
+                )
+                return
+
+            helix_params_initial = self.fit_helix_initial(self.selected_points_first)
+            if helix_params_initial is None:
+                QMessageBox.warning(self, "Helix Fit", "Initial helix fitting failed.")
+                return
+
+            # Store initial helix parameters
+            self.helix_params_initial = helix_params_initial
+
             # Generate helix points and create a tube
-            helix_points = self.generate_helix_points(helix_params)
+            helix_points = self.generate_helix_points_initial(helix_params_initial)
             self.helix_points = (
                 helix_points  # Store helix points for distance calculations
             )
@@ -690,23 +733,102 @@ class MainWindow(QMainWindow):
                 self.plotter_widget.add_mesh(
                     self.helix_tube, color="green", opacity=0.5, pickable=False
                 )
-                # QMessageBox.information(
-                #    self, "Helix Fit", "Helix fitted and displayed successfully."
-                # )
             else:
                 QMessageBox.warning(
                     self, "Helix Fit", "Failed to create helix visualization."
                 )
 
-        # Clear selected points for next usage
-        self.selected_points.clear()
-        self.update_display()
+            # Clear selected points for second fitting
+            self.selected_points_first.clear()
+            self.fitting_step = 2  # Move to second fitting step
+            self.instruction_label.setText(
+                "Instruction: Select additional points within the helix tube for direct fitting."
+            )
+            QMessageBox.information(
+                self,
+                "Helix Fit",
+                "Initial helix fitted. Now select additional points within the helix tube for refined fitting.",
+            )
+            self.update_display()
+
+        elif self.fitting_step == 2:
+            # Second fitting step: direct helix fit with additional points
+            if len(self.selected_points_second) < 3:
+                QMessageBox.warning(
+                    self,
+                    "Helix Fit",
+                    "Please select at least three additional points for direct helix fitting.",
+                )
+                return
+
+            # Fetch all points currently displayed (clusters and hits)
+            all_displayed_points = []
+            if self.cluster_polydata is not None and self.cluster_polydata.n_points > 0:
+                all_displayed_points.append(self.cluster_polydata.points)
+            if self.hit_polydata is not None and self.hit_polydata.n_points > 0:
+                all_displayed_points.append(self.hit_polydata.points)
+            if not all_displayed_points:
+                QMessageBox.warning(
+                    self,
+                    "Helix Fit",
+                    "No points available within the helix tube for direct fitting.",
+                )
+                return
+            all_displayed_points = np.vstack(all_displayed_points)
+
+            # Perform direct helix fitting on all_displayed_points
+            helix_params_refined = self.fit_helix_direct(
+                all_displayed_points, self.helix_params_initial
+            )
+            if helix_params_refined is None:
+                QMessageBox.warning(self, "Helix Fit", "Direct helix fitting failed.")
+                return
+
+            # Store refined helix parameters
+            self.helix_params_refined = helix_params_refined
+
+            # Generate refined helix points and create a tube
+            helix_points_refined = self.generate_helix_points_refined(
+                helix_params_refined
+            )
+            self.helix_points = (
+                helix_points_refined  # Update helix points for distance calculations
+            )
+            self.helix_tube = self.create_helix_tube(helix_points_refined)
+            if self.helix_tube is not None:
+                self.plotter_widget.add_mesh(
+                    self.helix_tube, color="green", opacity=0.5, pickable=False
+                )
+                QMessageBox.information(
+                    self,
+                    "Helix Fit",
+                    "Direct helix fitting completed and helix visualized.",
+                )
+            else:
+                QMessageBox.warning(
+                    self, "Helix Fit", "Failed to create refined helix visualization."
+                )
+
+            # Clear selected points for next usage
+            self.selected_points_second.clear()
+            self.fitting_step = 1  # Reset to initial fitting step
+            self.instruction_label.setText(
+                "Instruction: Select 3 points for initial helix fitting."
+            )
+            self.update_display()
 
     def reset_helix(self):
         """Clears the fitted helix and resets the selection."""
         self.helix_tube = None
         self.helix_points = None  # Clear helix points
-        self.selected_points.clear()
+        self.helix_params_initial = None
+        self.helix_params_refined = None
+        self.selected_points_first.clear()
+        self.selected_points_second.clear()
+        self.fitting_step = 1  # Reset fitting step
+        self.instruction_label.setText(
+            "Instruction: Select 3 points for initial helix fitting."
+        )
         self.update_display()
         QMessageBox.information(
             self,
@@ -714,10 +836,10 @@ class MainWindow(QMainWindow):
             "Helix has been reset. You can select new points and fit again.",
         )
 
-    def fit_helix(self, points):
+    def fit_helix_initial(self, points):
         """
-        Fit a helix to exactly three points.
-        Returns [radius, pitch, t0, center_x, center_y, center_z] or None on failure.
+        Fit a helix to exactly three points (initial fitting).
+        Returns a dictionary of helix parameters or None on failure.
         """
         if len(points) != 3:
             return None
@@ -765,7 +887,14 @@ class MainWindow(QMainWindow):
         t0 = thetas[0]  # phase offset
         center_z = z0
 
-        return [radius, pitch, t0, center_xy[0], center_xy[1], center_z]
+        return {
+            "c_x": center_xy[0],
+            "c_y": center_xy[1],
+            "r": radius,
+            "alpha": slope,  # pitch per radian
+            "c_z": center_z,
+            "t0": t0,
+        }
 
     def fit_circle_2d(self, p1, p2, p3):
         """
@@ -787,16 +916,26 @@ class MainWindow(QMainWindow):
         r = np.sqrt((p1[0] - cx) ** 2 + (p1[1] - cy) ** 2)
         return np.array([cx, cy]), r
 
-    def generate_helix_points(self, params, num_points=500):
+    def generate_helix_points_initial(self, params, num_points=500):
         """
-        From helix parameters [r, pitch, t0, cx, cy, cz], generate helix points.
+        From initial helix parameters [c_x, c_y, r, alpha, c_z, t0], generate helix points for visualization.
         """
-        r, pitch, t0, cx, cy, cz = params
-        # Generate 2 full turns for visualization
-        t = np.linspace(t0, t0 + 4 * np.pi, num_points)
-        x = cx + r * np.cos(t)
-        y = cy + r * np.sin(t)
-        z = cz + (pitch / (2 * np.pi)) * t
+        c_x = params["c_x"]
+        c_y = params["c_y"]
+        r = params["r"]
+        alpha = params["alpha"]
+        c_z = params["c_z"]
+        t0 = params["t0"]
+
+        # Generate a range of theta values around t0 for visualization
+        theta_min = t0 - 2 * np.pi
+        theta_max = t0 + 4 * np.pi  # Adjust as needed for visualization
+        t = np.linspace(theta_min, theta_max, num_points)
+
+        x = c_x + r * np.cos(t)
+        y = c_y + r * np.sin(t)
+        z = c_z + alpha * t
+
         return np.column_stack((x, y, z))
 
     def create_helix_tube(self, helix_points, tube_radius=0.5):
@@ -818,6 +957,105 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error creating helix tube: {e}")
             return None
+
+    def fit_helix_direct(self, points, initial_params):
+        """
+        Perform direct helix fitting using nonlinear optimization.
+        Parameters:
+            - points: Nx3 array of points to fit.
+            - initial_params: dict with initial helix parameters.
+        Returns:
+            - dict with refined helix parameters or None on failure.
+        """
+        # Extract initial helix parameters
+        c_x0 = initial_params["c_x"]
+        c_y0 = initial_params["c_y"]
+        c_z0 = initial_params["c_z"]
+        r0 = initial_params["r"]
+        alpha0 = initial_params["alpha"]
+        # t0 is not used in direct fitting
+
+        # Initial guess for global parameters
+        phi0 = 0.0  # Initial phase offset
+        initial_guess = np.array(
+            [
+                c_x0,  # c_x
+                c_y0,  # c_y
+                c_z0,  # c_z
+                r0,  # r
+                phi0,  # phi
+                alpha0,  # alpha
+            ]
+        )
+
+        # Define residuals for least squares
+        def residuals(params, points):
+            c_x, c_y, c_z, r, phi, alpha = params
+            # Calculate theta for each point based on current helix parameters
+            theta = np.arctan2(points[:, 1] - c_y, points[:, 0] - c_x) - phi
+            # Calculate fitted positions
+            x_fit = c_x + r * np.cos(theta + phi)
+            y_fit = c_y + r * np.sin(theta + phi)
+            z_fit = c_z + alpha * theta
+            # Compute residuals as the difference between actual and fitted positions
+            residuals = points - np.column_stack((x_fit, y_fit, z_fit))
+            return residuals.ravel()
+
+        try:
+            # Perform least squares optimization
+            result = least_squares(
+                residuals,
+                initial_guess,
+                args=(points,),
+                method="lm",  # Levenberg-Marquardt algorithm
+                max_nfev=1000,
+            )
+            if not result.success:
+                print("Direct helix fitting did not converge.")
+                return None
+
+            fitted = result.x
+            c_x, c_y, c_z, r, phi, alpha = fitted[:6]
+
+            return {
+                "c_x": c_x,
+                "c_y": c_y,
+                "c_z": c_z,
+                "r": r,
+                "phi": phi,
+                "alpha": alpha,
+            }
+
+        except Exception as e:
+            print(f"Error during direct helix fitting: {e}")
+            return None
+
+    def generate_helix_points_refined(self, params, num_points=500):
+        """
+        From refined helix parameters [c_x, c_y, c_z, r, phi, alpha], generate helix points for visualization.
+        """
+        c_x = params["c_x"]
+        c_y = params["c_y"]
+        c_z = params["c_z"]
+        r = params["r"]
+        phi = params["phi"]
+        alpha = params["alpha"]
+
+        # Generate a range of theta values for visualization
+        t = np.linspace(0, 4 * np.pi, num_points)  # 2 full turns
+
+        x = c_x + r * np.cos(t + phi)
+        y = c_y + r * np.sin(t + phi)
+        z = c_z + alpha * t
+
+        return np.column_stack((x, y, z))
+
+    def update_display_optimized(self):
+        """
+        Optional: An optimized version of update_display if further optimizations are needed.
+        Currently not used but can be implemented for future enhancements.
+        """
+        pass
 
     # --------------------------- END HELIX FITTING FUNCTIONS ---------------------------
 
