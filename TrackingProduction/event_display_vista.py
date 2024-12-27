@@ -297,7 +297,8 @@ class MainWindow(QMainWindow):
             []
         )  # Store additional picked points for direct helix fitting
         self.helix_tube = None  # Store the helix tube (for visualization)
-        self.helix_points = None  # Store helix points for distance calculations
+        self.helix_points = None  # Store helix points for distance calculations. If I need to create helix points the second time,
+        # I probably need another one here.
         self.helix_params_initial = None  # Store initial helix parameters
         self.helix_params_refined = None  # Store refined helix parameters
 
@@ -450,7 +451,6 @@ class MainWindow(QMainWindow):
             self.instruction_label.setText(
                 f"Selected {len(self.selected_points_second)} points for direct helix fitting."
             )
-            # Optionally, inform user after a certain number of points or let user decide
 
     def load_data(self):
         """
@@ -753,6 +753,7 @@ class MainWindow(QMainWindow):
 
         elif self.fitting_step == 2:
             # Second fitting step: direct helix fit with additional points
+            """
             if len(self.selected_points_second) < 3:
                 QMessageBox.warning(
                     self,
@@ -760,7 +761,8 @@ class MainWindow(QMainWindow):
                     "Please select at least three additional points for direct helix fitting.",
                 )
                 return
-
+            """
+            """
             # Fetch all points currently displayed (clusters and hits)
             all_displayed_points = []
             if self.cluster_polydata is not None and self.cluster_polydata.n_points > 0:
@@ -775,10 +777,12 @@ class MainWindow(QMainWindow):
                 )
                 return
             all_displayed_points = np.vstack(all_displayed_points)
+            """
 
             # Perform direct helix fitting on all_displayed_points
+            picked_points_array = np.array(self.selected_points_second)
             helix_params_refined = self.fit_helix_direct(
-                all_displayed_points, self.helix_params_initial
+                picked_points_array, self.helix_params_initial
             )
             if helix_params_refined is None:
                 QMessageBox.warning(self, "Helix Fit", "Direct helix fitting failed.")
@@ -797,7 +801,7 @@ class MainWindow(QMainWindow):
             self.helix_tube = self.create_helix_tube(helix_points_refined)
             if self.helix_tube is not None:
                 self.plotter_widget.add_mesh(
-                    self.helix_tube, color="green", opacity=0.5, pickable=False
+                    self.helix_tube, color="red", opacity=0.5, pickable=False
                 )
                 QMessageBox.information(
                     self,
@@ -928,8 +932,8 @@ class MainWindow(QMainWindow):
         t0 = params["t0"]
 
         # Generate a range of theta values around t0 for visualization
-        theta_min = t0 - 2 * np.pi
-        theta_max = t0 + 4 * np.pi  # Adjust as needed for visualization
+        theta_min = t0 - 1 * np.pi
+        theta_max = t0 + 1 * np.pi  # Adjust as needed for visualization
         t = np.linspace(theta_min, theta_max, num_points)
 
         x = c_x + r * np.cos(t)
@@ -1041,8 +1045,12 @@ class MainWindow(QMainWindow):
         phi = params["phi"]
         alpha = params["alpha"]
 
+        # Generate a range of theta values around t0 for visualization
+        theta_min = -1 * np.pi
+        theta_max = 1 * np.pi  # Adjust as needed for visualization
+        t = np.linspace(theta_min, theta_max, num_points)
         # Generate a range of theta values for visualization
-        t = np.linspace(0, 4 * np.pi, num_points)  # 2 full turns
+        # t = np.linspace(0, 4 * np.pi, num_points)  # 2 full turns
 
         x = c_x + r * np.cos(t + phi)
         y = c_y + r * np.sin(t + phi)
