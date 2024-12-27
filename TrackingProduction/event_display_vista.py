@@ -39,6 +39,14 @@ class MainWindow(QMainWindow):
         # Initialize pick mode
         self.pick_mode = "info"  # Default mode
 
+        # Add a new attribute to track the helix tube color
+        self.helix_tube_color = "green"  # Default color for initial fitting
+
+        # Initialize tube_radius with a default value (e.g., 0.05 as 5%)
+        self.tube_radius_percentage_initial = 0.05  # 5% of the helix radius
+        self.tube_radius_percentage_second = 0.01
+        self.tube_radius = 0.5
+
         # Main container widget
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
@@ -314,13 +322,13 @@ class MainWindow(QMainWindow):
         if self.radio_view_info.isChecked():
             self.pick_mode = "info"
             # Optionally, clear any existing helix selections
-            self.selected_points_first.clear()
-            self.selected_points_second.clear()
-            self.helix_tube = None
-            self.helix_points = None  # Clear helix points
-            self.helix_params_initial = None
-            self.helix_params_refined = None
-            self.fitting_step = 1  # Reset fitting step
+            # self.selected_points_first.clear()
+            # self.selected_points_second.clear()
+            # self.helix_tube = None
+            # self.helix_points = None  # Clear helix points
+            # self.helix_params_initial = None
+            # self.helix_params_refined = None
+            # self.fitting_step = 1  # Reset fitting step
             self.instruction_label.setText(
                 "Instruction: Select 3 points for initial helix fitting."
             )
@@ -328,13 +336,13 @@ class MainWindow(QMainWindow):
         elif self.radio_pick_helix.isChecked():
             self.pick_mode = "helix"
             # Optionally, clear any existing helix selections
-            self.selected_points_first.clear()
-            self.selected_points_second.clear()
-            self.helix_tube = None
-            self.helix_points = None  # Clear helix points
-            self.helix_params_initial = None
-            self.helix_params_refined = None
-            self.fitting_step = 1  # Reset fitting step
+            # self.selected_points_first.clear()
+            # self.selected_points_second.clear()
+            # self.helix_tube = None
+            # self.helix_points = None  # Clear helix points
+            # self.helix_params_initial = None
+            # self.helix_params_refined = None
+            # self.fitting_step = 1  # Reset fitting step
             self.instruction_label.setText(
                 "Instruction: Select 3 points for initial helix fitting."
             )
@@ -608,7 +616,7 @@ class MainWindow(QMainWindow):
                 distances, _ = helix_tree.query(filtered_points.points, k=1)
 
                 # Create a mask for points within the tube radius
-                distance_mask = distances <= tube_radius
+                distance_mask = distances <= self.tube_radius
 
                 # Apply the distance mask
                 filtered_indices = filtered_indices[distance_mask]
@@ -660,7 +668,7 @@ class MainWindow(QMainWindow):
                 distances, _ = helix_tree.query(filtered_points.points, k=1)
 
                 # Create a mask for points within the tube radius
-                distance_mask = distances <= tube_radius
+                distance_mask = distances <= self.tube_radius
 
                 # Apply the distance mask
                 filtered_indices = filtered_indices[distance_mask]
@@ -682,8 +690,8 @@ class MainWindow(QMainWindow):
         if self.helix_tube is not None:
             self.plotter_widget.add_mesh(
                 self.helix_tube,
-                color="green",
-                opacity=0.5,
+                color=self.helix_tube_color,
+                opacity=0.2,
                 pickable=False,  # Prevent picking on the helix
             )
         # Disable and re-enable picking to ensure a fresh start
@@ -722,16 +730,25 @@ class MainWindow(QMainWindow):
 
             # Store initial helix parameters
             self.helix_params_initial = helix_params_initial
+            self.tube_radius = (
+                self.tube_radius_percentage_initial * helix_params_initial["r"]
+            )
 
+            self.helix_tube_color = "green"
             # Generate helix points and create a tube
             helix_points = self.generate_helix_points_initial(helix_params_initial)
             self.helix_points = (
                 helix_points  # Store helix points for distance calculations
             )
-            self.helix_tube = self.create_helix_tube(helix_points)
+            self.helix_tube = self.create_helix_tube(
+                helix_points, tube_radius=self.tube_radius
+            )
             if self.helix_tube is not None:
                 self.plotter_widget.add_mesh(
-                    self.helix_tube, color="green", opacity=0.5, pickable=False
+                    self.helix_tube,
+                    color=self.helix_tube_color,
+                    opacity=0.5,
+                    pickable=False,
                 )
             else:
                 QMessageBox.warning(
@@ -791,6 +808,12 @@ class MainWindow(QMainWindow):
             # Store refined helix parameters
             self.helix_params_refined = helix_params_refined
 
+            self.tube_radius = (
+                self.tube_radius_percentage_second * helix_params_refined["r"]
+            )
+
+            self.helix_tube_color = "blue"
+
             # Generate refined helix points and create a tube
             helix_points_refined = self.generate_helix_points_refined(
                 helix_params_refined
@@ -798,10 +821,16 @@ class MainWindow(QMainWindow):
             self.helix_points = (
                 helix_points_refined  # Update helix points for distance calculations
             )
-            self.helix_tube = self.create_helix_tube(helix_points_refined)
+
+            self.helix_tube = self.create_helix_tube(
+                helix_points_refined, tube_radius=self.tube_radius
+            )
             if self.helix_tube is not None:
                 self.plotter_widget.add_mesh(
-                    self.helix_tube, color="red", opacity=0.5, pickable=False
+                    self.helix_tube,
+                    color=self.helix_tube_color,
+                    opacity=0.5,
+                    pickable=False,
                 )
                 QMessageBox.information(
                     self,
