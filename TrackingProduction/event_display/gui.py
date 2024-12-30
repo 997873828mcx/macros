@@ -1,10 +1,8 @@
 import sys
 import numpy as np
-import uproot
 import pyvista as pv
 from pyvistaqt import QtInteractor
 from qtpy.QtWidgets import (
-    QApplication,
     QMainWindow,
     QWidget,
     QHBoxLayout,
@@ -24,8 +22,16 @@ from qtpy.QtWidgets import (
 from qtpy.QtCore import Qt
 from superqt import QRangeSlider
 from scipy.spatial import cKDTree
-from scipy.optimize import least_squares
-from scipy.optimize import fsolve
+
+from helix_fitting import (
+    fit_helix_initial,
+    fit_helix_direct,
+    generate_helix_points_initial,
+    generate_helix_points_refined,
+    create_helix_tube,
+    apply_helix_filter,
+)
+from data_loader import load_data_from_root
 
 
 class MainWindow(QMainWindow):
@@ -253,7 +259,7 @@ class MainWindow(QMainWindow):
         self.btn_reset_helix.clicked.connect(self.reset_helix)
         helix_layout.addWidget(self.btn_reset_helix)
 
-        # --- New Toggle Checkbox ---
+        # --- Toggle Checkbox ---
         self.toggle_filter_checkbox = QCheckBox("Show Points Outside Tube")
         self.toggle_filter_checkbox.setChecked(True)  # Default to showing all points
         self.toggle_filter_checkbox.stateChanged.connect(self.update_display)
@@ -325,28 +331,12 @@ class MainWindow(QMainWindow):
         """Handle changes in the pick mode based on radio button selection."""
         if self.radio_view_info.isChecked():
             self.pick_mode = "info"
-            # Optionally, clear any existing helix selections
-            # self.selected_points_first.clear()
-            # self.selected_points_second.clear()
-            # self.helix_tube = None
-            # self.helix_points = None  # Clear helix points
-            # self.helix_params_initial = None
-            # self.helix_params_refined = None
-            # self.fitting_step = 1  # Reset fitting step
             self.instruction_label.setText(
                 "Instruction: Select 3 points for initial helix fitting."
             )
             self.update_display()
         elif self.radio_pick_helix.isChecked():
             self.pick_mode = "helix"
-            # Optionally, clear any existing helix selections
-            # self.selected_points_first.clear()
-            # self.selected_points_second.clear()
-            # self.helix_tube = None
-            # self.helix_points = None  # Clear helix points
-            # self.helix_params_initial = None
-            # self.helix_params_refined = None
-            # self.fitting_step = 1  # Reset fitting step
             self.instruction_label.setText(
                 "Instruction: Select 3 points for initial helix fitting."
             )
@@ -370,8 +360,6 @@ class MainWindow(QMainWindow):
             self.plotter_widget.enable_point_picking(
                 callback=self.on_point_picked_helix, show_message=True, use_picker=True
             )
-
-    # --- Callback Methods ---
 
     def on_point_picked_info(self, picked_point, picker):
         """
@@ -475,70 +463,25 @@ class MainWindow(QMainWindow):
             return  # User canceled the file dialog
 
         try:
-            # Open the ROOT file using uproot
-            file = uproot.open(filename)
+            # Use the data_loader module to load data
+            cluster_polydata, hit_polydata = load_data_from_root(filename)
 
-            # Load cluster data from 'combined_clusters' tree
-            cluster_tree = file["combined_clusters"]
-            cluster_data = cluster_tree.arrays(library="np")
-
-            # Validate the presence of 'side' branch
-            if "side" not in cluster_data:
-                raise ValueError("The 'side' branch is missing in the cluster data.")
-
-            # Extract cluster coordinates
-            cx = cluster_data["gx"]
-            cy = cluster_data["gy"]
-            cz = cluster_data["gz"]
-            cpoints = np.column_stack([cx, cy, cz])
-
-            # Create PolyData for clusters
-            cluster_polydata = pv.PolyData(cpoints)
-            for name in cluster_data.keys():
-                if name not in ("gx", "gy", "gz"):
-                    cluster_polydata.point_data[name] = cluster_data[name]
-
-            # Add a 'data_type' attribute to distinguish clusters
-            cluster_polydata.point_data["data_type"] = np.zeros(
-                cluster_polydata.n_points, dtype=int
-            )
+            # Store the loaded data
             self.cluster_data = cluster_polydata
-
-            # Load hit data from 'combined_hits' tree
-            hits_tree = file["combined_hits"]
-            hits_data = hits_tree.arrays(library="np")
-
-            # Validate the presence of 'side' branch
-            if "side" not in hits_data:
-                raise ValueError("The 'side' branch is missing in the hit data.")
-
-            # Extract hit coordinates
-            hx = hits_data["gx"]
-            hy = hits_data["gy"]
-            hz = hits_data["gz"]
-            hpoints = np.column_stack([hx, hy, hz])
-
-            # Create PolyData for hits
-            hit_polydata = pv.PolyData(hpoints)
-
-            # Add other hit attributes
-            for name in hits_data.keys():
-                if name not in ("gx", "gy", "gz"):
-                    hit_polydata.point_data[name] = hits_data[name]
-
-            # Add a 'data_type' attribute to distinguish hits
-            hit_polydata.point_data["data_type"] = np.ones(
-                hit_polydata.n_points, dtype=int
-            )
             self.hit_data = hit_polydata
 
             # Update the visualization with the loaded data
             self.update_display()
 
+        except FileNotFoundError as fnf_err:
+            QMessageBox.critical(self, "Load Error", str(fnf_err))
+        except KeyError as key_err:
+            QMessageBox.critical(self, "Load Error", str(key_err))
+        except ValueError as val_err:
+            QMessageBox.critical(self, "Load Error", str(val_err))
         except Exception as e:
-            # Display any errors that occur during loading
             QMessageBox.critical(
-                self, "Load Error", f"An error occurred while loading the file:\n{e}"
+                self, "Load Error", f"An unexpected error occurred:\n{e}"
             )
 
     def update_display(self):
@@ -569,8 +512,6 @@ class MainWindow(QMainWindow):
 
         # Handle case when no sides are selected
         if not selected_sides:
-            # Optionally, you can decide to show nothing or all sides
-            # Here, we'll show nothing
             selected_sides = []
 
         # Define tube radius (should match the helix tube radius)
@@ -610,22 +551,7 @@ class MainWindow(QMainWindow):
             # Extract filtered points
             filtered_indices = np.where(mask)[0]
             filtered_points = self.cluster_data.extract_points(filtered_indices)
-            """
-            # Apply helix tube filtering if required
-            if apply_tube_filter and self.helix_points is not None:
-                # Build KDTree from helix points
-                helix_tree = cKDTree(self.helix_points)
 
-                # Query the nearest distance for each point
-                distances, _ = helix_tree.query(filtered_points.points, k=1)
-
-                # Create a mask for points within the tube radius
-                distance_mask = distances <= self.tube_radius
-
-                # Apply the distance mask
-                filtered_indices = filtered_indices[distance_mask]
-                filtered_points = self.cluster_data.extract_points(filtered_indices)
-            """
             if apply_tube_filter and (
                 self.helix_params_refined is not None
                 or self.helix_params_initial is not None
@@ -645,9 +571,7 @@ class MainWindow(QMainWindow):
                 filtered_indices = filtered_indices[distance_mask]
                 filtered_points = self.cluster_data.extract_points(filtered_indices)
 
-            if (
-                filtered_points.n_points > 0
-            ):  # Check if any points are left after filtering
+            if filtered_points.n_points > 0:
                 self.cluster_polydata = filtered_points
                 # Add cluster points in one color, e.g., red
                 self.plotter_widget.add_mesh(
@@ -656,6 +580,7 @@ class MainWindow(QMainWindow):
                     point_size=5,
                     color="red",
                 )
+
         # --- Hits ---
         if show_hits and self.hit_data is not None and self.hit_data.n_points > 0:
 
@@ -697,9 +622,7 @@ class MainWindow(QMainWindow):
                 filtered_indices = filtered_indices[distance_mask]
                 filtered_points = self.hit_data.extract_points(filtered_indices)
 
-            if (
-                filtered_points.n_points > 0
-            ):  # Check if any points are left after filtering
+            if filtered_points.n_points > 0:
                 self.hit_polydata = filtered_points
                 # Add hit points in another color, e.g., blue
                 self.plotter_widget.add_mesh(
@@ -710,7 +633,6 @@ class MainWindow(QMainWindow):
                 )
 
         # If a helix tube is already generated, re-add it (ensure it's not pickable)
-
         if self.helix_tube is not None:
             self.plotter_widget.add_mesh(
                 self.helix_tube,
@@ -718,6 +640,7 @@ class MainWindow(QMainWindow):
                 opacity=0.2,
                 pickable=False,  # Prevent picking on the helix
             )
+
         # Disable and re-enable picking to ensure a fresh start
         self.plotter_widget.disable_picking()
         # Enable point picking based on current mode
@@ -747,9 +670,10 @@ class MainWindow(QMainWindow):
                 )
                 return
 
-            helix_params_initial = self.fit_helix_initial(self.selected_points_first)
-            if helix_params_initial is None:
-                QMessageBox.warning(self, "Helix Fit", "Initial helix fitting failed.")
+            try:
+                helix_params_initial = fit_helix_initial(self.selected_points_first)
+            except ValueError as ve:
+                QMessageBox.warning(self, "Helix Fit", str(ve))
                 return
 
             # Store initial helix parameters
@@ -760,11 +684,11 @@ class MainWindow(QMainWindow):
 
             self.helix_tube_color = "green"
             # Generate helix points and create a tube
-            helix_points = self.generate_helix_points_initial(helix_params_initial)
+            helix_points = generate_helix_points_initial(helix_params_initial)
             self.helix_points = (
                 helix_points  # Store helix points for distance calculations
             )
-            self.helix_tube = self.create_helix_tube(
+            self.helix_tube = create_helix_tube(
                 helix_points, tube_radius=self.tube_radius
             )
             if self.helix_tube is not None:
@@ -821,7 +745,7 @@ class MainWindow(QMainWindow):
             """
 
             picked_points_array = np.array(self.selected_points_second)
-            helix_params_refined = self.fit_helix_direct(
+            helix_params_refined = fit_helix_direct(
                 picked_points_array, self.helix_params_initial
             )
             if helix_params_refined is None:
@@ -838,14 +762,12 @@ class MainWindow(QMainWindow):
             self.helix_tube_color = "blue"
 
             # Generate refined helix points and create a tube
-            helix_points_refined = self.generate_helix_points_refined(
-                helix_params_refined
-            )
+            helix_points_refined = generate_helix_points_refined(helix_params_refined)
             self.helix_points = (
                 helix_points_refined  # Update helix points for distance calculations
             )
 
-            self.helix_tube = self.create_helix_tube(
+            self.helix_tube = create_helix_tube(
                 helix_points_refined, tube_radius=self.tube_radius
             )
             if self.helix_tube is not None:
@@ -892,351 +814,14 @@ class MainWindow(QMainWindow):
             "Helix has been reset. You can select new points and fit again.",
         )
 
-    def fit_helix_initial(self, points):
-        """
-        Fit a helix to exactly three points (initial fitting).
-        Returns a dictionary of helix parameters or None on failure.
-        """
-        if len(points) != 3:
-            return None
-
-        p1, p2, p3 = points
-
-        # --- 1. Project onto XY-plane ---
-        p1_xy = p1[:2]
-        p2_xy = p2[:2]
-        p3_xy = p3[:2]
-
-        # --- 2. Fit circle in XY-plane to find center and radius ---
-        center_xy, radius = self.fit_circle_2d(p1_xy, p2_xy, p3_xy)
-        if center_xy is None or radius <= 0:
-            return None  # Could not fit a circle (collinear or invalid)
-
-        # --- 3. Calculate angular positions (theta) in XY-plane ---
-        def calc_theta(p, center):
-            return np.arctan2(p[1] - center[1], p[0] - center[0])
-
-        theta1 = calc_theta(p1_xy, center_xy)
-        theta2 = calc_theta(p2_xy, center_xy)
-        theta3 = calc_theta(p3_xy, center_xy)
-        thetas = np.array([theta1, theta2, theta3])
-        thetas = np.unwrap(thetas)  # ensure continuous
-        ref_theta = thetas[1]
-
-        # --- 4. Check if points span multiple turns ---
-        if thetas[-1] - thetas[0] > 2 * np.pi:
-            QMessageBox.warning(
-                self,
-                "Helix Fit",
-                "Selected points span multiple helical turns. Please select three points within the same turn.",
-            )
-            return None
-
-        # --- 5. Linear fit between theta and z to find pitch ---
-        z_vals = np.array([p1[2], p2[2], p3[2]])
-        A = np.vstack([thetas, np.ones_like(thetas)]).T
-        try:
-            slope, z0 = np.linalg.lstsq(A, z_vals, rcond=None)[0]
-        except Exception:
-            return None
-
-        pitch = slope * (2 * np.pi)  # pitch for a 2pi rotation
-        t0 = thetas[0]  # phase offset
-        center_z = z0
-
-        return {
-            "c_x": center_xy[0],
-            "c_y": center_xy[1],
-            "r": radius,
-            "alpha": slope,  # pitch per radian
-            "c_z": center_z,
-            "t0": t0,
-            "ref_theta": ref_theta,
-        }
-
-    def fit_circle_2d(self, p1, p2, p3):
-        """
-        Fit a circle to three points (2D). Return (center, radius) or (None, None).
-        """
-        A = 2 * (p2[0] - p1[0])
-        B = 2 * (p2[1] - p1[1])
-        C = p2[0] ** 2 + p2[1] ** 2 - p1[0] ** 2 - p1[1] ** 2
-        D = 2 * (p3[0] - p1[0])
-        E = 2 * (p3[1] - p1[1])
-        F = p3[0] ** 2 + p3[1] ** 2 - p1[0] ** 2 - p1[1] ** 2
-
-        det = A * E - B * D
-        if abs(det) < 1e-9:
-            return None, None  # Collinear or insufficient geometry
-
-        cx = (C * E - B * F) / det
-        cy = (A * F - C * D) / det
-        r = np.sqrt((p1[0] - cx) ** 2 + (p1[1] - cy) ** 2)
-        return np.array([cx, cy]), r
-
-    def generate_helix_points_initial(self, params, num_points=500):
-        """
-        From initial helix parameters [c_x, c_y, r, alpha, c_z, t0], generate helix points for visualization.
-        """
-        c_x = params["c_x"]
-        c_y = params["c_y"]
-        r = params["r"]
-        alpha = params["alpha"]
-        c_z = params["c_z"]
-        t0 = params["ref_theta"]
-
-        # Generate a range of theta values around t0 for visualization
-        theta_min = t0 - np.pi / 2
-        theta_max = t0 + np.pi / 2  # Adjust as needed for visualization
-        t = np.linspace(theta_min, theta_max, num_points)
-
-        x = c_x + r * np.cos(t)
-        y = c_y + r * np.sin(t)
-        z = c_z + alpha * t
-
-        return np.column_stack((x, y, z))
-
-    def create_helix_tube(self, helix_points, tube_radius=0.5):
-        """
-        Create a tubular mesh around the helix points for visualization.
-        """
-        if helix_points.shape[0] < 2:
-            return None
-
-        helix_poly = pv.PolyData(helix_points)
-        # Create a single polyline connecting all points
-        lines = np.hstack(
-            ([helix_points.shape[0]], np.arange(helix_points.shape[0]))
-        ).astype(np.int64)
-        helix_poly.lines = lines
-        try:
-            tube = helix_poly.tube(radius=tube_radius)
-            return tube
-        except Exception as e:
-            print(f"Error creating helix tube: {e}")
-            return None
-
-    def fit_helix_direct(self, points, initial_params):
-        """
-        Perform direct helix fitting using nonlinear optimization.
-        Parameters:
-            - points: Nx3 array of points to fit.
-            - initial_params: dict with initial helix parameters.
-        Returns:
-            - dict with refined helix parameters or None on failure.
-        """
-        # Extract initial helix parameters
-        c_x0 = initial_params["c_x"]
-        c_y0 = initial_params["c_y"]
-        c_z0 = initial_params["c_z"]
-        r0 = initial_params["r"]
-        alpha0 = initial_params["alpha"]
-        # t0 is not used in direct fitting
-
-        # Initial guess for global parameters
-        phi0 = 0.0  # Initial phase offset
-        initial_guess = np.array(
-            [
-                c_x0,  # c_x
-                c_y0,  # c_y
-                c_z0,  # c_z
-                r0,  # r
-                phi0,  # phi
-                alpha0,  # alpha
-            ]
-        )
-
-        # Define residuals for least squares
-        def residuals(params, points):
-            c_x, c_y, c_z, r, phi, alpha = params
-            # Calculate theta for each point based on current helix parameters
-            theta = np.arctan2(points[:, 1] - c_y, points[:, 0] - c_x) - phi
-            # Calculate fitted positions
-            x_fit = c_x + r * np.cos(theta + phi)
-            y_fit = c_y + r * np.sin(theta + phi)
-            z_fit = c_z + alpha * theta
-            # Compute residuals as the difference between actual and fitted positions
-            residuals = points - np.column_stack((x_fit, y_fit, z_fit))
-            return residuals.ravel()
-
-        try:
-            # Perform least squares optimization
-            result = least_squares(
-                residuals,
-                initial_guess,
-                args=(points,),
-                method="lm",  # Levenberg-Marquardt algorithm
-                max_nfev=1000,
-            )
-            if not result.success:
-                print("Direct helix fitting did not converge.")
-                return None
-
-            fitted = result.x
-            c_x, c_y, c_z, r, phi, alpha = fitted[:6]
-
-            return {
-                "c_x": c_x,
-                "c_y": c_y,
-                "c_z": c_z,
-                "r": r,
-                "phi": phi,
-                "alpha": alpha,
-            }
-
-        except Exception as e:
-            print(f"Error during direct helix fitting: {e}")
-            return None
-
-    def generate_helix_points_refined(self, params, num_points=500):
-        """
-        From refined helix parameters [c_x, c_y, c_z, r, phi, alpha], generate helix points for visualization.
-        """
-        c_x = params["c_x"]
-        c_y = params["c_y"]
-        c_z = params["c_z"]
-        r = params["r"]
-        phi = params["phi"]
-        alpha = params["alpha"]
-
-        # Generate a range of theta values around t0 for visualization
-        theta_min = -1 * np.pi
-        theta_max = 1 * np.pi  # Adjust as needed for visualization
-        t = np.linspace(theta_min, theta_max, num_points)
-        # Generate a range of theta values for visualization
-        # t = np.linspace(0, 4 * np.pi, num_points)  # 2 full turns
-
-        x = c_x + r * np.cos(t + phi)
-        y = c_y + r * np.sin(t + phi)
-        z = c_z + alpha * t
-
-        return np.column_stack((x, y, z))
-
-    def update_display_optimized(self):
-        """
-        Optional: An optimized version of update_display if further optimizations are needed.
-        Currently not used but can be implemented for future enhancements.
-        """
-        pass
-
-    # --------------------------- END HELIX FITTING FUNCTIONS ---------------------------
-
-    def find_helix_points_at_radius_analytic(
-        self, r, helix_params, ref_theta, theta_range=np.pi / 2
-    ):
-        """
-        Find ALL helix points at a given radius within theta_range of ref_theta.
-        Uses analytic solution instead of numerical solver.
-
-        Parameters:
-        -----------
-        r : float
-            Radius where we want to find points (distance from TPC origin)
-        helix_params : dict
-            Helix parameters including c_x, c_y, r (helix radius), etc.
-        ref_theta : float
-            Reference theta value (usually from the second point used in fitting)
-        theta_range : float
-            How far from ref_theta to look for solutions
-
-        Returns:
-        --------
-        list of tuples (phi, z, theta) for all valid solutions
-        """
-        # Extract parameters
-        cx = helix_params["c_x"]
-        cy = helix_params["c_y"]
-        cz = helix_params["c_z"]
-        R = helix_params["r"]  # helix radius
-        alpha = helix_params["alpha"]
-
-        # The equation r² = (cx + R*cos(θ))² + (cy + R*sin(θ))² can be rewritten as:
-        # A*cos(θ) + B*sin(θ) = C where:
-        A = 2 * R * cx
-        B = 2 * R * cy
-        C = r**2 - (cx**2 + cy**2 + R**2)
-
-        # This equation has the form: a*cos(θ) + b*sin(θ) = c
-        # Solution is: θ = arctan2(b,a) ± arccos(c/sqrt(a² + b²))
-
-        # First check if solution exists
-        norm = np.sqrt(A**2 + B**2)
-        if abs(C / norm) > 1:
-            return []  # No solutions exist
-
-        # Get the two solutions
-        beta = np.arctan2(B, A)
-        gamma = np.arccos(C / norm)
-
-        theta1 = beta + gamma
-        theta2 = beta - gamma
-
-        # Check which solutions are within range of ref_theta
-        solutions = []
-        for theta in [theta1, theta2]:
-            # Normalize theta to be near ref_theta
-            while theta < ref_theta - np.pi:
-                theta += 2 * np.pi
-            while theta > ref_theta + np.pi:
-                theta -= 2 * np.pi
-
-            if abs(theta - ref_theta) <= theta_range:
-                # Calculate helix point coordinates
-                x = cx + R * np.cos(theta)
-                y = cy + R * np.sin(theta)
-                z = cz + alpha * theta
-
-                # Calculate phi relative to TPC center
-                phi = np.arctan2(y, x)
-
-                solutions.append((phi, z, theta))
-
-        return solutions
-
     def apply_helix_filter(self, point, helix_params):
         """
-        Filter a point based on rphi and z windows.
-        Returns True if point is within windows, False otherwise.
+        Wrapper around the apply_helix_filter function from helix_fitting.py.
         """
-        x, y, z = point
-        r_meas = np.sqrt(x**2 + y**2)
-        phi_meas = np.arctan2(y, x)  # phi from TPC center
+        return apply_helix_filter(point, helix_params, self.rphi_window, self.z_window)
 
-        # Get all solutions at this radius within ±pi/2 of reference theta
-        solutions = self.find_helix_points_at_radius_analytic(
-            r_meas, helix_params, helix_params["ref_theta"], theta_range=np.pi / 2
-        )
-
-        if not solutions:
-            return False
-
-        # Find solution with phi closest to measured phi
-        min_dphi = float("inf")
-        best_solution = None
-
-        for solution in solutions:
-            phi_sol, z_sol, _ = solution
-            dphi = abs(phi_meas - phi_sol)
-            dphi = min(dphi, 2 * np.pi - dphi)  # Take smaller angle
-
-            if dphi < min_dphi:
-                min_dphi = dphi
-                best_solution = solution
-
-        if best_solution is None:
-            return False
-
-        phi_sol, z_sol, _ = best_solution
-
-        # Check if point is within windows
-        arc_length = r_meas * min_dphi
-        dz = abs(z - z_sol)
-
-        return arc_length <= self.rphi_window and dz <= self.z_window
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
+    if __name__ == "__main__":
+        app = QApplication(sys.argv)
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec_())
