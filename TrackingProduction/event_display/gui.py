@@ -29,9 +29,22 @@ from helix_fitting import (
     generate_helix_points_initial,
     generate_helix_points_refined,
     create_helix_tube,
-    apply_helix_filter,
 )
+
+
+from analysis import (
+    calculate_deltas,
+    save_histograms,
+    save_tree,
+    apply_helix_filter,
+    find_helix_points_at_radius_analytic,
+)
+
 from data_loader import load_data_from_root
+
+
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 
 class MainWindow(QMainWindow):
@@ -50,9 +63,10 @@ class MainWindow(QMainWindow):
         self.helix_tube_color = "green"  # Default color for initial fitting
 
         # Initialize tube_radius with a default value (e.g., 0.05 as 5%)
-        self.tube_radius_percentage_initial = 0.1  # 5% of the helix radius
+        self.tube_radius_percentage_initial = 0.1  # 10% of the helix radius
         self.tube_radius_percentage_second = 0.01
         self.tube_radius = 0.5
+        self.track_counter = 0
 
         self.rphi_window = 0.5  # Default window size for rphi
         self.z_window = 1.0  # Default window size for z
@@ -279,6 +293,14 @@ class MainWindow(QMainWindow):
         self.plotter_widget = QtInteractor()
         left_layout.addWidget(self.plotter_widget)
 
+        self.hist_widget = QWidget()
+        self.hist_layout = QVBoxLayout(self.hist_widget)
+        self.hist_canvas = FigureCanvas(Figure(figsize=(5, 4)))
+        self.hist_layout.addWidget(self.hist_canvas)
+        self.hist_ax_rphi = self.hist_canvas.figure.add_subplot(121)
+        self.hist_ax_z = self.hist_canvas.figure.add_subplot(122)
+        self.hist_canvas.draw()
+
         # A frame line at the bottom for neatness (optional)
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
@@ -297,6 +319,9 @@ class MainWindow(QMainWindow):
         self.info_panel.setReadOnly(True)
         sidebar_layout.addWidget(self.info_panel)
 
+        sidebar_layout.addWidget(QLabel("Delta Distributions"))
+        sidebar_layout.addWidget(self.hist_widget)
+
         splitter.addWidget(left_panel)
         splitter.addWidget(sidebar)
         splitter.setStretchFactor(0, 3)
@@ -313,12 +338,13 @@ class MainWindow(QMainWindow):
         )  # Store 3 picked points for initial helix fitting
         self.selected_points_second = (
             []
-        )  # Store additional picked points for direct helix fitting
+        )  # Store additional picked points for refined helix fitting
         self.helix_tube = None  # Store the helix tube (for visualization)
-        self.helix_points = None  # Store helix points for distance calculations. If I need to create helix points the second time,
-        # I probably need another one here.
+        self.helix_points = None  # Store helix points for distance calculations.
         self.helix_params_initial = None  # Store initial helix parameters
         self.helix_params_refined = None  # Store refined helix parameters
+
+        self.filtered_clusters = None
 
         # Show axes
         self.plotter_widget.show_axes()
@@ -449,7 +475,7 @@ class MainWindow(QMainWindow):
             # Second fitting step: store in selected_points_second
             self.selected_points_second.append(picked_coordinates)
             self.instruction_label.setText(
-                f"Selected {len(self.selected_points_second)} points for direct helix fitting."
+                f"Selected {len(self.selected_points_second)} points for refined helix fitting."
             )
 
     def load_data(self):
@@ -564,7 +590,12 @@ class MainWindow(QMainWindow):
                 # Apply filter to each point
                 distance_mask = np.array(
                     [
-                        self.apply_helix_filter(point, current_helix_params)
+                        apply_helix_filter(
+                            point,
+                            self.helix_params_initial,
+                            self.rphi_window,
+                            self.z_window,
+                        )
                         for point in filtered_points.points
                     ]
                 )
@@ -581,6 +612,12 @@ class MainWindow(QMainWindow):
                     color="red",
                 )
 
+                self.filtered_clusters = self.cluster_polydata.points.copy()
+            else:
+                self.filtered_clusters = np.array([])  # Empty array if no clusters pass
+
+        else:
+            self.filtered_clusters = np.array([])  # Empty array if clusters not shown
         # --- Hits ---
         if show_hits and self.hit_data is not None and self.hit_data.n_points > 0:
 
@@ -606,7 +643,7 @@ class MainWindow(QMainWindow):
             # Extract filtered points
             filtered_indices = np.where(mask)[0]
             filtered_points = self.hit_data.extract_points(filtered_indices)
-
+            """
             # Apply helix tube filtering if required
             if apply_tube_filter and self.helix_points is not None:
                 # Build KDTree from helix points
@@ -621,6 +658,26 @@ class MainWindow(QMainWindow):
                 # Apply the distance mask
                 filtered_indices = filtered_indices[distance_mask]
                 filtered_points = self.hit_data.extract_points(filtered_indices)
+            """
+
+            if apply_tube_filter and (
+                self.helix_params_refined is not None
+                or self.helix_params_initial is not None
+            ):
+                # Get current helix parameters
+                current_helix_params = (
+                    self.helix_params_refined or self.helix_params_initial
+                )
+
+                # Apply filter to each point
+                distance_mask = np.array(
+                    [
+                        apply_helix_filter(point, self.helix_params_initial)
+                        for point in filtered_points.points
+                    ]
+                )
+                filtered_indices = filtered_indices[distance_mask]
+                filtered_points = self.cluster_data.extract_points(filtered_indices)
 
             if filtered_points.n_points > 0:
                 self.hit_polydata = filtered_points
@@ -652,12 +709,17 @@ class MainWindow(QMainWindow):
 
     def initiate_helix_fit(self):
         """Triggered when the user clicks the 'Fit Helix' button."""
+
         if self.pick_mode != "helix":
             QMessageBox.warning(
                 self,
                 "Helix Fit",
                 "Please switch to 'Pick for Helix Fitting' mode to fit a helix.",
             )
+            return
+
+        if self.cluster_data is None:
+            QMessageBox.warning(self, "Fit Error", "No cluster data loaded.")
             return
 
         if self.fitting_step == 1:
@@ -707,7 +769,7 @@ class MainWindow(QMainWindow):
             self.selected_points_first.clear()
             self.fitting_step = 2  # Move to second fitting step
             self.instruction_label.setText(
-                "Instruction: Select additional points within the helix tube for direct fitting."
+                "Instruction: Select additional points within the helix tube for refined fitting."
             )
             QMessageBox.information(
                 self,
@@ -744,12 +806,16 @@ class MainWindow(QMainWindow):
             all_displayed_points = np.vstack(all_displayed_points)
             """
 
-            picked_points_array = np.array(self.selected_points_second)
-            helix_params_refined = fit_helix_direct(
-                picked_points_array, self.helix_params_initial
-            )
+            try:
+                helix_params_refined = fit_helix_direct(
+                    self.selected_points_second, self.helix_params_initial
+                )
+            except ValueError as ve:
+                QMessageBox.warning(self, "Helix Fit", str(ve))
+                return
+
             if helix_params_refined is None:
-                QMessageBox.warning(self, "Helix Fit", "Direct helix fitting failed.")
+                QMessageBox.warning(self, "Helix Fit", "Refined helix fitting failed.")
                 return
 
             # Store refined helix parameters
@@ -780,20 +846,95 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(
                     self,
                     "Helix Fit",
-                    "Direct helix fitting completed and helix visualized.",
+                    "Refined helix fitted and visualized.",
                 )
             else:
                 QMessageBox.warning(
                     self, "Helix Fit", "Failed to create refined helix visualization."
                 )
 
-            # Clear selected points for next usage
+            if self.filtered_clusters is not None and len(self.filtered_clusters) > 0:
+                delta_rphi, delta_z = calculate_deltas(
+                    self.helix_params_refined, self.filtered_clusters
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Helix Fit",
+                    "No clusters passed the filter. Cannot calculate deltas.",
+                )
+                return
+
+            # **Calculate sigma (standard deviation)**
+            sigma_rphi = np.std(delta_rphi)
+            sigma_z = np.std(delta_z)
+            self.track_counter += 1
+            track_id = self.track_counter
+
+            root_output = "helix_fitting_results.root"
+            try:
+                save_histograms(root_output, track_id, delta_rphi, delta_z)
+                save_tree(
+                    root_output, track_id, delta_rphi, delta_z, sigma_rphi, sigma_z
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Save Error", f"An error occurred while saving results:\n{e}"
+                )
+                return
+
+            # **Update info panel with sigma values**
+            info_text = (
+                f"Track ID: {track_id}\n"
+                f"Sigma Delta rphi: {sigma_rphi:.4f} cm\n"
+                f"Sigma Delta z: {sigma_z:.4f} cm\n"
+            )
+            self.info_panel.setText(info_text)
+
+            # **Plot histograms within the GUI**
+            self.plot_histograms(delta_rphi, delta_z, track_id)
+
+            # **Reset for next fitting**
             self.selected_points_second.clear()
             self.fitting_step = 1  # Reset to initial fitting step
             self.instruction_label.setText(
                 "Instruction: Select 3 points for initial helix fitting."
             )
             self.update_display()
+
+    def plot_histograms(self, delta_rphi, delta_z, track_id):
+        """
+        Plot histograms of delta rphi and delta z for a given track.
+
+        Parameters:
+        -----------
+        delta_rphi : np.ndarray
+            Array of delta rphi (arc length) values.
+        delta_z : np.ndarray
+            Array of delta z values.
+        track_id : int
+            Unique identifier for the track.
+        """
+        # Clear previous histograms
+        self.hist_ax_rphi.clear()
+        self.hist_ax_z.clear()
+
+        # Plot Delta rphi
+        self.hist_ax_rphi.hist(
+            delta_rphi, bins=50, range=(-1, 1), color="red", alpha=0.7
+        )
+        self.hist_ax_rphi.set_title(f"Delta rphi Distribution for Track {track_id}")
+        self.hist_ax_rphi.set_xlabel("Delta rphi (cm)")  # Adjust units as needed
+        self.hist_ax_rphi.set_ylabel("Counts")
+
+        # Plot Delta z
+        self.hist_ax_z.hist(delta_z, bins=50, range=(-2, 2), color="blue", alpha=0.7)
+        self.hist_ax_z.set_title(f"Delta z Distribution for Track {track_id}")
+        self.hist_ax_z.set_xlabel("Delta z (cm)")
+        self.hist_ax_z.set_ylabel("Counts")
+
+        # Refresh the canvas
+        self.hist_canvas.draw()
 
     def reset_helix(self):
         """Clears the fitted helix and resets the selection."""
@@ -807,6 +948,7 @@ class MainWindow(QMainWindow):
         self.instruction_label.setText(
             "Instruction: Select 3 points for initial helix fitting."
         )
+        self.filtered_clusters = None  # Clear filtered clusters
         self.update_display()
         QMessageBox.information(
             self,
@@ -814,14 +956,45 @@ class MainWindow(QMainWindow):
             "Helix has been reset. You can select new points and fit again.",
         )
 
-    def apply_helix_filter(self, point, helix_params):
+    # backup
+    def export_results(self):
         """
-        Wrapper around the apply_helix_filter function from helix_fitting.py.
+        Export the ROOT file containing all track analyses.
         """
-        return apply_helix_filter(point, helix_params, self.rphi_window, self.z_window)
+        if self.track_counter == 0:
+            QMessageBox.warning(
+                self, "Export Error", "No tracks have been analyzed yet."
+            )
+            return
 
-    if __name__ == "__main__":
-        app = QApplication(sys.argv)
-        window = MainWindow()
-        window.show()
-        sys.exit(app.exec_())
+        # Open a file dialog to choose save location
+        options = QFileDialog.Options()
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Analysis Results",
+            "helix_fitting_results.root",
+            "ROOT Files (*.root)",
+            options=options,
+        )
+        if filename:
+            try:
+                # Assuming 'helix_fitting_results.root' already contains all data
+                # Copy it to the desired location
+                import shutil
+
+                shutil.copy("helix_fitting_results.root", filename)
+                QMessageBox.information(
+                    self, "Export Success", f"Results saved to {filename}"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Export Error", f"Failed to export results:\n{e}"
+                )
+
+    def reset_plotter(self):
+        """
+        Reset the 3D plotter to its initial state.
+        """
+        self.plotter_widget.clear()
+        self.plotter_widget.show_axes()
+        self.update_display()
