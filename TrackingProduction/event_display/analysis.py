@@ -6,6 +6,7 @@ from ROOT import TFile, TTree, TH1D, TDirectory
 from array import array
 import os
 import logging
+import pyvista as pv
 
 # from helix_fitting import (
 #    find_helix_points_at_radius_analytic,
@@ -178,7 +179,7 @@ def calculate_deltas(helix_params, clusters):
     delta_rphi = []
     delta_z = []
 
-    for point in clusters:
+    for point in clusters.points:
         x, y, z = point
 
         r_meas = np.sqrt(x**2 + y**2)
@@ -223,6 +224,155 @@ def calculate_deltas(helix_params, clusters):
         delta_z.append(delta_z_val)
 
     return np.array(delta_rphi), np.array(delta_z)
+
+
+def find_helix_reference_points(clusters, helix_params, ref_theta):
+    """
+    Find reference points on the helix for each cluster.
+    Returns reference points and their associated deltas.
+
+    Parameters:
+    -----------
+    clusters : pv.PolyData
+        The filtered cluster or hit data as a PyVista PolyData object.
+    helix_params : dict
+        Dictionary containing helix parameters (e.g., c_x, c_y, r, alpha).
+    ref_theta : float
+        Reference theta value for helix calculations.
+
+    Returns:
+    --------
+    reference_points : np.ndarray
+        Array of reference point coordinates [x, y, z].
+    delta_rphi : np.ndarray
+        Array of delta rphi values.
+    delta_z : np.ndarray
+        Array of delta z values.
+    """
+    reference_points = []
+    delta_rphi = []
+    delta_z = []
+
+    # Iterate over the actual points in the PolyData
+    for point in clusters.points:
+        x, y, z = point
+        r_meas = np.sqrt(x**2 + y**2)
+        phi_meas = np.arctan2(y, x)
+
+        # Find reference points on the helix at this radius
+        solutions = find_helix_points_at_radius_analytic(
+            r_meas, helix_params, ref_theta, theta_range=np.pi / 2
+        )
+
+        if not solutions:
+            continue
+
+        # Find closest solution
+        min_dphi = float("inf")
+        best_solution = None
+
+        for solution in solutions:
+            phi_sol, z_sol, theta_sol = solution
+            dphi = abs(phi_meas - phi_sol)
+            dphi = min(dphi, 2 * np.pi - dphi)  # Normalize to [0, pi]
+
+            if dphi < min_dphi:
+                min_dphi = dphi
+                best_solution = solution
+
+        if best_solution is None:
+            continue
+
+        phi_sol, z_sol, theta_sol = best_solution
+
+        # Calculate reference point coordinates
+        x_ref = helix_params["c_x"] + helix_params["r"] * np.cos(theta_sol)
+        y_ref = helix_params["c_y"] + helix_params["r"] * np.sin(theta_sol)
+        z_ref = helix_params["c_z"] + helix_params["alpha"] * theta_sol
+
+        # Calculate deltas
+        delta_phi = phi_meas - phi_sol
+        delta_phi = (delta_phi + np.pi) % (2 * np.pi) - np.pi  # Normalize to [-pi, pi]
+
+        delta_rphi_val = helix_params["r"] * delta_phi
+        delta_z_val = z - z_ref
+
+        reference_points.append([x_ref, y_ref, z_ref])
+        delta_rphi.append(delta_rphi_val)
+        delta_z.append(delta_z_val)
+
+    return np.array(reference_points), np.array(delta_rphi), np.array(delta_z)
+
+
+def visualize_reference_points(plotter, clusters, helix_params):
+    """
+    Add reference points to the visualization.
+
+    Parameters:
+    -----------
+    plotter : pyvista.Plotter
+        The PyVista plotter object for visualization.
+    clusters : pv.PolyData
+        The filtered cluster or hit data as a PyVista PolyData object.
+    helix_params : dict
+        Dictionary containing helix parameters.
+    """
+    # Find reference points
+    ref_points, _, _ = find_helix_reference_points(
+        clusters, helix_params, helix_params.get("ref_theta", 0.0)
+    )
+
+    if len(ref_points) > 0:
+        # Create PolyData for reference points
+        ref_polydata = pv.PolyData(ref_points)
+
+        # Add reference points to the visualization
+        plotter.add_mesh(
+            ref_polydata,
+            style="points",
+            point_size=5,
+            color="yellow",  # Different color to distinguish reference points
+            pickable=False,
+            label="Reference Points",
+        )
+
+        # Add lines connecting clusters to their reference points
+        for cluster, ref in zip(clusters.points, ref_points):
+            line_points = np.array([cluster, ref])
+            line = pv.Line(line_points[0], line_points[1])
+            plotter.add_mesh(line, color="gray", opacity=0.3)
+
+
+def calculate_deltas_with_visualization(helix_params, clusters, plotter=None):
+    """
+    Calculate deltas and optionally visualize reference points.
+
+    Parameters:
+    -----------
+    helix_params : dict
+        Dictionary containing helix parameters.
+    clusters : pv.PolyData
+        The filtered cluster or hit data as a PyVista PolyData object.
+    plotter : pyvista.Plotter, optional
+        The PyVista plotter object for visualization.
+
+    Returns:
+    --------
+    delta_rphi : np.ndarray
+        Array of delta rphi values.
+    delta_z : np.ndarray
+        Array of delta z values.
+    """
+    # Calculate reference points and deltas
+    ref_points, delta_rphi, delta_z = find_helix_reference_points(
+        clusters, helix_params, helix_params.get("ref_theta", 0.0)
+    )
+
+    if plotter is not None and len(ref_points) > 0:
+        # Visualize reference points without recalculating
+        visualize_reference_points(plotter, clusters, helix_params)
+
+    return delta_rphi, delta_z
 
 
 def save_histograms(root_filename, track_id, delta_rphi, delta_z):
@@ -285,67 +435,59 @@ def save_histograms(root_filename, track_id, delta_rphi, delta_z):
 
 def save_tree(root_filename, track_id, delta_rphi, delta_z, sigma_rphi, sigma_z):
     """
-    Save delta rphi and delta z values along with their sigmas into a TTree.
-
-    Parameters:
-    -----------
-    root_filename : str
-        Path to the ROOT file.
-    track_id : int
-        Unique identifier for the track.
-    delta_rphi : np.ndarray
-        Array of delta rphi values.
-    delta_z : np.ndarray
-        Array of delta z values.
-    sigma_rphi : float
-        Standard deviation of delta rphi.
-    sigma_z : float
-        Standard deviation of delta z.
+    Save delta rphi and delta z values along with their sigmas into a TTree in the ROOT file.
+    Each call to this function adds a new entry to the TTree.
     """
+    global tree_initialized, tree, file, track_id_var, sigma_rphi_var, sigma_z_var, delta_rphi_vec, delta_z_vec
+
     # Open the ROOT file in update mode or create it if it doesn't exist
     file = TFile.Open(root_filename, "UPDATE")
     if not file or file.IsZombie():
         logging.error(f"Cannot open or create ROOT file: {root_filename}")
         raise IOError(f"Cannot open or create ROOT file: {root_filename}")
 
-    # Get or Create a TTree if it doesn't exist
-    tree = file.Get("AnalysisTree")
-    if not tree:
+    if not tree_initialized:
+        # Create the TTree and define branches
         tree = TTree("AnalysisTree", "Helix Fitting Analysis")
 
-        track_id_var = array("i", [0])  # Integer
-        sigma_rphi_var = array("d", [0.0])  # Double
-        sigma_z_var = array("d", [0.0])  # Double
-
+        # Define scalar branches
         tree.Branch("track_id", track_id_var, "track_id/I")
         tree.Branch("sigma_rphi", sigma_rphi_var, "sigma_rphi/D")
         tree.Branch("sigma_z", sigma_z_var, "sigma_z/D")
 
-        # Define vector branches without leaf lists
-        delta_rphi_vec = ROOT.std.vector("double")()
-        delta_z_vec = ROOT.std.vector("double")()
-
+        # Define vector branches
         tree.Branch("delta_rphi", delta_rphi_vec)
         tree.Branch("delta_z", delta_z_vec)
 
-    # Convert numpy arrays to std::vector<double>
-    delta_rphi_vec = ROOT.std.vector("double")(delta_rphi.tolist())
-    delta_z_vec = ROOT.std.vector("double")(delta_z.tolist())
+        tree_initialized = True
+        logging.info("Initialized TTree and defined branches.")
+    else:
+        # Retrieve the existing tree
+        tree = file.Get("AnalysisTree")
+        if not tree:
+            logging.error(f"TTree 'AnalysisTree' not found in {root_filename}.")
+            raise IOError(f"TTree 'AnalysisTree' not found in {root_filename}.")
 
-    # Set branch values
-    tree.track_id = track_id
-    tree.delta_rphi = delta_rphi_vec
-    tree.delta_z = delta_z_vec
-    tree.sigma_rphi = sigma_rphi
-    tree.sigma_z = sigma_z
+    # Set scalar branch values
+    track_id_var[0] = track_id
+    sigma_rphi_var[0] = sigma_rphi
+    sigma_z_var[0] = sigma_z
 
-    # Fill the tree
+    # Clear and fill vector branches
+    delta_rphi_vec.clear()
+    delta_z_vec.clear()
+    for drphi in delta_rphi:
+        delta_rphi_vec.push_back(drphi)
+    for dz in delta_z:
+        delta_z_vec.push_back(dz)
+
+    # Fill the tree with the current entry
     tree.Fill()
 
-    # Write the tree to file
+    # Write the tree to the file
     tree.Write("", ROOT.TObject.kOverwrite)
 
-    logging.info(f"Saved TTree entry for Track ID {track_id} to {root_filename}")
+    logging.info(f"Saved entry for Track ID {track_id} to '{root_filename}'.")
 
     # Close the file
     file.Close()

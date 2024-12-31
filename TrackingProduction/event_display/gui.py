@@ -38,6 +38,7 @@ from analysis import (
     save_tree,
     apply_helix_filter,
     find_helix_points_at_radius_analytic,
+    calculate_deltas_with_visualization,
 )
 
 from data_loader import load_data_from_root
@@ -578,41 +579,53 @@ class MainWindow(QMainWindow):
             filtered_indices = np.where(mask)[0]
             filtered_points = self.cluster_data.extract_points(filtered_indices)
 
-            if apply_tube_filter and (
-                self.helix_params_refined is not None
-                or self.helix_params_initial is not None
-            ):
-                # Get current helix parameters
-                current_helix_params = (
-                    self.helix_params_refined or self.helix_params_initial
-                )
-
-                # Apply filter to each point
-                distance_mask = np.array(
-                    [
-                        apply_helix_filter(
-                            point,
-                            self.helix_params_initial,
-                            self.rphi_window,
-                            self.z_window,
-                        )
-                        for point in filtered_points.points
-                    ]
-                )
-                filtered_indices = filtered_indices[distance_mask]
-                filtered_points = self.cluster_data.extract_points(filtered_indices)
-
             if filtered_points.n_points > 0:
                 self.cluster_polydata = filtered_points
-                # Add cluster points in one color, e.g., red
-                self.plotter_widget.add_mesh(
-                    self.cluster_polydata,
-                    style="points",
-                    point_size=5,
-                    color="red",
-                )
 
-                self.filtered_clusters = self.cluster_polydata.points.copy()
+                if apply_tube_filter and (
+                    self.helix_params_refined is not None
+                    or self.helix_params_initial is not None
+                ):
+                    # Get current helix parameters
+                    current_helix_params = (
+                        self.helix_params_refined or self.helix_params_initial
+                    )
+
+                    # Apply filter to each point
+                    distance_mask = np.array(
+                        [
+                            apply_helix_filter(
+                                point,
+                                self.helix_params_initial,
+                                self.rphi_window,
+                                self.z_window,
+                            )
+                            for point in filtered_points.points
+                        ]
+                    )
+                    filtered_points = filtered_points.extract_points(distance_mask)
+
+                if filtered_points.n_points > 0:
+                    self.filtered_clusters = filtered_points
+                    self.plotter_widget.add_mesh(
+                        filtered_points,
+                        style="points",
+                        point_size=5,
+                        color="red",
+                    )
+                    """
+                    if apply_tube_filter and (
+                        self.helix_params_refined or self.helix_params_initial
+                    ):
+                        calculate_deltas_with_visualization(
+                            self.helix_params_initial,
+                            self.filtered_clusters,
+                            plotter=self.plotter_widget,
+                        )
+                    """
+                else:
+                    self.filtered_clusters = np.array([])
+
             else:
                 self.filtered_clusters = np.array([])  # Empty array if no clusters pass
 
@@ -672,12 +685,17 @@ class MainWindow(QMainWindow):
                 # Apply filter to each point
                 distance_mask = np.array(
                     [
-                        apply_helix_filter(point, self.helix_params_initial)
+                        apply_helix_filter(
+                            point,
+                            self.helix_params_initial,
+                            self.rphi_window,
+                            self.z_window,
+                        )
                         for point in filtered_points.points
                     ]
                 )
-                filtered_indices = filtered_indices[distance_mask]
-                filtered_points = self.cluster_data.extract_points(filtered_indices)
+                # filtered_indices = filtered_indices[distance_mask]
+                filtered_points = filtered_points.extract_points(distance_mask)
 
             if filtered_points.n_points > 0:
                 self.hit_polydata = filtered_points
@@ -853,9 +871,12 @@ class MainWindow(QMainWindow):
                     self, "Helix Fit", "Failed to create refined helix visualization."
                 )
 
-            if self.filtered_clusters is not None and len(self.filtered_clusters) > 0:
+            if (
+                self.filtered_clusters is not None
+                and self.filtered_clusters.n_points > 0
+            ):
                 delta_rphi, delta_z = calculate_deltas(
-                    self.helix_params_refined, self.filtered_clusters
+                    self.helix_params_initial, self.filtered_clusters
                 )
             else:
                 QMessageBox.warning(
