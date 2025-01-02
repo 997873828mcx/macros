@@ -483,6 +483,10 @@ class MainWindow(QMainWindow):
         """
         Load data from a ROOT file, process it, and display it in the 3D view.
         """
+        if self.cluster_data is not None:
+            del self.cluster_data
+        if self.hit_data is not None:
+            del self.hit_data
         filename, _ = QFileDialog.getOpenFileName(
             self, "Open ROOT File", "", "ROOT files (*.root)"
         )
@@ -825,8 +829,13 @@ class MainWindow(QMainWindow):
             """
 
             try:
+                
+                filtered_points = self.filtered_clusters.points
+                #helix_params_refined = fit_helix_direct(
+                 #   self.selected_points_second, self.helix_params_initial
+                #)
                 helix_params_refined = fit_helix_direct(
-                    self.selected_points_second, self.helix_params_initial
+                    filtered_points, self.helix_params_initial
                 )
             except ValueError as ve:
                 QMessageBox.warning(self, "Helix Fit", str(ve))
@@ -876,7 +885,7 @@ class MainWindow(QMainWindow):
                 and self.filtered_clusters.n_points > 0
             ):
                 delta_rphi, delta_z = calculate_deltas(
-                    self.helix_params_initial, self.filtered_clusters
+                    self.helix_params_refined, self.filtered_clusters
                 )
             else:
                 QMessageBox.warning(

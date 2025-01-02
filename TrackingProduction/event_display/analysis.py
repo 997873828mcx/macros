@@ -174,7 +174,7 @@ def calculate_deltas(helix_params, clusters):
         Array of delta z values.
     """
 
-    ref_theta = helix_params.get("ref_theta", 0.0)
+    ref_theta = helix_params.get("ref_theta_direct", 0.0)
 
     delta_rphi = []
     delta_z = []

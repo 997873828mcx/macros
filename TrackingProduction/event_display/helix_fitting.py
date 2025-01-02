@@ -116,18 +116,19 @@ def generate_helix_points_refined(params, num_points=500):
     c_y = params["c_y"]
     c_z = params["c_z"]
     r = params["r"]
-    phi = params["phi"]
+    theta0 = params["ref_theta_direct"]
+    #phi = params["phi"]
     alpha = params["alpha"]
 
     # Generate a range of theta values around t0 for visualization
-    theta_min = -np.pi
-    theta_max = np.pi  # Adjust as needed for visualization
+    theta_min = theta0-np.pi
+    theta_max = theta0+np.pi  # Adjust as needed for visualization
     t = np.linspace(theta_min, theta_max, num_points)
     # Generate a range of theta values for visualization
     # t = np.linspace(0, 4 * np.pi, num_points)  # 2 full turns
 
-    x = c_x + r * np.cos(t + phi)
-    y = c_y + r * np.sin(t + phi)
+    x = c_x + r * np.cos(t)
+    y = c_y + r * np.sin(t)
     z = c_z + alpha * t
 
     return np.column_stack((x, y, z))
@@ -174,26 +175,29 @@ def fit_helix_direct(points, initial_params):
     # t0 is not used in direct fitting
 
     # Initial guess for global parameters
-    phi0 = 0.0  # Initial phase offset
+    #phi0 = 0.0  # Initial phase offset
     initial_guess = np.array(
         [
             c_x0,  # c_x
             c_y0,  # c_y
             c_z0,  # c_z
             r0,  # r
-            phi0,  # phi
+            #phi0,  # phi
             alpha0,  # alpha
         ]
     )
-
+    #theta0=np.arctan2(points[1, 1] - c_y0, points[1, 0] - c_x0) 
     # Define residuals for least squares
     def residuals(params, points):
-        c_x, c_y, c_z, r, phi, alpha = params
+        c_x, c_y, c_z, r, alpha = params
         # Calculate theta for each point based on current helix parameters
-        theta = np.arctan2(points[:, 1] - c_y, points[:, 0] - c_x) - phi
+        theta = np.arctan2(points[:, 1] - c_y, points[:, 0] - c_x)
+        theta = np.unwrap(theta)  # Ensure continuity
+        # Calculate theta for each point based on current helix parameters
+        #theta = np.arctan2(points[:, 1] - c_y, points[:, 0] - c_x) 
         # Calculate fitted positions
-        x_fit = c_x + r * np.cos(theta + phi)
-        y_fit = c_y + r * np.sin(theta + phi)
+        x_fit = c_x + r * np.cos(theta)
+        y_fit = c_y + r * np.sin(theta)
         z_fit = c_z + alpha * theta
         # Compute residuals as the difference between actual and fitted positions
         residuals = points - np.column_stack((x_fit, y_fit, z_fit))
@@ -201,6 +205,7 @@ def fit_helix_direct(points, initial_params):
 
     try:
         # Perform least squares optimization
+        '''
         result = least_squares(
             residuals,
             initial_guess,
@@ -208,20 +213,39 @@ def fit_helix_direct(points, initial_params):
             method="lm",  # Levenberg-Marquardt algorithm, need to add huber loss function
             max_nfev=1000,
         )
+        '''
+        
+        result = least_squares(
+            residuals,
+            initial_guess,
+            args=(points,),
+            method="trf",       # Trust Region Reflective algorithm
+            loss="huber",       # Specify Huber loss for robustness
+            f_scale=1.0,        # Tuning parameter for Huber loss; adjust as needed
+            max_nfev=1000,
+            verbose=2            # Enable verbosity for debugging; set to 0 for silent
+        )
+        
         if not result.success:
             print("Direct helix fitting did not converge.")
             return None
 
         fitted = result.x
-        c_x, c_y, c_z, r, phi, alpha = fitted[:6]
+        c_x, c_y, c_z, r, alpha = fitted[:5]
+
+        # Calculate theta0 as the mean of unwrapped theta
+        theta = np.arctan2(points[:, 1] - c_y, points[:, 0] - c_x)
+        theta = np.unwrap(theta)  # Ensure continuity
+        theta0 = np.mean(theta)
 
         return {
             "c_x": c_x,
             "c_y": c_y,
             "c_z": c_z,
             "r": r,
-            "phi": phi,
+            #"phi": phi,
             "alpha": alpha,
+            "ref_theta_direct":theta0
         }
 
     except Exception as e:
