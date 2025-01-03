@@ -93,3 +93,4 @@ tmtags
 # valgrind
 *.valgrind
 *.log
+__pycache__/

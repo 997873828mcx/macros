@@ -26,13 +26,6 @@ track_id_var = array("i", [0])  # Integer
 sigma_rphi_var = array("d", [0.0])  # Double
 sigma_z_var = array("d", [0.0])  # Double
 
-delta_rphi_vec = ROOT.std.vector("double")()
-delta_z_vec = ROOT.std.vector("double")()
-
-tree_initialized = False
-tree = None
-file = None
-
 
 def find_helix_points_at_radius_analytic(
     r, helix_params, ref_theta, theta_range=np.pi / 2
@@ -438,35 +431,34 @@ def save_tree(root_filename, track_id, delta_rphi, delta_z, sigma_rphi, sigma_z)
     Save delta rphi and delta z values along with their sigmas into a TTree in the ROOT file.
     Each call to this function adds a new entry to the TTree.
     """
-    global tree_initialized, tree, file, track_id_var, sigma_rphi_var, sigma_z_var, delta_rphi_vec, delta_z_vec
-
-    # Open the ROOT file in update mode or create it if it doesn't exist
+    delta_rphi_vec = ROOT.std.vector("double")()
+    delta_z_vec = ROOT.std.vector("double")()
+    # Open the ROOT file in update mode
     file = TFile.Open(root_filename, "UPDATE")
     if not file or file.IsZombie():
         logging.error(f"Cannot open or create ROOT file: {root_filename}")
         raise IOError(f"Cannot open or create ROOT file: {root_filename}")
 
-    if not tree_initialized:
+    tree = file.Get("AnalysisTree")
+    if not tree:
+
         # Create the TTree and define branches
+
         tree = TTree("AnalysisTree", "Helix Fitting Analysis")
 
-        # Define scalar branches
+        # Define branches
         tree.Branch("track_id", track_id_var, "track_id/I")
         tree.Branch("sigma_rphi", sigma_rphi_var, "sigma_rphi/D")
         tree.Branch("sigma_z", sigma_z_var, "sigma_z/D")
-
-        # Define vector branches
         tree.Branch("delta_rphi", delta_rphi_vec)
         tree.Branch("delta_z", delta_z_vec)
 
-        tree_initialized = True
-        logging.info("Initialized TTree and defined branches.")
     else:
-        # Retrieve the existing tree
-        tree = file.Get("AnalysisTree")
-        if not tree:
-            logging.error(f"TTree 'AnalysisTree' not found in {root_filename}.")
-            raise IOError(f"TTree 'AnalysisTree' not found in {root_filename}.")
+        tree.SetBranchAddress("track_id", track_id_var)
+        tree.SetBranchAddress("sigma_rphi", sigma_rphi_var)
+        tree.SetBranchAddress("sigma_z", sigma_z_var)
+        tree.SetBranchAddress("delta_rphi", delta_rphi_vec)
+        tree.SetBranchAddress("delta_z", delta_z_vec)
 
     # Set scalar branch values
     track_id_var[0] = track_id
@@ -477,11 +469,11 @@ def save_tree(root_filename, track_id, delta_rphi, delta_z, sigma_rphi, sigma_z)
     delta_rphi_vec.clear()
     delta_z_vec.clear()
     for drphi in delta_rphi:
-        delta_rphi_vec.push_back(drphi)
+        delta_rphi_vec.push_back(float(drphi))
     for dz in delta_z:
-        delta_z_vec.push_back(dz)
+        delta_z_vec.push_back(float(dz))
 
-    # Fill the tree with the current entry
+    # Fill tree and write
     tree.Fill()
 
     # Write the tree to the file
@@ -491,3 +483,4 @@ def save_tree(root_filename, track_id, delta_rphi, delta_z, sigma_rphi, sigma_z)
 
     # Close the file
     file.Close()
+    logging.info(f"Saved entry for Track ID {track_id} to '{root_filename}'.")

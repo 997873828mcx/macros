@@ -22,7 +22,6 @@ from qtpy.QtWidgets import (
 from qtpy.QtCore import Qt
 from superqt import QRangeSlider
 from scipy.spatial import cKDTree
-
 from helix_fitting import (
     fit_helix_initial,
     fit_helix_direct,
@@ -30,8 +29,7 @@ from helix_fitting import (
     generate_helix_points_refined,
     create_helix_tube,
 )
-
-
+from histogram_window import HistogramWindow
 from analysis import (
     calculate_deltas,
     save_histograms,
@@ -40,10 +38,7 @@ from analysis import (
     find_helix_points_at_radius_analytic,
     calculate_deltas_with_visualization,
 )
-
 from data_loader import load_data_from_root
-
-
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
@@ -71,6 +66,8 @@ class MainWindow(QMainWindow):
 
         self.rphi_window = 0.5  # Default window size for rphi
         self.z_window = 1.0  # Default window size for z
+
+        self.histogram_window = HistogramWindow()
 
         # Main container widget
         main_widget = QWidget()
@@ -727,7 +724,63 @@ class MainWindow(QMainWindow):
         # Restore the previously saved camera position
         self.plotter_widget.camera_position = camera_position
 
+        self.create_tpc_cylinders()
+        # self.plotter_widget.set_scale(xscale=1, yscale=1, zscale=1)
+
+        # Update the camera clipping range to include all data
+        # self.plotter_widget.reset_camera_clipping_range()
+
         self.plotter_widget.show_axes()
+
+    def create_tpc_cylinders(self):
+        """
+        Create concentric cylinders to represent the TPC detector.
+        Inner radius: 21.6 cm
+        Outer radius: 76.4 cm
+        Half-length: 105.5 cm (total length 211 cm)
+        """
+        # Create inner cylinder
+        inner_cylinder = pv.Cylinder(
+            center=(0, 0, 0),
+            direction=(0, 0, 1),
+            radius=21.6,
+            height=211,
+        )
+
+        # Create outer cylinder
+        outer_cylinder = pv.Cylinder(
+            center=(0, 0, 0),
+            direction=(0, 0, 1),
+            radius=76.4,
+            height=211,
+        )
+
+        beam_line = pv.Line((0, 0, -200), (0, 0, 200))
+        # Add cylinders to the plotter with transparency
+        self.plotter_widget.add_mesh(
+            inner_cylinder,
+            color="gray",
+            opacity=0.2,
+            pickable=False,
+            line_width=1,
+            style="wireframe",
+        )
+
+        self.plotter_widget.add_mesh(
+            outer_cylinder,
+            color="gray",
+            opacity=0.2,
+            pickable=False,
+            line_width=1,
+            style="wireframe",
+        )
+        # Add beam axis line
+        self.plotter_widget.add_mesh(
+            beam_line,
+            color="grey",
+            line_width=3,
+            pickable=False,
+        )
 
     def initiate_helix_fit(self):
         """Triggered when the user clicks the 'Fit Helix' button."""
@@ -829,14 +882,23 @@ class MainWindow(QMainWindow):
             """
 
             try:
-                
+                if self.helix_params_initial is None:
+                    QMessageBox.warning(
+                        self,
+                        "Helix Fit",
+                        "Initial helix parameters are not available. Please perform initial fitting first."
+                    )
+                    return
                 filtered_points = self.filtered_clusters.points
-                #helix_params_refined = fit_helix_direct(
-                 #   self.selected_points_second, self.helix_params_initial
-                #)
+                # helix_params_refined = fit_helix_direct(
+                #   self.selected_points_second, self.helix_params_initial
+                # )
                 helix_params_refined = fit_helix_direct(
                     filtered_points, self.helix_params_initial
                 )
+                
+
+                
             except ValueError as ve:
                 QMessageBox.warning(self, "Helix Fit", str(ve))
                 return
@@ -887,6 +949,11 @@ class MainWindow(QMainWindow):
                 delta_rphi, delta_z = calculate_deltas(
                     self.helix_params_refined, self.filtered_clusters
                 )
+                
+                print("Showing histogram window")
+                if not self.histogram_window.isVisible():
+                    self.histogram_window.show()
+                self.histogram_window.add_histograms(delta_rphi, delta_z, self.track_counter)
             else:
                 QMessageBox.warning(
                     self,
