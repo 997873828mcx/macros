@@ -2,6 +2,7 @@ import sys
 import numpy as np
 import pyvista as pv
 from pyvistaqt import QtInteractor
+from typing import Optional
 from qtpy.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -27,7 +28,7 @@ from helix_fitting import (
     fit_helix_direct,
     generate_helix_points_initial,
     generate_helix_points_refined,
-    create_helix_tube,
+    generate_helix_line,
 )
 from histogram_window import HistogramWindow
 from analysis import (
@@ -56,12 +57,16 @@ class MainWindow(QMainWindow):
         self.pick_mode = "info"  # Default mode
 
         # Add a new attribute to track the helix tube color
-        self.helix_tube_color = "green"  # Default color for initial fitting
+        self.helix_line_color = "grey"  # Default color for initial fitting
+        self.helix_line = None
+        self.helix_lines = []  # List to store all helix lines
+        # self.helix_colors = []
+        # self.available_colors = [
+        #   "green", "blue", "red", "yellow", "cyan", "magenta",
+        #  "orange", "purple", "brown", "pink"
+        # ]
+        # self.current_color_index = 0
 
-        # Initialize tube_radius with a default value (e.g., 0.05 as 5%)
-        self.tube_radius_percentage_initial = 0.1  # 10% of the helix radius
-        self.tube_radius_percentage_second = 0.01
-        self.tube_radius = 0.5
         self.track_counter = 0
 
         self.rphi_window = 0.5  # Default window size for rphi
@@ -337,7 +342,7 @@ class MainWindow(QMainWindow):
         self.selected_points_second = (
             []
         )  # Store additional picked points for refined helix fitting
-        self.helix_tube = None  # Store the helix tube (for visualization)
+        self.helix_line = None  # Store the helix tube (for visualization)
         self.helix_points = None  # Store helix points for distance calculations.
         self.helix_params_initial = None  # Store initial helix parameters
         self.helix_params_refined = None  # Store refined helix parameters
@@ -349,6 +354,97 @@ class MainWindow(QMainWindow):
 
         # Enable initial point picking for info mode
         self.update_point_picking()
+
+    def _filter_data(
+        self, data: pv.PolyData, for_fitting: bool = False
+    ) -> Optional[pv.PolyData]:
+        """
+        General-purpose filtering for clusters and hits based on spatial ranges,
+        side selection, and optional helix proximity.
+
+        Parameters:
+        -----------
+        data : pv.PolyData
+            The dataset to filter (clusters or hits).
+
+        Returns:
+        --------
+        Optional[pv.PolyData]
+            The filtered data or None if no points pass.
+        """
+        if data is None:
+            return None
+
+        # Retrieve range values from sliders
+        x_min, x_max = self.x_range_slider.value()
+        y_min, y_max = self.y_range_slider.value()
+        z_min, z_max = self.z_range_slider.value()
+
+        # Retrieve selected sides
+        selected_sides = []
+        if self.side0_checkbox.isChecked():
+            selected_sides.append(0)
+        if self.side1_checkbox.isChecked():
+            selected_sides.append(1)
+
+        if not selected_sides:
+            return None  # No sides selected, no points pass
+
+        points = data.points
+        side = data.point_data.get("side", np.zeros(data.n_points))
+
+        # Apply spatial and side-based filtering
+        side_mask = np.isin(side, selected_sides)
+        spatial_mask = (
+            (points[:, 0] >= x_min)
+            & (points[:, 0] <= x_max)
+            & (points[:, 1] >= y_min)
+            & (points[:, 1] <= y_max)
+            & (points[:, 2] >= z_min)
+            & (points[:, 2] <= z_max)
+        )
+        combined_mask = side_mask & spatial_mask
+        filtered_indices = np.where(combined_mask)[0]
+        filtered_points = data.extract_points(filtered_indices)
+        if for_fitting:
+            if self.helix_params_initial:
+                # Apply helix-based filtering using initial helix parameters
+                distance_mask = np.array(
+                    [
+                        apply_helix_filter(
+                            point,
+                            self.helix_params_initial,
+                            self.rphi_window,
+                            self.z_window,
+                        )
+                        for point in filtered_points.points
+                    ]
+                )
+                helix_filtered = filtered_points.extract_points(distance_mask)
+                return helix_filtered if helix_filtered.n_points > 0 else None
+
+        else:
+            # If the filter checkbox is checked and initial helix exists, apply helix proximity filtering
+            if (
+                not self.toggle_filter_checkbox.isChecked()
+                and self.helix_params_initial
+            ):
+                # Apply helix-based filtering using initial helix parameters
+                distance_mask = np.array(
+                    [
+                        apply_helix_filter(
+                            point,
+                            self.helix_params_initial,
+                            self.rphi_window,
+                            self.z_window,
+                        )
+                        for point in filtered_points.points
+                    ]
+                )
+                helix_filtered = filtered_points.extract_points(distance_mask)
+                return helix_filtered if helix_filtered.n_points > 0 else None
+            else:
+                return filtered_points if filtered_points.n_points > 0 else None
 
     # --- Method to Handle Mode Changes ---
     def on_pick_mode_changed(self):
@@ -431,11 +527,8 @@ class MainWindow(QMainWindow):
         mesh = picker.GetDataSet()
 
         # Validate the picked point
-        if point_id < 0:
+        if point_id < 0 or mesh is None:
             return  # No valid point was picked
-
-        if mesh is None:
-            return  # No mesh was picked
 
         # Ensure 'data_type' exists in the mesh's point data
         if "data_type" not in mesh.point_data:
@@ -445,6 +538,13 @@ class MainWindow(QMainWindow):
         data_type = mesh.point_data["data_type"][point_id]
         label = "Cluster" if data_type == 0 else "Hit"
 
+        if data_type != 0:
+            QMessageBox.warning(
+                self,
+                "Helix Fit",
+                "Please select a Cluster point for helix fitting.",
+            )
+            return  # Only allow picking clusters for fitting
         # Display information about the picked point
         info_text = f"{label} (Point ID: {point_id})\n"
         for attr in mesh.point_data.keys():
@@ -457,24 +557,25 @@ class MainWindow(QMainWindow):
         # mesh.points is a numpy array containing the coordinates
         picked_coordinates = mesh.points[point_id]
 
-        if self.fitting_step == 1:
-            # First fitting step: store in selected_points_first
-            self.selected_points_first.append(picked_coordinates)
-            self.instruction_label.setText(
-                f"Selected {len(self.selected_points_first)}/3 points for initial helix fitting."
+        self.selected_points_first.append(picked_coordinates)
+        self.instruction_label.setText(
+            f"Selected {len(self.selected_points_first)}/3 points for initial helix fitting."
+        )
+        if len(self.selected_points_first) == 3:
+            QMessageBox.information(
+                self,
+                "Helix Fit",
+                "Three points selected. Click 'Fit Helix' to perform initial helix fitting.",
             )
-            if len(self.selected_points_first) == 3:
-                QMessageBox.information(
-                    self,
-                    "Helix Fit",
-                    "Three points selected. Click 'Fit Helix' to perform initial helix fitting.",
-                )
-        elif self.fitting_step == 2:
-            # Second fitting step: store in selected_points_second
-            self.selected_points_second.append(picked_coordinates)
-            self.instruction_label.setText(
-                f"Selected {len(self.selected_points_second)} points for refined helix fitting."
-            )
+        """
+        # Add a marker for the selected point
+        marker = pv.Sphere(radius=2, center=picked_coordinates)
+        self.plotter_widget.add_mesh(
+            marker,
+            color="yellow",
+            pickable=False,
+        )
+        """
 
     def load_data(self):
         """
@@ -522,34 +623,9 @@ class MainWindow(QMainWindow):
         # Clear the current plotter
         self.plotter_widget.clear()
 
-        # Retrieve range values from sliders
-        x_min, x_max = self.x_range_slider.value()
-        y_min, y_max = self.y_range_slider.value()
-        z_min, z_max = self.z_range_slider.value()
-
         # Determine what to show
         show_clusters = self.show_clusters.isChecked()
         show_hits = self.show_hits.isChecked()
-
-        # Retrieve selected sides
-        selected_sides = []
-        if self.side0_checkbox.isChecked():
-            selected_sides.append(0)
-        if self.side1_checkbox.isChecked():
-            selected_sides.append(1)
-
-        # Handle case when no sides are selected
-        if not selected_sides:
-            selected_sides = []
-
-        # Define tube radius (should match the helix tube radius)
-        tube_radius = 0.5  # Adjust as needed
-
-        # Determine whether to apply tube filtering based on the toggle
-        apply_tube_filter = False
-        if self.helix_tube is not None and not self.toggle_filter_checkbox.isChecked():
-            # If helix is present and the user does not want to show points outside the tube
-            apply_tube_filter = True
 
         # --- Clusters ---
         if (
@@ -557,164 +633,35 @@ class MainWindow(QMainWindow):
             and self.cluster_data is not None
             and self.cluster_data.n_points > 0
         ):
+            filtered_clusters_display = self._filter_data(self.cluster_data)
 
-            # Apply the slider range to filter points
-            points = self.cluster_data.points  # Get cluster points
-            side = self.cluster_data.point_data["side"]  # Get side data
+            if filtered_clusters_display and filtered_clusters_display.n_points > 0:
+                self.plotter_widget.add_mesh(
+                    filtered_clusters_display,
+                    style="points",
+                    point_size=5,
+                    color="red",
+                )
 
-            if selected_sides:
-                side_mask = np.isin(side, selected_sides)
-            else:
-                side_mask = False  # No sides selected, no points
-
-            mask = (
-                (points[:, 0] >= x_min)
-                & (points[:, 0] <= x_max)  # X range
-                & (points[:, 1] >= y_min)
-                & (points[:, 1] <= y_max)  # Y range
-                & (points[:, 2] >= z_min)
-                & (points[:, 2] <= z_max)  # Z range
-                & side_mask  # Side filter
-            )
-            # Extract filtered points
-            filtered_indices = np.where(mask)[0]
-            filtered_points = self.cluster_data.extract_points(filtered_indices)
-
-            if filtered_points.n_points > 0:
-                self.cluster_polydata = filtered_points
-
-                if apply_tube_filter and (
-                    self.helix_params_refined is not None
-                    or self.helix_params_initial is not None
-                ):
-                    # Get current helix parameters
-                    current_helix_params = (
-                        self.helix_params_refined or self.helix_params_initial
-                    )
-
-                    # Apply filter to each point
-                    distance_mask = np.array(
-                        [
-                            apply_helix_filter(
-                                point,
-                                self.helix_params_initial,
-                                self.rphi_window,
-                                self.z_window,
-                            )
-                            for point in filtered_points.points
-                        ]
-                    )
-                    filtered_points = filtered_points.extract_points(distance_mask)
-
-                if filtered_points.n_points > 0:
-                    self.filtered_clusters = filtered_points
-                    self.plotter_widget.add_mesh(
-                        filtered_points,
-                        style="points",
-                        point_size=5,
-                        color="red",
-                    )
-                    """
-                    if apply_tube_filter and (
-                        self.helix_params_refined or self.helix_params_initial
-                    ):
-                        calculate_deltas_with_visualization(
-                            self.helix_params_initial,
-                            self.filtered_clusters,
-                            plotter=self.plotter_widget,
-                        )
-                    """
-                else:
-                    self.filtered_clusters = np.array([])
-
-            else:
-                self.filtered_clusters = np.array([])  # Empty array if no clusters pass
-
-        else:
-            self.filtered_clusters = np.array([])  # Empty array if clusters not shown
         # --- Hits ---
         if show_hits and self.hit_data is not None and self.hit_data.n_points > 0:
+            filtered_hits_display = self._filter_data(self.hit_data)
 
-            # Apply the slider range to filter points
-            points = self.hit_data.points  # Get hit points
-            side = self.hit_data.point_data["side"]  # Get side data
-
-            if selected_sides:
-                side_mask = np.isin(side, selected_sides)
-            else:
-                side_mask = False  # No sides selected, no points
-
-            mask = (
-                (points[:, 0] >= x_min)
-                & (points[:, 0] <= x_max)  # X range
-                & (points[:, 1] >= y_min)
-                & (points[:, 1] <= y_max)  # Y range
-                & (points[:, 2] >= z_min)
-                & (points[:, 2] <= z_max)  # Z range
-                & side_mask  # Side filter
-            )
-
-            # Extract filtered points
-            filtered_indices = np.where(mask)[0]
-            filtered_points = self.hit_data.extract_points(filtered_indices)
-            """
-            # Apply helix tube filtering if required
-            if apply_tube_filter and self.helix_points is not None:
-                # Build KDTree from helix points
-                helix_tree = cKDTree(self.helix_points)
-
-                # Query the nearest distance for each point
-                distances, _ = helix_tree.query(filtered_points.points, k=1)
-
-                # Create a mask for points within the tube radius
-                distance_mask = distances <= self.tube_radius
-
-                # Apply the distance mask
-                filtered_indices = filtered_indices[distance_mask]
-                filtered_points = self.hit_data.extract_points(filtered_indices)
-            """
-
-            if apply_tube_filter and (
-                self.helix_params_refined is not None
-                or self.helix_params_initial is not None
-            ):
-                # Get current helix parameters
-                current_helix_params = (
-                    self.helix_params_refined or self.helix_params_initial
-                )
-
-                # Apply filter to each point
-                distance_mask = np.array(
-                    [
-                        apply_helix_filter(
-                            point,
-                            self.helix_params_initial,
-                            self.rphi_window,
-                            self.z_window,
-                        )
-                        for point in filtered_points.points
-                    ]
-                )
-                # filtered_indices = filtered_indices[distance_mask]
-                filtered_points = filtered_points.extract_points(distance_mask)
-
-            if filtered_points.n_points > 0:
-                self.hit_polydata = filtered_points
-                # Add hit points in another color, e.g., blue
+            if filtered_hits_display and filtered_hits_display.n_points > 0:
                 self.plotter_widget.add_mesh(
-                    self.hit_polydata,
+                    filtered_hits_display,
                     style="points",
                     point_size=5,
                     color="blue",
                 )
 
-        # If a helix tube is already generated, re-add it (ensure it's not pickable)
-        if self.helix_tube is not None:
+        for mesh in self.helix_lines:
             self.plotter_widget.add_mesh(
-                self.helix_tube,
-                color=self.helix_tube_color,
-                opacity=0.2,
-                pickable=False,  # Prevent picking on the helix
+                mesh,  # mesh is a pyvista mesh
+                color=self.helix_line_color,
+                line_width=3,
+                style="wireframe",
+                pickable=False,
             )
 
         # Disable and re-enable picking to ensure a fresh start
@@ -797,175 +744,120 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Fit Error", "No cluster data loaded.")
             return
 
-        if self.fitting_step == 1:
-            # First fitting step: initial helix fit with three points
-            if len(self.selected_points_first) != 3:
-                QMessageBox.warning(
-                    self,
-                    "Helix Fit",
-                    "Please select exactly three points before fitting a helix.",
-                )
-                return
+        if len(self.selected_points_first) != 3:
+            QMessageBox.warning(
+                self,
+                "Helix Fit",
+                "Please select exactly three points before fitting a helix.",
+            )
+            return
 
-            try:
-                helix_params_initial = fit_helix_initial(self.selected_points_first)
-            except ValueError as ve:
-                QMessageBox.warning(self, "Helix Fit", str(ve))
-                return
+        try:
+            helix_params_initial = fit_helix_initial(self.selected_points_first)
+        except ValueError as ve:
+            QMessageBox.warning(self, "Helix Fit", str(ve))
+            return
 
-            # Store initial helix parameters
-            self.helix_params_initial = helix_params_initial
-            self.tube_radius = (
-                self.tube_radius_percentage_initial * helix_params_initial["r"]
+        # Store initial helix parameters
+        self.helix_params_initial = helix_params_initial
+        self.helix_line_color = "green"
+
+        # Generate helix points and create a tube
+        helix_points_initial = generate_helix_points_initial(helix_params_initial)
+        self.helix_points = (
+            helix_points_initial  # Store helix points for distance calculations
+        )
+        self.helix_line = generate_helix_line(helix_points_initial)
+        if self.helix_line is not None:
+            self.plotter_widget.add_mesh(
+                self.helix_line,
+                color=self.helix_line_color,
+                line_width=3,  # Make line thicker
+                style="wireframe",  # Make line dashed
+                pickable=False,
+            )
+        else:
+            QMessageBox.warning(
+                self, "Helix Fit", "Failed to create initial helix visualization."
             )
 
-            self.helix_tube_color = "green"
-            # Generate helix points and create a tube
-            helix_points = generate_helix_points_initial(helix_params_initial)
-            self.helix_points = (
-                helix_points  # Store helix points for distance calculations
+        filtered_clusters_for_fitting = self._filter_data(
+            self.cluster_data, for_fitting=True
+        )
+        if (
+            filtered_clusters_for_fitting is None
+            or filtered_clusters_for_fitting.n_points == 0
+        ):
+            QMessageBox.warning(
+                self,
+                "Helix Fit",
+                "No clusters passed the filter. Cannot perform refined fitting.",
             )
-            self.helix_tube = create_helix_tube(
-                helix_points, tube_radius=self.tube_radius
-            )
-            if self.helix_tube is not None:
-                self.plotter_widget.add_mesh(
-                    self.helix_tube,
-                    color=self.helix_tube_color,
-                    opacity=0.5,
-                    pickable=False,
-                )
-            else:
-                QMessageBox.warning(
-                    self, "Helix Fit", "Failed to create helix visualization."
-                )
+            return
 
-            # Clear selected points for second fitting
-            self.selected_points_first.clear()
-            self.fitting_step = 2  # Move to second fitting step
-            self.instruction_label.setText(
-                "Instruction: Select additional points within the helix tube for refined fitting."
+        try:
+            # Perform refined helix fitting
+            helix_params_refined = fit_helix_direct(
+                filtered_clusters_for_fitting.points, self.helix_params_initial
             )
+        except ValueError as ve:
+            QMessageBox.warning(self, "Helix Fit", str(ve))
+            return
+
+        if helix_params_refined is None:
+            QMessageBox.warning(self, "Helix Fit", "Refined helix fitting failed.")
+            return
+
+        # Store refined helix parameters
+        self.helix_params_refined = helix_params_refined
+
+        self.helix_line_color = "blue"
+
+        # Generate refined helix points and create a tube
+        helix_points_refined = generate_helix_points_refined(helix_params_refined)
+        self.helix_points = (
+            helix_points_refined  # Update helix points for distance calculations
+        )
+
+        helix_line_refined = generate_helix_line(helix_points_refined)
+        if helix_line_refined is not None:
+            self.plotter_widget.add_mesh(
+                helix_line_refined,
+                color=self.helix_line_color,
+                line_width=3,
+                style="wireframe",
+                pickable=False,
+            )
+            self.helix_lines.append(helix_line_refined)
             QMessageBox.information(
                 self,
                 "Helix Fit",
-                "Initial helix fitted. Now select additional points within the helix tube for refined fitting.",
+                "Refined helix fitted and visualized.",
             )
-            self.update_display()
-
-        elif self.fitting_step == 2:
-            # Second fitting step: direct helix fit with additional points
-            """
-            if len(self.selected_points_second) < 3:
-                QMessageBox.warning(
-                    self,
-                    "Helix Fit",
-                    "Please select at least three additional points for direct helix fitting.",
-                )
-                return
-            """
-            """
-            # Fetch all points currently displayed (clusters and hits)
-            all_displayed_points = []
-            if self.cluster_polydata is not None and self.cluster_polydata.n_points > 0:
-                all_displayed_points.append(self.cluster_polydata.points)
-            if self.hit_polydata is not None and self.hit_polydata.n_points > 0:
-                all_displayed_points.append(self.hit_polydata.points)
-            if not all_displayed_points:
-                QMessageBox.warning(
-                    self,
-                    "Helix Fit",
-                    "No points available within the helix tube for direct fitting.",
-                )
-                return
-            all_displayed_points = np.vstack(all_displayed_points)
-            """
-
-            try:
-                if self.helix_params_initial is None:
-                    QMessageBox.warning(
-                        self,
-                        "Helix Fit",
-                        "Initial helix parameters are not available. Please perform initial fitting first."
-                    )
-                    return
-                filtered_points = self.filtered_clusters.points
-                # helix_params_refined = fit_helix_direct(
-                #   self.selected_points_second, self.helix_params_initial
-                # )
-                helix_params_refined = fit_helix_direct(
-                    filtered_points, self.helix_params_initial
-                )
-                
-
-                
-            except ValueError as ve:
-                QMessageBox.warning(self, "Helix Fit", str(ve))
-                return
-
-            if helix_params_refined is None:
-                QMessageBox.warning(self, "Helix Fit", "Refined helix fitting failed.")
-                return
-
-            # Store refined helix parameters
-            self.helix_params_refined = helix_params_refined
-
-            self.tube_radius = (
-                self.tube_radius_percentage_second * helix_params_refined["r"]
+        else:
+            QMessageBox.warning(
+                self, "Helix Fit", "Failed to create refined helix visualization."
             )
 
-            self.helix_tube_color = "blue"
-
-            # Generate refined helix points and create a tube
-            helix_points_refined = generate_helix_points_refined(helix_params_refined)
-            self.helix_points = (
-                helix_points_refined  # Update helix points for distance calculations
+        if (
+            filtered_clusters_for_fitting is not None
+            and filtered_clusters_for_fitting.n_points > 0
+        ):
+            delta_rphi, delta_z = calculate_deltas(
+                self.helix_params_refined, filtered_clusters_for_fitting
             )
 
-            self.helix_tube = create_helix_tube(
-                helix_points_refined, tube_radius=self.tube_radius
+            if not self.histogram_window.isVisible():
+                self.histogram_window.show()
+                self.track_counter += 1
+            self.histogram_window.add_histograms(
+                delta_rphi, delta_z, self.track_counter
             )
-            if self.helix_tube is not None:
-                self.plotter_widget.add_mesh(
-                    self.helix_tube,
-                    color=self.helix_tube_color,
-                    opacity=0.5,
-                    pickable=False,
-                )
-                QMessageBox.information(
-                    self,
-                    "Helix Fit",
-                    "Refined helix fitted and visualized.",
-                )
-            else:
-                QMessageBox.warning(
-                    self, "Helix Fit", "Failed to create refined helix visualization."
-                )
-
-            if (
-                self.filtered_clusters is not None
-                and self.filtered_clusters.n_points > 0
-            ):
-                delta_rphi, delta_z = calculate_deltas(
-                    self.helix_params_refined, self.filtered_clusters
-                )
-                
-                print("Showing histogram window")
-                if not self.histogram_window.isVisible():
-                    self.histogram_window.show()
-                self.histogram_window.add_histograms(delta_rphi, delta_z, self.track_counter)
-            else:
-                QMessageBox.warning(
-                    self,
-                    "Helix Fit",
-                    "No clusters passed the filter. Cannot calculate deltas.",
-                )
-                return
 
             # **Calculate sigma (standard deviation)**
             sigma_rphi = np.std(delta_rphi)
             sigma_z = np.std(delta_z)
-            self.track_counter += 1
+
             track_id = self.track_counter
 
             root_output = "helix_fitting_results.root"
@@ -991,13 +883,20 @@ class MainWindow(QMainWindow):
             # **Plot histograms within the GUI**
             self.plot_histograms(delta_rphi, delta_z, track_id)
 
-            # **Reset for next fitting**
-            self.selected_points_second.clear()
-            self.fitting_step = 1  # Reset to initial fitting step
-            self.instruction_label.setText(
-                "Instruction: Select 3 points for initial helix fitting."
+        else:
+            QMessageBox.warning(
+                self,
+                "Helix Fit",
+                "No clusters passed the filter. Cannot calculate deltas.",
             )
-            self.update_display()
+            return
+
+        # **Reset for next fitting**
+        self.selected_points_first.clear()
+        self.instruction_label.setText(
+            "Instruction: Select 3 points for initial helix fitting."
+        )
+        self.update_display()
 
     def plot_histograms(self, delta_rphi, delta_z, track_id):
         """
@@ -1035,17 +934,14 @@ class MainWindow(QMainWindow):
 
     def reset_helix(self):
         """Clears the fitted helix and resets the selection."""
-        self.helix_tube = None
+        self.helix_line = None
         self.helix_points = None  # Clear helix points
         self.helix_params_initial = None
         self.helix_params_refined = None
         self.selected_points_first.clear()
-        self.selected_points_second.clear()
-        self.fitting_step = 1  # Reset fitting step
         self.instruction_label.setText(
             "Instruction: Select 3 points for initial helix fitting."
         )
-        self.filtered_clusters = None  # Clear filtered clusters
         self.update_display()
         QMessageBox.information(
             self,

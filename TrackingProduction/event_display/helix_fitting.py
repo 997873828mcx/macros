@@ -121,8 +121,8 @@ def generate_helix_points_refined(params, num_points=500):
     alpha = params["alpha"]
 
     # Generate a range of theta values around t0 for visualization
-    theta_min = theta0-np.pi
-    theta_max = theta0+np.pi  # Adjust as needed for visualization
+    theta_min = theta0-np.pi/2
+    theta_max = theta0+np.pi/2  # Adjust as needed for visualization
     t = np.linspace(theta_min, theta_max, num_points)
     # Generate a range of theta values for visualization
     # t = np.linspace(0, 4 * np.pi, num_points)  # 2 full turns
@@ -134,6 +134,15 @@ def generate_helix_points_refined(params, num_points=500):
     return np.column_stack((x, y, z))
 
 
+def generate_helix_line(helix_points):
+    """Create a polyline visualization of the helix"""
+    helix_poly = pv.PolyData(helix_points)
+    lines = np.hstack(
+        ([helix_points.shape[0]], np.arange(helix_points.shape[0]))
+    ).astype(np.int64)
+    helix_poly.lines = lines
+    return helix_poly
+'''
 def create_helix_tube(helix_points, tube_radius=0.5):
     """
     Create a tubular mesh around the helix points for visualization.
@@ -153,7 +162,7 @@ def create_helix_tube(helix_points, tube_radius=0.5):
     except Exception as e:
         print(f"Error creating helix tube: {e}")
         return None
-
+'''
 
 def fit_helix_direct(points, initial_params):
     """
@@ -251,3 +260,5 @@ def fit_helix_direct(points, initial_params):
     except Exception as e:
         print(f"Error during direct helix fitting: {e}")
         return None
+
+
