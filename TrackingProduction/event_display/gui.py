@@ -136,6 +136,8 @@ class MainWindow(QMainWindow):
         side_layout.addWidget(self.side1_checkbox)
 
         mode_layout.addWidget(side_group)
+        
+        
 
         # === Pick Mode Selection Area ===
         pick_mode_group = QGroupBox("Pick Mode")
@@ -154,6 +156,16 @@ class MainWindow(QMainWindow):
         pick_mode_layout.addWidget(self.radio_pick_helix)
 
         mode_layout.addWidget(pick_mode_group)
+        
+        event_info_label = QLabel(
+            "<b>Run:</b> 53217<br>"
+            "<b>ZDC coincidence:</b> Raw: 1,869750<br>"
+            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+            "Live: 1,868219"
+        )
+        event_info_label.setWordWrap(True)
+        mode_layout.addWidget(event_info_label)
+        
         control_layout.addLayout(mode_layout)
 
         # === Range Selection Area ===
@@ -316,7 +328,7 @@ class MainWindow(QMainWindow):
         self.info_panel = QTextEdit()
         self.info_panel.setReadOnly(True)
         sidebar_layout.addWidget(self.info_panel)
-        
+        '''
         # --- Event Information ---
         event_info_label = QLabel("Event Information")
         sidebar_layout.addWidget(event_info_label)
@@ -328,7 +340,7 @@ class MainWindow(QMainWindow):
         )
         self.event_info_panel.setWordWrap(True)
         sidebar_layout.addWidget(self.event_info_panel)
-
+'''
        
 
         splitter.addWidget(left_panel)
