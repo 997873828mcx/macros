@@ -137,8 +137,55 @@ class MainWindow(QMainWindow):
 
         mode_layout.addWidget(side_group)
         
-        
+        # --- ADC Threshold Controls ---
+        adc_group = QGroupBox("ADC Thresholds")
+        adc_layout = QVBoxLayout()
+        adc_group.setLayout(adc_layout)
 
+        # Cluster ADC threshold control
+        cluster_adc_layout = QHBoxLayout()
+        cluster_adc_label = QLabel("Cluster ADC >")
+        self.cluster_adc_spinbox = QDoubleSpinBox()
+        self.cluster_adc_spinbox.setRange(0, 10000)  # Adjust range as needed
+        self.cluster_adc_spinbox.setValue(0)         # Default threshold
+        self.cluster_adc_spinbox.setDecimals(0)
+        self.cluster_adc_spinbox.valueChanged.connect(self.update_display)
+        cluster_adc_layout.addWidget(cluster_adc_label)
+        cluster_adc_layout.addWidget(self.cluster_adc_spinbox)
+        adc_layout.addLayout(cluster_adc_layout)
+
+        # Hit ADC threshold control
+        hit_adc_layout = QHBoxLayout()
+        hit_adc_label = QLabel("Hit ADC >")
+        self.hit_adc_spinbox = QDoubleSpinBox()
+        self.hit_adc_spinbox.setRange(0, 10000)      # Adjust range as needed
+        self.hit_adc_spinbox.setValue(0)             # Default threshold
+        self.hit_adc_spinbox.setDecimals(0)
+        self.hit_adc_spinbox.valueChanged.connect(self.update_display)
+        hit_adc_layout.addWidget(hit_adc_label)
+        hit_adc_layout.addWidget(self.hit_adc_spinbox)
+        adc_layout.addLayout(hit_adc_layout)
+
+        mode_layout.addWidget(adc_group)
+
+        # --- Cluster Filter Controls ---
+        cluster_filter_group = QGroupBox("Seed and Track")
+        cluster_filter_layout = QVBoxLayout()
+        cluster_filter_group.setLayout(cluster_filter_layout)
+
+        # Checkbox for used_in_seed
+        self.seed_checkbox = QCheckBox("Seed")
+        self.seed_checkbox.setChecked(False)  # Default unchecked
+        self.seed_checkbox.stateChanged.connect(self.update_display)
+        cluster_filter_layout.addWidget(self.seed_checkbox)
+
+        # Checkbox for used_in_track
+        self.track_checkbox = QCheckBox("Track")
+        self.track_checkbox.setChecked(False)  # Default unchecked
+        self.track_checkbox.stateChanged.connect(self.update_display)
+        cluster_filter_layout.addWidget(self.track_checkbox)
+
+        mode_layout.addWidget(cluster_filter_group)
         # === Pick Mode Selection Area ===
         pick_mode_group = QGroupBox("Pick Mode")
         pick_mode_layout = QVBoxLayout()
@@ -422,6 +469,33 @@ class MainWindow(QMainWindow):
             & (points[:, 2] <= z_max)
         )
         combined_mask = side_mask & spatial_mask
+        
+        # --- ADC Filtering ---
+        adc_values = data.point_data.get("adc", None)
+        if adc_values is not None:
+            # Determine threshold based on data type (cluster or hit)
+            if data is self.cluster_data:
+                adc_threshold = self.cluster_adc_spinbox.value()
+            elif data is self.hit_data:
+                adc_threshold = self.hit_adc_spinbox.value()
+            else:
+                adc_threshold = 0
+
+            adc_mask = adc_values > adc_threshold
+            combined_mask = combined_mask & adc_mask
+            
+        if data is self.cluster_data:
+            if self.seed_checkbox.isChecked():
+                used_in_seed = data.point_data.get("used_in_seed", None)
+                if used_in_seed is not None:
+                    # Filter: only clusters with used_in_seed == 1
+                    combined_mask = combined_mask & (used_in_seed == 1)
+            if self.track_checkbox.isChecked():
+                used_in_track = data.point_data.get("used_in_track", None)
+                if used_in_track is not None:
+                    # Filter: only clusters with used_in_track == 1
+                    combined_mask = combined_mask & (used_in_track == 1)  
+        
         filtered_indices = np.where(combined_mask)[0]
         filtered_points = data.extract_points(filtered_indices)
         if for_fitting:
