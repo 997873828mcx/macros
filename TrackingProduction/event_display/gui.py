@@ -296,13 +296,7 @@ class MainWindow(QMainWindow):
         self.plotter_widget = QtInteractor()
         left_layout.addWidget(self.plotter_widget)
 
-        self.hist_widget = QWidget()
-        self.hist_layout = QVBoxLayout(self.hist_widget)
-        self.hist_canvas = FigureCanvas(Figure(figsize=(5, 4)))
-        self.hist_layout.addWidget(self.hist_canvas)
-        self.hist_ax_rphi = self.hist_canvas.figure.add_subplot(121)
-        self.hist_ax_z = self.hist_canvas.figure.add_subplot(122)
-        self.hist_canvas.draw()
+        
 
         # A frame line at the bottom for neatness (optional)
         line = QFrame()
@@ -314,16 +308,28 @@ class MainWindow(QMainWindow):
         sidebar = QWidget()
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(5, 5, 5, 5)
-
+        
+        # --- Cluster/Hit Information ---
         info_label = QLabel("Cluster/Hit Information")
         sidebar_layout.addWidget(info_label)
 
         self.info_panel = QTextEdit()
         self.info_panel.setReadOnly(True)
         sidebar_layout.addWidget(self.info_panel)
+        
+        # --- Event Information ---
+        event_info_label = QLabel("Event Information")
+        sidebar_layout.addWidget(event_info_label)
 
-        sidebar_layout.addWidget(QLabel("Delta Distributions"))
-        sidebar_layout.addWidget(self.hist_widget)
+        
+        # Replace QTextEdit with QLabel for fixed event information
+        self.event_info_panel = QLabel(
+            "<b>ZDC coincidence:</b> Raw: 1,869,750 Live: 1,868,219"
+        )
+        self.event_info_panel.setWordWrap(True)
+        sidebar_layout.addWidget(self.event_info_panel)
+
+       
 
         splitter.addWidget(left_panel)
         splitter.addWidget(sidebar)
@@ -846,10 +852,9 @@ class MainWindow(QMainWindow):
             delta_rphi, delta_z = calculate_deltas(
                 self.helix_params_refined, filtered_clusters_for_fitting
             )
-
+            self.track_counter += 1
             if not self.histogram_window.isVisible():
                 self.histogram_window.show()
-                self.track_counter += 1
             self.histogram_window.add_histograms(
                 delta_rphi, delta_z, self.track_counter
             )
@@ -859,7 +864,7 @@ class MainWindow(QMainWindow):
             sigma_z = np.std(delta_z)
 
             track_id = self.track_counter
-
+            '''
             root_output = "helix_fitting_results.root"
             try:
                 save_histograms(root_output, track_id, delta_rphi, delta_z)
@@ -871,7 +876,7 @@ class MainWindow(QMainWindow):
                     self, "Save Error", f"An error occurred while saving results:\n{e}"
                 )
                 return
-
+            '''
             # **Update info panel with sigma values**
             info_text = (
                 f"Track ID: {track_id}\n"
@@ -881,7 +886,7 @@ class MainWindow(QMainWindow):
             self.info_panel.setText(info_text)
 
             # **Plot histograms within the GUI**
-            self.plot_histograms(delta_rphi, delta_z, track_id)
+            #self.plot_histograms(delta_rphi, delta_z, track_id)
 
         else:
             QMessageBox.warning(
@@ -897,8 +902,8 @@ class MainWindow(QMainWindow):
             "Instruction: Select 3 points for initial helix fitting."
         )
         self.update_display()
-
-    def plot_histograms(self, delta_rphi, delta_z, track_id):
+    
+    '''def plot_histograms(self, delta_rphi, delta_z, track_id):
         """
         Plot histograms of delta rphi and delta z for a given track.
 
@@ -930,7 +935,7 @@ class MainWindow(QMainWindow):
         self.hist_ax_z.set_ylabel("Counts")
 
         # Refresh the canvas
-        self.hist_canvas.draw()
+        self.hist_canvas.draw()'''
 
     def reset_helix(self):
         """Clears the fitted helix and resets the selection."""
