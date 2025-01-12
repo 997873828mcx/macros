@@ -19,6 +19,7 @@ from qtpy.QtWidgets import (
     QDoubleSpinBox,
     QMessageBox,
     QRadioButton,
+    QComboBox,
 )
 from qtpy.QtCore import Qt
 from superqt import QRangeSlider
@@ -42,6 +43,8 @@ from analysis import (
 from data_loader import load_data_from_root
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from PyQt5.QtGui import QStandardItem, QStandardItemModel
+from PyQt5.QtCore import Qt
 
 
 class MainWindow(QMainWindow):
@@ -50,6 +53,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Event Display")
         self.resize(1600, 900)  # Increased size for better visibility
 
+        self.loaded_files = {}
         # Initialize fitting step (1: initial fitting, 2: direct fitting)
         self.fitting_step = 1
 
@@ -136,7 +140,7 @@ class MainWindow(QMainWindow):
         side_layout.addWidget(self.side1_checkbox)
 
         mode_layout.addWidget(side_group)
-        
+
         # --- ADC Threshold Controls ---
         adc_group = QGroupBox("ADC Thresholds")
         adc_layout = QVBoxLayout()
@@ -147,7 +151,7 @@ class MainWindow(QMainWindow):
         cluster_adc_label = QLabel("Cluster ADC >")
         self.cluster_adc_spinbox = QDoubleSpinBox()
         self.cluster_adc_spinbox.setRange(0, 10000)  # Adjust range as needed
-        self.cluster_adc_spinbox.setValue(0)         # Default threshold
+        self.cluster_adc_spinbox.setValue(0)  # Default threshold
         self.cluster_adc_spinbox.setDecimals(0)
         self.cluster_adc_spinbox.valueChanged.connect(self.update_display)
         cluster_adc_layout.addWidget(cluster_adc_label)
@@ -158,8 +162,8 @@ class MainWindow(QMainWindow):
         hit_adc_layout = QHBoxLayout()
         hit_adc_label = QLabel("Hit ADC >")
         self.hit_adc_spinbox = QDoubleSpinBox()
-        self.hit_adc_spinbox.setRange(0, 10000)      # Adjust range as needed
-        self.hit_adc_spinbox.setValue(0)             # Default threshold
+        self.hit_adc_spinbox.setRange(0, 10000)  # Adjust range as needed
+        self.hit_adc_spinbox.setValue(0)  # Default threshold
         self.hit_adc_spinbox.setDecimals(0)
         self.hit_adc_spinbox.valueChanged.connect(self.update_display)
         hit_adc_layout.addWidget(hit_adc_label)
@@ -203,7 +207,22 @@ class MainWindow(QMainWindow):
         pick_mode_layout.addWidget(self.radio_pick_helix)
 
         mode_layout.addWidget(pick_mode_group)
-        
+
+        # --- File Selection Dropdown ---
+        files_group = QGroupBox("Files")
+        files_layout = QVBoxLayout()
+        files_group.setLayout(files_layout)
+
+        self.file_combo = QComboBox()
+        # Set up a model to allow checkable items in the combo box
+        model = QStandardItemModel(self.file_combo)
+        self.file_combo.setModel(model)
+        # Connect item changes to update_display so changes refresh visualization
+        model.itemChanged.connect(lambda item: self.update_display())
+
+        files_layout.addWidget(self.file_combo)
+        mode_layout.addWidget(files_group)
+
         event_info_label = QLabel(
             "<b>Run:</b> 53217<br>"
             "<b>ZDC coincidence:</b> Raw: 1,869750<br>"
@@ -212,7 +231,7 @@ class MainWindow(QMainWindow):
         )
         event_info_label.setWordWrap(True)
         mode_layout.addWidget(event_info_label)
-        
+
         control_layout.addLayout(mode_layout)
 
         # === Range Selection Area ===
@@ -355,8 +374,6 @@ class MainWindow(QMainWindow):
         self.plotter_widget = QtInteractor()
         left_layout.addWidget(self.plotter_widget)
 
-        
-
         # A frame line at the bottom for neatness (optional)
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
@@ -367,7 +384,7 @@ class MainWindow(QMainWindow):
         sidebar = QWidget()
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(5, 5, 5, 5)
-        
+
         # --- Cluster/Hit Information ---
         info_label = QLabel("Cluster/Hit Information")
         sidebar_layout.addWidget(info_label)
@@ -375,7 +392,7 @@ class MainWindow(QMainWindow):
         self.info_panel = QTextEdit()
         self.info_panel.setReadOnly(True)
         sidebar_layout.addWidget(self.info_panel)
-        '''
+        """
         # --- Event Information ---
         event_info_label = QLabel("Event Information")
         sidebar_layout.addWidget(event_info_label)
@@ -387,8 +404,7 @@ class MainWindow(QMainWindow):
         )
         self.event_info_panel.setWordWrap(True)
         sidebar_layout.addWidget(self.event_info_panel)
-'''
-       
+"""
 
         splitter.addWidget(left_panel)
         splitter.addWidget(sidebar)
@@ -469,7 +485,7 @@ class MainWindow(QMainWindow):
             & (points[:, 2] <= z_max)
         )
         combined_mask = side_mask & spatial_mask
-        
+
         # --- ADC Filtering ---
         adc_values = data.point_data.get("adc", None)
         if adc_values is not None:
@@ -483,7 +499,7 @@ class MainWindow(QMainWindow):
 
             adc_mask = adc_values > adc_threshold
             combined_mask = combined_mask & adc_mask
-            
+
         if data is self.cluster_data:
             if self.seed_checkbox.isChecked():
                 used_in_seed = data.point_data.get("used_in_seed", None)
@@ -494,8 +510,8 @@ class MainWindow(QMainWindow):
                 used_in_track = data.point_data.get("used_in_track", None)
                 if used_in_track is not None:
                     # Filter: only clusters with used_in_track == 1
-                    combined_mask = combined_mask & (used_in_track == 1)  
-        
+                    combined_mask = combined_mask & (used_in_track == 1)
+
         filtered_indices = np.where(combined_mask)[0]
         filtered_points = data.extract_points(filtered_indices)
         if for_fitting:
@@ -537,6 +553,18 @@ class MainWindow(QMainWindow):
                 return helix_filtered if helix_filtered.n_points > 0 else None
             else:
                 return filtered_points if filtered_points.n_points > 0 else None
+
+    def add_file_checkbox(self, filename, cluster_data, hit_data):
+        checkbox = QCheckBox(filename)
+        checkbox.setChecked(True)  # Display file data by default
+        checkbox.stateChanged.connect(self.update_display)
+        self.file_toggle_layout.addWidget(checkbox)
+
+        self.loaded_files[filename] = {
+            "cluster": cluster_data,
+            "hit": hit_data,
+            "checkbox": checkbox,
+        }
 
     # --- Method to Handle Mode Changes ---
     def on_pick_mode_changed(self):
@@ -673,37 +701,48 @@ class MainWindow(QMainWindow):
         """
         Load data from a ROOT file, process it, and display it in the 3D view.
         """
-        if self.cluster_data is not None:
-            del self.cluster_data
-        if self.hit_data is not None:
-            del self.hit_data
-        filename, _ = QFileDialog.getOpenFileName(
+
+        filenames, _ = QFileDialog.getOpenFileNames(
             self, "Open ROOT File", "", "ROOT files (*.root)"
         )
-        if not filename:
+        if not filenames:
             return  # User canceled the file dialog
 
-        try:
-            # Use the data_loader module to load data
-            cluster_polydata, hit_polydata = load_data_from_root(filename)
+        for filename in filenames:
 
-            # Store the loaded data
-            self.cluster_data = cluster_polydata
-            self.hit_data = hit_polydata
+            try:
+                # Use the data_loader module to load data
+                cluster_polydata, hit_polydata = load_data_from_root(filename)
 
-            # Update the visualization with the loaded data
-            self.update_display()
+            except FileNotFoundError as fnf_err:
+                QMessageBox.critical(self, "Load Error", str(fnf_err))
+            except KeyError as key_err:
+                QMessageBox.critical(self, "Load Error", str(key_err))
+            except ValueError as val_err:
+                QMessageBox.critical(self, "Load Error", str(val_err))
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Load Error", f"An unexpected error occurred:\n{e}"
+                )
 
-        except FileNotFoundError as fnf_err:
-            QMessageBox.critical(self, "Load Error", str(fnf_err))
-        except KeyError as key_err:
-            QMessageBox.critical(self, "Load Error", str(key_err))
-        except ValueError as val_err:
-            QMessageBox.critical(self, "Load Error", str(val_err))
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Load Error", f"An unexpected error occurred:\n{e}"
-            )
+            self.add_file_to_combo(filename, cluster_polydata, hit_polydata)
+        self.update_display()
+
+    def add_file_to_combo(self, filename, cluster_data, hit_data):
+        # Create a checkable item for the file
+        item = QStandardItem(filename)
+        item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+        item.setData(Qt.Checked, Qt.CheckStateRole)  # Default to checked
+
+        # Add item to the combo box model
+        self.file_combo.model().appendRow(item)
+
+        # Store the file data and its associated item
+        self.loaded_files[filename] = {
+            "cluster": cluster_data,
+            "hit": hit_data,
+            "item": item,
+        }
 
     def update_display(self):
         """
@@ -718,34 +757,42 @@ class MainWindow(QMainWindow):
         # Determine what to show
         show_clusters = self.show_clusters.isChecked()
         show_hits = self.show_hits.isChecked()
+        for filename, file_info in self.loaded_files.items():
+            item = file_info["item"]
+            if item.checkState() != Qt.Checked:
+                continue
 
-        # --- Clusters ---
-        if (
-            show_clusters
-            and self.cluster_data is not None
-            and self.cluster_data.n_points > 0
-        ):
-            filtered_clusters_display = self._filter_data(self.cluster_data)
+            # --- Clusters ---
+            if (
+                show_clusters
+                and file_info["cluster"] is not None
+                and file_info["cluster"].n_points > 0
+            ):
+                filtered_clusters_display = self._filter_data(file_info["cluster"])
 
-            if filtered_clusters_display and filtered_clusters_display.n_points > 0:
-                self.plotter_widget.add_mesh(
-                    filtered_clusters_display,
-                    style="points",
-                    point_size=5,
-                    color="red",
-                )
+                if filtered_clusters_display and filtered_clusters_display.n_points > 0:
+                    self.plotter_widget.add_mesh(
+                        filtered_clusters_display,
+                        style="points",
+                        point_size=5,
+                        color="red",
+                    )
 
-        # --- Hits ---
-        if show_hits and self.hit_data is not None and self.hit_data.n_points > 0:
-            filtered_hits_display = self._filter_data(self.hit_data)
+            # --- Hits ---
+            if (
+                show_hits
+                and file_info["hit"] is not None
+                and file_info["hit"].n_points > 0
+            ):
+                filtered_hits_display = self._filter_data(file_info["hit"])
 
-            if filtered_hits_display and filtered_hits_display.n_points > 0:
-                self.plotter_widget.add_mesh(
-                    filtered_hits_display,
-                    style="points",
-                    point_size=5,
-                    color="blue",
-                )
+                if filtered_hits_display and filtered_hits_display.n_points > 0:
+                    self.plotter_widget.add_mesh(
+                        filtered_hits_display,
+                        style="points",
+                        point_size=5,
+                        color="blue",
+                    )
 
         for mesh in self.helix_lines:
             self.plotter_widget.add_mesh(
@@ -831,10 +878,18 @@ class MainWindow(QMainWindow):
                 "Please switch to 'Pick for Helix Fitting' mode to fit a helix.",
             )
             return
-
-        if self.cluster_data is None:
+        selected_clusters = []
+        for filename, file_info in self.loaded_files.items():
+            item = file_info["item"]
+            if item.checkState() == Qt.Checked and file_info["cluster"] is not None:
+                selected_clusters.append(file_info["cluster"])
+        if not selected_clusters:
             QMessageBox.warning(self, "Fit Error", "No cluster data loaded.")
             return
+
+        # Combine all selected cluster data into one dataset
+        combined_cluster_data = pv.merge(selected_clusters)
+        self.cluster_data = combined_cluster_data
 
         if len(self.selected_points_first) != 3:
             QMessageBox.warning(
@@ -950,7 +1005,7 @@ class MainWindow(QMainWindow):
             sigma_z = np.std(delta_z)
 
             track_id = self.track_counter
-            '''
+            """
             root_output = "helix_fitting_results.root"
             try:
                 save_histograms(root_output, track_id, delta_rphi, delta_z)
@@ -962,7 +1017,7 @@ class MainWindow(QMainWindow):
                     self, "Save Error", f"An error occurred while saving results:\n{e}"
                 )
                 return
-            '''
+            """
             # **Update info panel with sigma values**
             info_text = (
                 f"Track ID: {track_id}\n"
@@ -972,7 +1027,7 @@ class MainWindow(QMainWindow):
             self.info_panel.setText(info_text)
 
             # **Plot histograms within the GUI**
-            #self.plot_histograms(delta_rphi, delta_z, track_id)
+            # self.plot_histograms(delta_rphi, delta_z, track_id)
 
         else:
             QMessageBox.warning(
@@ -988,7 +1043,7 @@ class MainWindow(QMainWindow):
             "Instruction: Select 3 points for initial helix fitting."
         )
         self.update_display()
-    
+
     '''def plot_histograms(self, delta_rphi, delta_z, track_id):
         """
         Plot histograms of delta rphi and delta z for a given track.
