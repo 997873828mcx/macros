@@ -354,6 +354,10 @@ class MainWindow(QMainWindow):
         self.btn_reset_helix.clicked.connect(self.reset_helix)
         helix_layout.addWidget(self.btn_reset_helix)
 
+        # Toggle for Module-Based Fitting
+        self.module_based_fitting_checkbox = QCheckBox("Module-Based Fitting")
+        self.module_based_fitting_checkbox.setChecked(False)  # Default: disabled
+        helix_layout.addWidget(self.module_based_fitting_checkbox)
         # --- Toggle Checkbox ---
         self.toggle_filter_checkbox = QCheckBox("Show Points Outside Tube")
         self.toggle_filter_checkbox.setChecked(True)  # Default to showing all points
@@ -500,17 +504,15 @@ class MainWindow(QMainWindow):
             adc_mask = adc_values > adc_threshold
             combined_mask = combined_mask & adc_mask
 
-        if data is self.cluster_data:
-            if self.seed_checkbox.isChecked():
-                used_in_seed = data.point_data.get("used_in_seed", None)
-                if used_in_seed is not None:
-                    # Filter: only clusters with used_in_seed == 1
-                    combined_mask = combined_mask & (used_in_seed == 1)
-            if self.track_checkbox.isChecked():
-                used_in_track = data.point_data.get("used_in_track", None)
-                if used_in_track is not None:
-                    # Filter: only clusters with used_in_track == 1
-                    combined_mask = combined_mask & (used_in_track == 1)
+        used_in_seed = data.point_data.get("used_in_seed", None)
+        if used_in_seed is not None and self.seed_checkbox.isChecked():
+            # Filter: only clusters with used_in_seed == 1
+            combined_mask = combined_mask & (used_in_seed == 1)
+
+        used_in_track = data.point_data.get("used_in_track", None)
+        if used_in_track is not None and self.track_checkbox.isChecked():
+            # Filter: only clusters with used_in_track == 1
+            combined_mask = combined_mask & (used_in_track == 1)
 
         filtered_indices = np.where(combined_mask)[0]
         filtered_points = data.extract_points(filtered_indices)
