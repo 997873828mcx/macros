@@ -142,7 +142,7 @@ void Fun4All_FullReconstruction(
   TpcReadoutInit( runnumber );
 
 
-  G4TPC::ENABLE_MODULE_EDGE_CORRECTIONS = true;
+  G4TPC::ENABLE_MODULE_EDGE_CORRECTIONS = false;
   //Flag for running the tpc hit unpacker with zero suppression on
   TRACKING::tpc_zero_supp = true;
 
@@ -173,7 +173,7 @@ void Fun4All_FullReconstruction(
   Intt_Clustering();
 
   Tpc_LaserEventIdentifying();
-  TString outfileTpcClusterizer = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusterizer_edgeOn_staticOff_0114_0.root";
+  TString outfileTpcClusterizer = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusterizer_edgeOff_staticOff_0114_0.root";
   std::string outTpcClusterizerString(outfileTpcClusterizer.Data());
   auto tpcclusterizer = new TpcClusterizer;//把hit打包成cluster
   tpcclusterizer->Verbosity(0);
@@ -222,7 +222,7 @@ void Fun4All_FullReconstruction(
   /*
    * Tpc Seeding
    */
-    TString outfileSeed = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusters_edgeOn_staticOff_0114_0.root";
+    TString outfileSeed = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusters_edgeOff_staticOff_0114_0.root";
     std::string outstring(outfileSeed.Data());
   auto seeder = new PHCASeeding("PHCASeeding");
   double fieldstrength = std::numeric_limits<double>::quiet_NaN();  // set by isConstantField if constant
@@ -381,7 +381,7 @@ void Fun4All_FullReconstruction(
 
 
 
-  TString residoutfile = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_resid_edgeOn_staticOff_0114_0.root";
+  TString residoutfile = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_resid_edgeOff_staticOff_0114_0.root";
   std::string residstring(residoutfile.Data());
 
   auto resid = new TrackResiduals("TrackResiduals");

@@ -31,9 +31,9 @@ def load_data_from_root(filename):
         raise KeyError(f"Missing branches in 'combined_clusters' tree: {missing}")
 
     # Extract cluster coordinates
-    cx = cluster_data["gx"]
-    cy = cluster_data["gy"]
-    cz = cluster_data["gz"]
+    cx = np.nan_to_num(cluster_data["gx"], nan=0.0)
+    cy = np.nan_to_num(cluster_data["gy"], nan=0.0)
+    cz = np.nan_to_num(cluster_data["gz"], nan=0.0)
     cpoints = np.column_stack([cx, cy, cz])
 
     cluster_polydata = pv.PolyData(cpoints)
@@ -61,9 +61,9 @@ def load_data_from_root(filename):
         missing = required_hit_branches - set(hits_data.keys())
         raise KeyError(f"Missing branches in 'combined_hits' tree: {missing}")
 
-    hx = hits_data["gx"]
-    hy = hits_data["gy"]
-    hz = hits_data["gz"]
+    hx = np.nan_to_num(hits_data["gx"], nan=0.0)
+    hy = np.nan_to_num(hits_data["gy"], nan=0.0)
+    hz = np.nan_to_num(hits_data["gz"], nan=0.0)
     hpoints = np.column_stack([hx, hy, hz])
     hit_polydata = pv.PolyData(hpoints)
 

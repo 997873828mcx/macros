@@ -53,6 +53,16 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Event Display")
         self.resize(1600, 900)  # Increased size for better visibility
+        """self.file_colors = [
+            "red",
+            "green",
+            "yellow",
+            "orange",
+            "cyan",
+            "magenta",
+            "purple",
+        ]
+        self.color_index = 0"""
 
         self.loaded_files = {}
         # Initialize fitting step (1: initial fitting, 2: direct fitting)
@@ -740,12 +750,15 @@ class MainWindow(QMainWindow):
 
         # Add item to the combo box model
         self.file_combo.model().appendRow(item)
+        # assigned_color = self.file_colors[self.color_index % len(self.file_colors)]
+        # self.color_index += 1
 
         # Store the file data and its associated item
         self.loaded_files[filename] = {
             "cluster": cluster_data,
             "hit": hit_data,
             "item": item,
+            # "color": assigned_color,
         }
 
     def update_display(self):
