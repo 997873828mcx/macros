@@ -32,6 +32,7 @@ from helix_fitting import (
     generate_helix_line,
 )
 from histogram_window import HistogramWindow
+from module_histogram_window import ModuleHistogramWindow
 from analysis import (
     calculate_deltas,
     save_histograms,
@@ -77,6 +78,7 @@ class MainWindow(QMainWindow):
         self.z_window = 1.0  # Default window size for z
 
         self.histogram_window = HistogramWindow()
+        self.module_hist_window = ModuleHistogramWindow()
 
         # Main container widget
         main_widget = QWidget()
@@ -944,100 +946,164 @@ class MainWindow(QMainWindow):
             )
             return
 
-        try:
-            # Perform refined helix fitting
-            helix_params_refined = fit_helix_direct(
-                filtered_clusters_for_fitting.points, self.helix_params_initial
+        if self.module_based_fitting_checkbox.isChecked():
+            # Split clusters by layer into modules
+            module_clusters = self.split_clusters_by_layer(
+                filtered_clusters_for_fitting
             )
-        except ValueError as ve:
-            QMessageBox.warning(self, "Helix Fit", str(ve))
-            return
+            module_order = {"mod1": 0, "mod2": 1, "mod3": 2}
+            module_hist_data = {}
 
-        if helix_params_refined is None:
-            QMessageBox.warning(self, "Helix Fit", "Refined helix fitting failed.")
-            return
+            # For each module, perform a second fitting and generate histograms
+            for module_name, module_data in module_clusters.items():
+                if module_data is None or module_data.n_points == 0:
+                    continue  # Skip empty modules
 
-        # Store refined helix parameters
-        self.helix_params_refined = helix_params_refined
+                try:
+                    helix_params_module = fit_helix_direct(
+                        module_data.points, self.helix_params_initial
+                    )
+                except ValueError as ve:
+                    QMessageBox.warning(
+                        self, "Helix Fit", f"Module {module_name} fit error: {ve}"
+                    )
+                    continue
 
-        self.helix_line_color = "blue"
+                if helix_params_module is None:
+                    QMessageBox.warning(
+                        self,
+                        "Helix Fit",
+                        f"Refined helix fitting failed for module {module_name}.",
+                    )
+                    continue
 
-        # Generate refined helix points and create a tube
-        helix_points_refined = generate_helix_points_refined(helix_params_refined)
-        self.helix_points = (
-            helix_points_refined  # Update helix points for distance calculations
-        )
+                helix_points_module = generate_helix_points_refined(helix_params_module)
+                helix_line_module = generate_helix_line(helix_points_module)
+                if helix_line_module is not None:
+                    self.plotter_widget.add_mesh(
+                        helix_line_module,
+                        color="blue",
+                        line_width=3,
+                        style="wireframe",
+                        pickable=False,
+                    )
+                    self.helix_lines.append(helix_line_module)
 
-        helix_line_refined = generate_helix_line(helix_points_refined)
-        if helix_line_refined is not None:
-            self.plotter_widget.add_mesh(
-                helix_line_refined,
-                color=self.helix_line_color,
-                line_width=3,
-                style="wireframe",
-                pickable=False,
-            )
-            self.helix_lines.append(helix_line_refined)
-            QMessageBox.information(
-                self,
-                "Helix Fit",
-                "Refined helix fitted and visualized.",
-            )
-        else:
-            QMessageBox.warning(
-                self, "Helix Fit", "Failed to create refined helix visualization."
-            )
+                delta_rphi, delta_z = calculate_deltas(helix_params_module, module_data)
+                self.track_counter += 1
 
-        if (
-            filtered_clusters_for_fitting is not None
-            and filtered_clusters_for_fitting.n_points > 0
-        ):
-            delta_rphi, delta_z = calculate_deltas(
-                self.helix_params_refined, filtered_clusters_for_fitting
-            )
-            self.track_counter += 1
-            if not self.histogram_window.isVisible():
-                self.histogram_window.show()
-            self.histogram_window.add_histograms(
-                delta_rphi, delta_z, self.track_counter
-            )
+                module_idx = module_order.get(module_name, None)
+                if module_idx is not None:
+                    module_hist_data[module_idx] = (
+                        delta_rphi,
+                        delta_z,
+                        f"{self.track_counter}_{module_name}",
+                    )
 
-            # **Calculate sigma (standard deviation)**
-            sigma_rphi = np.std(delta_rphi)
-            sigma_z = np.std(delta_z)
-
-            track_id = self.track_counter
-            """
-            root_output = "helix_fitting_results.root"
-            try:
-                save_histograms(root_output, track_id, delta_rphi, delta_z)
-                save_tree(
-                    root_output, track_id, delta_rphi, delta_z, sigma_rphi, sigma_z
+                sigma_rphi = np.std(delta_rphi)
+                sigma_z = np.std(delta_z)
+                print(
+                    f"Module {module_name}: sigma_rphi={sigma_rphi}, sigma_z={sigma_z}"
                 )
-            except Exception as e:
-                QMessageBox.critical(
-                    self, "Save Error", f"An error occurred while saving results:\n{e}"
+            if module_hist_data:
+                if not self.module_hist_window.isVisible():
+                    self.module_hist_window.show()
+                self.module_hist_window.update_module_histograms(module_hist_data)
+        else:
+            try:
+                # Perform refined helix fitting
+                helix_params_refined = fit_helix_direct(
+                    filtered_clusters_for_fitting.points, self.helix_params_initial
+                )
+            except ValueError as ve:
+                QMessageBox.warning(self, "Helix Fit", str(ve))
+                return
+
+            if helix_params_refined is None:
+                QMessageBox.warning(self, "Helix Fit", "Refined helix fitting failed.")
+                return
+
+            # Store refined helix parameters
+            self.helix_params_refined = helix_params_refined
+
+            self.helix_line_color = "blue"
+
+            # Generate refined helix points and create a tube
+            helix_points_refined = generate_helix_points_refined(helix_params_refined)
+            self.helix_points = (
+                helix_points_refined  # Update helix points for distance calculations
+            )
+
+            helix_line_refined = generate_helix_line(helix_points_refined)
+            if helix_line_refined is not None:
+                self.plotter_widget.add_mesh(
+                    helix_line_refined,
+                    color=self.helix_line_color,
+                    line_width=3,
+                    style="wireframe",
+                    pickable=False,
+                )
+                self.helix_lines.append(helix_line_refined)
+                QMessageBox.information(
+                    self,
+                    "Helix Fit",
+                    "Refined helix fitted and visualized.",
+                )
+            else:
+                QMessageBox.warning(
+                    self, "Helix Fit", "Failed to create refined helix visualization."
+                )
+
+            if (
+                filtered_clusters_for_fitting is not None
+                and filtered_clusters_for_fitting.n_points > 0
+            ):
+                delta_rphi, delta_z = calculate_deltas(
+                    self.helix_params_refined, filtered_clusters_for_fitting
+                )
+                self.track_counter += 1
+                if not self.histogram_window.isVisible():
+                    self.histogram_window.show()
+                self.histogram_window.add_histograms(
+                    delta_rphi, delta_z, self.track_counter
+                )
+
+                # **Calculate sigma (standard deviation)**
+                sigma_rphi = np.std(delta_rphi)
+                sigma_z = np.std(delta_z)
+
+                track_id = self.track_counter
+                """
+                root_output = "helix_fitting_results.root"
+                try:
+                    save_histograms(root_output, track_id, delta_rphi, delta_z)
+                    save_tree(
+                        root_output, track_id, delta_rphi, delta_z, sigma_rphi, sigma_z
+                    )
+                except Exception as e:
+                    QMessageBox.critical(
+                        self, "Save Error", f"An error occurred while saving results:\n{e}"
+                    )
+                    return
+                """
+                # **Update info panel with sigma values**
+                info_text = (
+                    f"Track ID: {track_id}\n"
+                    f"Sigma Delta rphi: {sigma_rphi:.4f} cm\n"
+                    f"Sigma Delta z: {sigma_z:.4f} cm\n"
+                )
+                self.info_panel.setText(info_text)
+
+                # **Plot histograms within the GUI**
+                # self.plot_histograms(delta_rphi, delta_z, track_id)
+
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Helix Fit",
+                    "No clusters passed the filter. Cannot calculate deltas.",
                 )
                 return
-            """
-            # **Update info panel with sigma values**
-            info_text = (
-                f"Track ID: {track_id}\n"
-                f"Sigma Delta rphi: {sigma_rphi:.4f} cm\n"
-                f"Sigma Delta z: {sigma_z:.4f} cm\n"
-            )
-            self.info_panel.setText(info_text)
-
-            # **Plot histograms within the GUI**
-            # self.plot_histograms(delta_rphi, delta_z, track_id)
-
-        else:
-            QMessageBox.warning(
-                self,
-                "Helix Fit",
-                "No clusters passed the filter. Cannot calculate deltas.",
-            )
-            return
 
         # **Reset for next fitting**
         self.selected_points_first.clear()
@@ -1097,45 +1163,40 @@ class MainWindow(QMainWindow):
             "Helix has been reset. You can select new points and fit again.",
         )
 
-    # backup
-    def export_results(self):
+    def split_clusters_by_layer(self, filtered_clusters):
         """
-        Export the ROOT file containing all track analyses.
+        Splits clusters into three modules based on layer numbers:
+        - Module 1: layers 7 to 22
+        - Module 2: layers 23 to 38
+        - Module 3: layers 39 to 54
         """
-        if self.track_counter == 0:
-            QMessageBox.warning(
-                self, "Export Error", "No tracks have been analyzed yet."
-            )
-            return
+        if filtered_clusters is None or filtered_clusters.n_points == 0:
+            return {}
 
-        # Open a file dialog to choose save location
-        options = QFileDialog.Options()
-        filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Analysis Results",
-            "helix_fitting_results.root",
-            "ROOT Files (*.root)",
-            options=options,
+        # Retrieve layer values from cluster point_data
+        layers = filtered_clusters.point_data.get("layer", None)
+        if layers is None:
+            return {}
+
+        # Determine indices for each module based on layer ranges
+        mod1_indices = np.where((layers >= 7) & (layers <= 22))[0]
+        mod2_indices = np.where((layers >= 23) & (layers <= 38))[0]
+        mod3_indices = np.where((layers >= 39) & (layers <= 54))[0]
+
+        mod1 = (
+            filtered_clusters.extract_points(mod1_indices)
+            if mod1_indices.size > 0
+            else None
         )
-        if filename:
-            try:
-                # Assuming 'helix_fitting_results.root' already contains all data
-                # Copy it to the desired location
-                import shutil
+        mod2 = (
+            filtered_clusters.extract_points(mod2_indices)
+            if mod2_indices.size > 0
+            else None
+        )
+        mod3 = (
+            filtered_clusters.extract_points(mod3_indices)
+            if mod3_indices.size > 0
+            else None
+        )
 
-                shutil.copy("helix_fitting_results.root", filename)
-                QMessageBox.information(
-                    self, "Export Success", f"Results saved to {filename}"
-                )
-            except Exception as e:
-                QMessageBox.critical(
-                    self, "Export Error", f"Failed to export results:\n{e}"
-                )
-
-    def reset_plotter(self):
-        """
-        Reset the 3D plotter to its initial state.
-        """
-        self.plotter_widget.clear()
-        self.plotter_widget.show_axes()
-        self.update_display()
+        return {"mod1": mod1, "mod2": mod2, "mod3": mod3}

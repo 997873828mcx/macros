@@ -1,7 +1,7 @@
 void combine_clusters() {
   // Open input files
-  TFile* f_resid = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_resid_edgeOff_staticOff_0112_0.root", "READ");
-  TFile* f_seed = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_clusters_edgeOff_staticOff_0112_0.root", "READ");
+  TFile* f_resid = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_resid_edgeOn_staticOff_0114_0.root", "READ");
+  TFile* f_seed = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_clusters_edgeOn_staticOff_0114_0.root", "READ");
 
   // Get trees from residual file
   TTree* t_residual_clus = (TTree*)f_resid->Get("clustertree");
@@ -112,9 +112,9 @@ t_residual_clus->SetBranchAddress("gl1bco", &m_bco);
 t_residual_clus->SetBranchAddress("trbco", &m_bcotr);
 t_residual_clus->SetBranchAddress("lx", &m_scluslx);
 t_residual_clus->SetBranchAddress("lz", &m_scluslz);
-t_residual_clus->SetBranchAddress("gx", &m_sclusgx);
-t_residual_clus->SetBranchAddress("gy", &m_sclusgy);
-t_residual_clus->SetBranchAddress("gz", &m_sclusgz);
+t_residual_clus->SetBranchAddress("gx_corr", &m_sclusgx);
+t_residual_clus->SetBranchAddress("gy_corr", &m_sclusgy);
+t_residual_clus->SetBranchAddress("gz_corr", &m_sclusgz);
 t_residual_clus->SetBranchAddress("r", &m_sclusgr);
 t_residual_clus->SetBranchAddress("phi", &m_sclusphi);
 t_residual_clus->SetBranchAddress("eta", &m_scluseta);
@@ -139,7 +139,7 @@ t_residual_clus->SetBranchAddress("tile", &m_tileid);
   // --------------------------
   // Create output file and trees
   // --------------------------
-  TFile* outFile = new TFile("separate_cluster_and_hits_edgeOff_staticOff_0_0112.root", "RECREATE");
+  TFile* outFile = new TFile("separate_cluster_and_hits_edgeOn_staticOff_0_0114.root", "RECREATE");
 
   // Combined cluster tree
   // Keep all original cluster info plus used_in_seed and used_in_track
