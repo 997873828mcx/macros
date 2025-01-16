@@ -53,16 +53,16 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Event Display")
         self.resize(1600, 900)  # Increased size for better visibility
-        """self.file_colors = [
+        self.file_colors = [
             "red",
             "green",
-            "yellow",
-            "orange",
+            # "yellow",
+            "black",
             "cyan",
             "magenta",
             "purple",
         ]
-        self.color_index = 0"""
+        self.color_index = 0
 
         self.loaded_files = {}
         # Initialize fitting step (1: initial fitting, 2: direct fitting)
@@ -365,6 +365,11 @@ class MainWindow(QMainWindow):
         self.btn_reset_helix = QPushButton("Reset Helix")
         self.btn_reset_helix.clicked.connect(self.reset_helix)
         helix_layout.addWidget(self.btn_reset_helix)
+
+        # New button for clearing helix lines
+        self.btn_clear_helix = QPushButton("Clear Helix Lines")
+        self.btn_clear_helix.clicked.connect(self.clear_helix_lines)
+        helix_layout.addWidget(self.btn_clear_helix)
 
         # Toggle for Module-Based Fitting
         self.module_based_fitting_checkbox = QCheckBox("Module-Based Fitting")
@@ -750,15 +755,15 @@ class MainWindow(QMainWindow):
 
         # Add item to the combo box model
         self.file_combo.model().appendRow(item)
-        # assigned_color = self.file_colors[self.color_index % len(self.file_colors)]
-        # self.color_index += 1
+        assigned_color = self.file_colors[self.color_index % len(self.file_colors)]
+        self.color_index += 1
 
         # Store the file data and its associated item
         self.loaded_files[filename] = {
             "cluster": cluster_data,
             "hit": hit_data,
             "item": item,
-            # "color": assigned_color,
+            "color": assigned_color,
         }
 
     def update_display(self):
@@ -788,11 +793,13 @@ class MainWindow(QMainWindow):
                 filtered_clusters_display = self._filter_data(file_info["cluster"])
 
                 if filtered_clusters_display and filtered_clusters_display.n_points > 0:
+                    cluster_color = file_info.get("color", "red")
                     self.plotter_widget.add_mesh(
                         filtered_clusters_display,
                         style="points",
                         point_size=5,
-                        color="red",
+                        # color="red",
+                        color=cluster_color,
                     )
 
             # --- Hits ---
@@ -924,8 +931,8 @@ class MainWindow(QMainWindow):
 
         # Store initial helix parameters
         self.helix_params_initial = helix_params_initial
-        self.helix_line_color = "green"
-
+        # self.helix_line_color = "green"
+        self.helix_line_color = "grey"
         # Generate helix points and create a tube
         helix_points_initial = generate_helix_points_initial(helix_params_initial)
         self.helix_points = (
@@ -995,7 +1002,7 @@ class MainWindow(QMainWindow):
                 if helix_line_module is not None:
                     self.plotter_widget.add_mesh(
                         helix_line_module,
-                        color="blue",
+                        color="grey",
                         line_width=3,
                         style="wireframe",
                         pickable=False,
@@ -1039,7 +1046,8 @@ class MainWindow(QMainWindow):
             # Store refined helix parameters
             self.helix_params_refined = helix_params_refined
 
-            self.helix_line_color = "blue"
+            # self.helix_line_color = "blue"
+            self.helix_line_color = "grey"
 
             # Generate refined helix points and create a tube
             helix_points_refined = generate_helix_points_refined(helix_params_refined)
@@ -1213,3 +1221,16 @@ class MainWindow(QMainWindow):
         )
 
         return {"mod1": mod1, "mod2": mod2, "mod3": mod3}
+
+    def clear_helix_lines(self):
+        """Clears all displayed helix lines from the plot."""
+        # Remove each helix line from the plotter
+        for line in self.helix_lines:
+            try:
+                self.plotter_widget.remove_actor(line)
+            except Exception as e:
+                print(f"Error removing actor: {e}")
+        # Clear the list of helix lines
+        self.helix_lines = []
+        # Optionally update the display to refresh the view
+        self.update_display()

@@ -1,7 +1,7 @@
 void combine_clusters() {
   // Open input files
-  TFile* f_resid = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_resid_edgeOn_staticOff_0114_0.root", "READ");
-  TFile* f_seed = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_clusters_edgeOn_staticOff_0114_0.root", "READ");
+  TFile* f_resid = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_resid_edgeOff_staticOff_0114_0.root", "READ");
+  TFile* f_seed = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_clusters_edgeOff_staticOff_0114_0.root", "READ");
 
   // Get trees from residual file
   TTree* t_residual_clus = (TTree*)f_resid->Get("clustertree");
@@ -139,7 +139,7 @@ t_residual_clus->SetBranchAddress("tile", &m_tileid);
   // --------------------------
   // Create output file and trees
   // --------------------------
-  TFile* outFile = new TFile("separate_cluster_and_hits_edgeOn_staticOff_0_0114.root", "RECREATE");
+  TFile* outFile = new TFile("separate_cluster_and_hits_edgeOff_staticOff_0_0114.root", "RECREATE");
 
   // Combined cluster tree
   // Keep all original cluster info plus used_in_seed and used_in_track
