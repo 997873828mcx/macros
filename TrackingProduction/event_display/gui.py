@@ -31,15 +31,19 @@ from helix_fitting import (
     generate_helix_points_refined,
     generate_helix_line,
 )
+
+from line_fitting import (
+    fit_line_initial,
+    fit_line_direct,
+    generate_line_points_initial,
+    generate_line_polydata,
+)
+
 from histogram_window import HistogramWindow
 from module_histogram_window import ModuleHistogramWindow
 from analysis import (
     calculate_deltas,
-    save_histograms,
-    save_tree,
     apply_helix_filter,
-    find_helix_points_at_radius_analytic,
-    calculate_deltas_with_visualization,
 )
 from data_loader import load_data_from_root
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -56,7 +60,6 @@ class MainWindow(QMainWindow):
         self.file_colors = [
             "red",
             "green",
-            # "yellow",
             "black",
             "cyan",
             "magenta",
@@ -67,6 +70,7 @@ class MainWindow(QMainWindow):
         self.loaded_files = {}
         # Initialize fitting step (1: initial fitting, 2: direct fitting)
         self.fitting_step = 1
+        self.using_line_fitting = False
 
         # Initialize pick mode
         self.pick_mode = "info"  # Default mode
@@ -74,9 +78,11 @@ class MainWindow(QMainWindow):
         self.inner_cut = 21.6
         self.outer_cut = 76.4
         # Add a new attribute to track the helix tube color
-        self.helix_line_color = "grey"  # Default color for initial fitting
+
         self.helix_line = None
-        self.helix_lines = []  # List to store all helix lines
+        self.track_lines = []  # List to store all helix lines
+
+        self.helix_line_color = "grey"  # Default color for initial fitting
         # self.helix_colors = []
         # self.available_colors = [
         #   "green", "blue", "red", "yellow", "cyan", "magenta",
@@ -443,17 +449,16 @@ class MainWindow(QMainWindow):
         self.selected_points_first = (
             []
         )  # Store 3 picked points for initial helix fitting
-        self.selected_points_second = (
-            []
-        )  # Store additional picked points for refined helix fitting
-        self.helix_line = None  # Store the helix tube (for visualization)
-        self.helix_points = None  # Store helix points for distance calculations.
-        self.helix_params_initial = None  # Store initial helix parameters
-        self.helix_params_refined = None  # Store refined helix parameters
+        self.selected_points_second = []
+        self.helix_line = None
+        self.helix_points = None
+        self.helix_params_initial = None
+        self.helix_params_refined = None
+        self.line_params_initial = None
+        self.line_params_refined = None
 
         self.filtered_clusters = None
 
-        # Show axes
         self.plotter_widget.show_axes()
 
         # Enable initial point picking for info mode
@@ -574,6 +579,59 @@ class MainWindow(QMainWindow):
                 return helix_filtered if helix_filtered.n_points > 0 else None
             else:
                 return filtered_points if filtered_points.n_points > 0 else None
+
+    def _filter_data_line(
+        self, data: pv.PolyData, line_params_init
+    ) -> Optional[pv.PolyData]:
+        """
+        Example: Filter clusters by distance from the initial line in XY-plane (rphi_window)
+                 and by Z-window. This is analogous to 'apply_helix_filter' but for lines.
+        """
+        if data is None:
+            return None
+        points = data.points
+        # Retrieve line parameters
+        x0, y0, z0 = (
+            line_params_init["x0"],
+            line_params_init["y0"],
+            line_params_init["z0"],
+        )
+        dx, dy, dz = (
+            line_params_init["dir_x"],
+            line_params_init["dir_y"],
+            line_params_init["dir_z"],
+        )
+
+        # For each point, compute distance in XY-plane from the line
+        # A simple approach: project each point onto the line, then compare XY distance
+        # In reality, you might do 3D orth distance, or just XY-plane ignoring z, etc.
+        # We'll do a quick demonstration:
+        filter_mask = []
+        for pt in points:
+            px, py, pz = pt
+            # Vector from line origin to point
+            vx, vy, vz = px - x0, py - y0, pz - z0
+            # Dot with line direction
+            dot = vx * dx + vy * dy + vz * dz
+            # Projection point
+            projx = x0 + dot * dx
+            projy = y0 + dot * dy
+            # Compare distance in XY plane
+            dxy = np.sqrt((px - projx) ** 2 + (py - projy) ** 2)
+
+            # Compare z difference in your window approach
+            # Or measure difference in pz-projected_z if you prefer
+            # We'll do a naive approach: keep everything or apply some z window
+            z_diff = abs(pz - (z0 + dot * dz))
+
+            if dxy < self.rphi_window and z_diff < self.z_window:
+                filter_mask.append(True)
+            else:
+                filter_mask.append(False)
+
+        filter_mask = np.array(filter_mask)
+        filtered_points = data.extract_points(np.where(filter_mask)[0])
+        return filtered_points if filtered_points.n_points > 0 else None
 
     def add_file_checkbox(self, filename, cluster_data, hit_data):
         checkbox = QCheckBox(filename)
@@ -831,7 +889,7 @@ class MainWindow(QMainWindow):
             
         """
 
-        for actor in self.helix_lines:
+        for actor in self.track_lines:
             # Re-add the stored actor to the renderer
             self.plotter_widget.renderer.add_actor(actor)
 
@@ -899,6 +957,127 @@ class MainWindow(QMainWindow):
             line_width=3,
             pickable=False,
         )
+
+    def initiate_fit(self):
+        """
+        Triggered when the user clicks 'Fit Track'.
+        If self.using_line_fitting=True, do line approach.
+        Otherwise, do helix approach.
+        """
+        if self.pick_mode != "helix":
+            QMessageBox.warning(
+                self,
+                "Track Fit",
+                "Please switch to 'Pick for Helix/Line Fitting' mode to fit a track.",
+            )
+            return
+
+        # Require exactly three points for the initial fit
+        if len(self.selected_points_first) != 3:
+            QMessageBox.warning(
+                self,
+                "Track Fit",
+                "Please select exactly three cluster points before fitting.",
+            )
+            return
+
+        # Combine all selected cluster data
+        selected_clusters = []
+        for filename, file_info in self.loaded_files.items():
+            item = file_info["item"]
+            if item.checkState() == Qt.Checked and file_info["cluster"] is not None:
+                selected_clusters.append(file_info["cluster"])
+        if not selected_clusters:
+            QMessageBox.warning(self, "Fit Error", "No cluster data loaded.")
+            return
+        combined_cluster_data = pv.merge(selected_clusters)
+        self.cluster_data = combined_cluster_data
+
+        # --------------- If Using Line Fitting ---------------
+        if self.using_line_fitting:
+            self.do_line_fitting_flow()
+        else:
+            self.do_helix_fitting_flow()
+
+        self.selected_points_first.clear()
+        self.update_display()
+
+    def do_line_fitting_flow(self):
+        """
+        Perform the 2-step line fitting approach (initial + direct).
+        """
+        from line_fitting import (
+            fit_line_initial,
+            fit_line_direct,
+            generate_line_points_initial,
+            generate_line_polydata,
+        )
+
+        # 1) Initial line fit from 3 picks
+        line_params_init = fit_line_initial(self.selected_points_first)
+        if not line_params_init:
+            QMessageBox.warning(self, "Line Fit", "Initial line fitting failed.")
+            return
+
+        self.line_params_initial = line_params_init
+        # Visualize the initial line
+        line_points_init = generate_line_points_initial(line_params_init, length=300)
+        line_poly_init = generate_line_polydata(line_points_init)
+        if line_poly_init is not None:
+            actor = self.plotter_widget.add_mesh(
+                line_poly_init,
+                color="grey",
+                line_width=3,
+                style="wireframe",
+                pickable=False,
+            )
+            self.track_lines.append(actor)
+
+        # 2) Filter clusters around this line
+        filtered_clusters_for_fitting = self._filter_data_line(
+            self.cluster_data, line_params_init
+        )
+        if (
+            filtered_clusters_for_fitting is None
+            or filtered_clusters_for_fitting.n_points == 0
+        ):
+            QMessageBox.warning(
+                self, "Line Fit", "No clusters left after line-based filter."
+            )
+            return
+
+        # 3) Direct line fit with all filtered points
+        line_params_refined = fit_line_direct(
+            filtered_clusters_for_fitting.points, line_params_init
+        )
+        if not line_params_refined:
+            QMessageBox.warning(self, "Line Fit", "Refined line fitting failed.")
+            return
+        self.line_params_refined = line_params_refined
+
+        # Visualize refined line
+        line_points_refined = generate_line_points_initial(
+            line_params_refined, length=300
+        )
+        line_poly_refined = generate_line_polydata(line_points_refined)
+        if line_poly_refined is not None:
+            actor = self.plotter_widget.add_mesh(
+                line_poly_refined,
+                color="magenta",
+                line_width=3,
+                style="wireframe",
+                pickable=False,
+            )
+            self.track_lines.append(actor)
+            QMessageBox.information(
+                self,
+                "Line Fit",
+                "Refined line fitted and visualized.",
+            )
+
+        # Optionally compute residuals, do histograms, etc.
+        # self.track_counter += 1
+        # ...
 
     def initiate_helix_fit(self):
         """Triggered when the user clicks the 'Fit Helix' button."""
@@ -1019,7 +1198,7 @@ class MainWindow(QMainWindow):
                         style="wireframe",
                         pickable=False,
                     )
-                    self.helix_lines.append(actor)
+                    self.track_lines.append(actor)
 
                 delta_rphi, delta_z = calculate_deltas(helix_params_module, module_data)
                 self.track_counter += 1
@@ -1078,7 +1257,7 @@ class MainWindow(QMainWindow):
                     style="wireframe",
                     pickable=False,
                 )
-                self.helix_lines.append(actor)
+                self.track_lines.append(actor)
                 QMessageBox.information(
                     self,
                     "Helix Fit",
@@ -1239,6 +1418,6 @@ class MainWindow(QMainWindow):
     def clear_helix_lines(self):
         """Clears all displayed helix lines from the plot."""
         # Clear the list of helix lines
-        self.helix_lines = []
+        self.track_lines = []
         # Optionally update the display to refresh the view
         self.update_display()
