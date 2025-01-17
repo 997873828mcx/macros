@@ -2,6 +2,7 @@ import numpy as np
 import pyvista as pv
 from scipy.spatial import cKDTree
 from scipy.optimize import least_squares
+from analysis import find_helix_points_at_radius_analytic
 
 
 def fit_circle_2d(p1, p2, p3):
@@ -85,7 +86,7 @@ def fit_helix_initial(points):
     }
 
 
-def generate_helix_points_initial(params, num_points=500):
+def generate_helix_points_initial(params, inner_cut, outer_cut, num_points=500):
     """
     From initial helix parameters [c_x, c_y, r, alpha, c_z, t0], generate helix points for visualization.
     """
@@ -94,12 +95,44 @@ def generate_helix_points_initial(params, num_points=500):
     r = params["r"]
     alpha = params["alpha"]
     c_z = params["c_z"]
-    t0 = params["ref_theta"]
+    ref_theta = params["ref_theta"]
+    inner_solutions = find_helix_points_at_radius_analytic(
+        inner_cut, params, ref_theta, np.pi / 2
+    )
+    outer_solutions = find_helix_points_at_radius_analytic(
+        outer_cut, params, ref_theta, np.pi / 2
+    )
 
-    # Generate a range of theta values around t0 for visualization
-    theta_min = t0 - np.pi / 2
-    theta_max = t0 + np.pi / 2  # Adjust as needed for visualization
-    t = np.linspace(theta_min, theta_max, num_points)
+    max_dtheta = 0
+    for solution in inner_solutions:
+        _, _, theta = solution
+        dtheta = abs(theta - ref_theta)
+        dtheta = min(dtheta, 2 * np.pi - dtheta)  # Take smaller angle
+
+        if dtheta > max_dtheta:
+            max_dtheta = dtheta
+            inner_end = solution
+
+    if inner_end is None:
+        return False
+
+    min_dtheta = float("inf")
+    for solution in outer_solutions:
+        _, _, theta = solution
+        dtheta = abs(theta - ref_theta)
+        dtheta = min(dtheta, 2 * np.pi - dtheta)  # Take smaller angle
+
+        if dtheta < min_dtheta:
+            min_dtheta = dtheta
+            outer_end = solution
+
+    if outer_end is None:
+        return False
+
+    _, _, theta_inner = inner_end
+    _, _, theta_outer = outer_end
+
+    t = np.linspace(theta_inner, theta_outer, num_points)
 
     x = c_x + r * np.cos(t)
     y = c_y + r * np.sin(t)
@@ -108,7 +141,7 @@ def generate_helix_points_initial(params, num_points=500):
     return np.column_stack((x, y, z))
 
 
-def generate_helix_points_refined(params, num_points=500):
+def generate_helix_points_refined(params, inner_cut, outer_cut, num_points=500):
     """
     From refined helix parameters [c_x, c_y, c_z, r, phi, alpha], generate helix points for visualization.
     """
@@ -116,16 +149,46 @@ def generate_helix_points_refined(params, num_points=500):
     c_y = params["c_y"]
     c_z = params["c_z"]
     r = params["r"]
-    theta0 = params["ref_theta_direct"]
-    #phi = params["phi"]
+    ref_theta_direct = params["ref_theta_direct"]
     alpha = params["alpha"]
 
-    # Generate a range of theta values around t0 for visualization
-    theta_min = theta0-np.pi/2
-    theta_max = theta0+np.pi/2  # Adjust as needed for visualization
-    t = np.linspace(theta_min, theta_max, num_points)
-    # Generate a range of theta values for visualization
-    # t = np.linspace(0, 4 * np.pi, num_points)  # 2 full turns
+    inner_solutions = find_helix_points_at_radius_analytic(
+        inner_cut, params, ref_theta_direct, np.pi / 2
+    )
+    outer_solutions = find_helix_points_at_radius_analytic(
+        outer_cut, params, ref_theta_direct, np.pi / 2
+    )
+
+    max_dtheta = 0
+    for solution in inner_solutions:
+        _, _, theta = solution
+        dtheta = abs(theta - ref_theta_direct)
+        dtheta = min(dtheta, 2 * np.pi - dtheta)  # Take smaller angle
+
+        if dtheta > max_dtheta:
+            max_dtheta = dtheta
+            inner_end = solution
+
+    if inner_end is None:
+        return False
+
+    min_dtheta = float("inf")
+    for solution in outer_solutions:
+        _, _, theta = solution
+        dtheta = abs(theta - ref_theta_direct)
+        dtheta = min(dtheta, 2 * np.pi - dtheta)  # Take smaller angle
+
+        if dtheta < min_dtheta:
+            min_dtheta = dtheta
+            outer_end = solution
+
+    if outer_end is None:
+        return False
+
+    _, _, theta_inner = inner_end
+    _, _, theta_outer = outer_end
+
+    t = np.linspace(theta_inner, theta_outer, num_points)
 
     x = c_x + r * np.cos(t)
     y = c_y + r * np.sin(t)
@@ -142,27 +205,7 @@ def generate_helix_line(helix_points):
     ).astype(np.int64)
     helix_poly.lines = lines
     return helix_poly
-'''
-def create_helix_tube(helix_points, tube_radius=0.5):
-    """
-    Create a tubular mesh around the helix points for visualization.
-    """
-    if helix_points.shape[0] < 2:
-        return None
 
-    helix_poly = pv.PolyData(helix_points)
-    # Create a single polyline connecting all points
-    lines = np.hstack(
-        ([helix_points.shape[0]], np.arange(helix_points.shape[0]))
-    ).astype(np.int64)
-    helix_poly.lines = lines
-    try:
-        tube = helix_poly.tube(radius=tube_radius)
-        return tube
-    except Exception as e:
-        print(f"Error creating helix tube: {e}")
-        return None
-'''
 
 def fit_helix_direct(points, initial_params):
     """
@@ -184,18 +227,19 @@ def fit_helix_direct(points, initial_params):
     # t0 is not used in direct fitting
 
     # Initial guess for global parameters
-    #phi0 = 0.0  # Initial phase offset
+    # phi0 = 0.0  # Initial phase offset
     initial_guess = np.array(
         [
             c_x0,  # c_x
             c_y0,  # c_y
             c_z0,  # c_z
             r0,  # r
-            #phi0,  # phi
+            # phi0,  # phi
             alpha0,  # alpha
         ]
     )
-    #theta0=np.arctan2(points[1, 1] - c_y0, points[1, 0] - c_x0) 
+
+    # theta0=np.arctan2(points[1, 1] - c_y0, points[1, 0] - c_x0)
     # Define residuals for least squares
     def residuals(params, points):
         c_x, c_y, c_z, r, alpha = params
@@ -203,7 +247,7 @@ def fit_helix_direct(points, initial_params):
         theta = np.arctan2(points[:, 1] - c_y, points[:, 0] - c_x)
         theta = np.unwrap(theta)  # Ensure continuity
         # Calculate theta for each point based on current helix parameters
-        #theta = np.arctan2(points[:, 1] - c_y, points[:, 0] - c_x) 
+        # theta = np.arctan2(points[:, 1] - c_y, points[:, 0] - c_x)
         # Calculate fitted positions
         x_fit = c_x + r * np.cos(theta)
         y_fit = c_y + r * np.sin(theta)
@@ -214,7 +258,7 @@ def fit_helix_direct(points, initial_params):
 
     try:
         # Perform least squares optimization
-        '''
+        """
         result = least_squares(
             residuals,
             initial_guess,
@@ -222,19 +266,19 @@ def fit_helix_direct(points, initial_params):
             method="lm",  # Levenberg-Marquardt algorithm, need to add huber loss function
             max_nfev=1000,
         )
-        '''
-        
+        """
+
         result = least_squares(
             residuals,
             initial_guess,
             args=(points,),
-            method="trf",       # Trust Region Reflective algorithm
-            loss="huber",       # Specify Huber loss for robustness
-            f_scale=1.0,        # Tuning parameter for Huber loss; adjust as needed
+            method="trf",  # Trust Region Reflective algorithm
+            loss="huber",  # Specify Huber loss for robustness
+            f_scale=1.0,  # Tuning parameter for Huber loss
             max_nfev=1000,
-            verbose=2            # Enable verbosity for debugging; set to 0 for silent
+            verbose=2,  # Enable verbosity for debugging; set to 0 for silent
         )
-        
+
         if not result.success:
             print("Direct helix fitting did not converge.")
             return None
@@ -252,13 +296,11 @@ def fit_helix_direct(points, initial_params):
             "c_y": c_y,
             "c_z": c_z,
             "r": r,
-            #"phi": phi,
+            # "phi": phi,
             "alpha": alpha,
-            "ref_theta_direct":theta0
+            "ref_theta_direct": theta0,
         }
 
     except Exception as e:
         print(f"Error during direct helix fitting: {e}")
         return None
-
-

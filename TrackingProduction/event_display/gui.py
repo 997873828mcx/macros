@@ -71,6 +71,8 @@ class MainWindow(QMainWindow):
         # Initialize pick mode
         self.pick_mode = "info"  # Default mode
 
+        self.inner_cut = 21.6
+        self.outer_cut = 76.4
         # Add a new attribute to track the helix tube color
         self.helix_line_color = "grey"  # Default color for initial fitting
         self.helix_line = None
@@ -817,7 +819,7 @@ class MainWindow(QMainWindow):
                         point_size=5,
                         color="blue",
                     )
-
+        """
         for mesh in self.helix_lines:
             self.plotter_widget.add_mesh(
                 mesh,  # mesh is a pyvista mesh
@@ -826,6 +828,12 @@ class MainWindow(QMainWindow):
                 style="wireframe",
                 pickable=False,
             )
+            
+        """
+
+        for actor in self.helix_lines:
+            # Re-add the stored actor to the renderer
+            self.plotter_widget.renderer.add_actor(actor)
 
         # Disable and re-enable picking to ensure a fresh start
         self.plotter_widget.disable_picking()
@@ -934,7 +942,9 @@ class MainWindow(QMainWindow):
         # self.helix_line_color = "green"
         self.helix_line_color = "grey"
         # Generate helix points and create a tube
-        helix_points_initial = generate_helix_points_initial(helix_params_initial)
+        helix_points_initial = generate_helix_points_initial(
+            helix_params_initial, self.inner_cut, self.outer_cut
+        )
         self.helix_points = (
             helix_points_initial  # Store helix points for distance calculations
         )
@@ -997,17 +1007,19 @@ class MainWindow(QMainWindow):
                     )
                     continue
 
-                helix_points_module = generate_helix_points_refined(helix_params_module)
+                helix_points_module = generate_helix_points_refined(
+                    helix_params_module, self.inner_cut, self.outer_cut
+                )
                 helix_line_module = generate_helix_line(helix_points_module)
                 if helix_line_module is not None:
-                    self.plotter_widget.add_mesh(
+                    actor = self.plotter_widget.add_mesh(
                         helix_line_module,
                         color="grey",
                         line_width=3,
                         style="wireframe",
                         pickable=False,
                     )
-                    self.helix_lines.append(helix_line_module)
+                    self.helix_lines.append(actor)
 
                 delta_rphi, delta_z = calculate_deltas(helix_params_module, module_data)
                 self.track_counter += 1
@@ -1050,21 +1062,23 @@ class MainWindow(QMainWindow):
             self.helix_line_color = "grey"
 
             # Generate refined helix points and create a tube
-            helix_points_refined = generate_helix_points_refined(helix_params_refined)
+            helix_points_refined = generate_helix_points_refined(
+                helix_params_refined, self.inner_cut, self.outer_cut
+            )
             self.helix_points = (
                 helix_points_refined  # Update helix points for distance calculations
             )
 
             helix_line_refined = generate_helix_line(helix_points_refined)
             if helix_line_refined is not None:
-                self.plotter_widget.add_mesh(
+                actor = self.plotter_widget.add_mesh(
                     helix_line_refined,
                     color=self.helix_line_color,
                     line_width=3,
                     style="wireframe",
                     pickable=False,
                 )
-                self.helix_lines.append(helix_line_refined)
+                self.helix_lines.append(actor)
                 QMessageBox.information(
                     self,
                     "Helix Fit",
@@ -1224,12 +1238,6 @@ class MainWindow(QMainWindow):
 
     def clear_helix_lines(self):
         """Clears all displayed helix lines from the plot."""
-        # Remove each helix line from the plotter
-        for line in self.helix_lines:
-            try:
-                self.plotter_widget.remove_actor(line)
-            except Exception as e:
-                print(f"Error removing actor: {e}")
         # Clear the list of helix lines
         self.helix_lines = []
         # Optionally update the display to refresh the view
