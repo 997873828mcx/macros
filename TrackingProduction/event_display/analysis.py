@@ -101,10 +101,9 @@ def find_helix_points_at_radius_analytic(
     return solutions
 
 
-def find_line_points_at_radius_analytic(r, line_params, ref_phi, phi_range=np.pi / 2):
+def find_line_points_at_radius_analytic(r, line_params):
     """
-    Find ALL points on the 3D line that have radius 'r' in the XY-plane,
-    and keep only those whose phi is within +/- phi_range of ref_phi.
+    Find ALL points on the 3D line that have radius 'r' in the XY-plane.
 
     Parameters
     ----------
@@ -115,17 +114,13 @@ def find_line_points_at_radius_analytic(r, line_params, ref_phi, phi_range=np.pi
           "x0": float, "y0": float, "z0": float,
           "dir_x": float, "dir_y": float, "dir_z": float
         }
-    ref_phi : float
-        Reference phi value (similar to 'ref_theta' in helix code),
-        helps us keep solutions near a certain phi region.
-    phi_range : float
-        Maximum deviation from ref_phi allowed, in radians.
 
     Returns
     -------
     solutions : list of tuples (phi, z, t)
-        Where phi = atan2(y, x), z is the 3D z at that point, and t is the parameter.
-        Possibly empty if no valid intersections are found.
+        Where phi = atan2(y, x), z is the 3D z-coordinate at that point,
+        and t is the parameter value on the line.
+        The list is empty if no valid intersections are found.
     """
     x0, y0, z0 = line_params["x0"], line_params["y0"], line_params["z0"]
     dx, dy, dz = line_params["dir_x"], line_params["dir_y"], line_params["dir_z"]
@@ -135,24 +130,23 @@ def find_line_points_at_radius_analytic(r, line_params, ref_phi, phi_range=np.pi
     B = 2.0 * (x0 * dx + y0 * dy)
     C = x0**2 + y0**2 - r**2
 
-    # If A ~ 0, direction is purely in z or too small in XY-plane
-    # which might mean the line doesn't vary in XY-plane.
+    # If the line doesn't vary in the XY-plane, return no solutions
     if abs(A) < 1e-12:
         return []
 
-    # Discriminant
+    # Calculate the discriminant of the quadratic equation
     disc = B**2 - 4 * A * C
     if disc < 0:
-        # No real intersection
+        # No real intersection because the line never reaches radius r
         return []
 
-    # Solve for t
+    # Solve for t based on the discriminant
     t_solutions = []
     if abs(disc) < 1e-12:
-        # One solution (tangent case)
+        # Only one solution (tangent case)
         t_solutions.append(-B / (2 * A))
     else:
-        # Two solutions
+        # Two possible solutions for t
         sqrt_disc = np.sqrt(disc)
         t1 = (-B + sqrt_disc) / (2 * A)
         t2 = (-B - sqrt_disc) / (2 * A)
@@ -160,23 +154,16 @@ def find_line_points_at_radius_analytic(r, line_params, ref_phi, phi_range=np.pi
 
     solutions = []
     for t in t_solutions:
-        # 3D point
+        # Compute the 3D point on the line for this t
         X = x0 + dx * t
         Y = y0 + dy * t
         Z = z0 + dz * t
 
-        # Compute phi = atan2(Y, X)
+        # Compute the azimuthal angle φ at this point
         phi_line = np.arctan2(Y, X)
 
-        # Normalize phi_line near ref_phi
-        # If you want to ensure it doesn't differ by more than phi_range
-        # in the "unwrapped" sense:
-        dphi = phi_line - ref_phi
-        # bring to [-pi, pi]
-        dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
-
-        if abs(dphi) <= phi_range:
-            solutions.append((phi_line, Z, t))
+        # Collect the solution as (φ, z, t)
+        solutions.append((phi_line, Z, t))
 
     return solutions
 
@@ -448,8 +435,8 @@ def calculate_deltas_with_visualization(helix_params, clusters, plotter=None):
     return delta_rphi, delta_z
 
 
-def apply_line_filter_radius_analytic(
-    cluster_point, line_params, rphi_window, z_window, ref_phi
+def apply_line_filter(
+    cluster_point, line_params, rphi_window, z_window
 ):
     """
     Check if cluster_point is within rphi_window, z_window of the line, by:
@@ -463,7 +450,7 @@ def apply_line_filter_radius_analytic(
 
     # Find solutions for that radius
     solutions = find_line_points_at_radius_analytic(
-        r_cluster, line_params, ref_phi, phi_range=np.pi
+        r_cluster, line_params
     )
 
     if not solutions:
@@ -481,7 +468,7 @@ def apply_line_filter_radius_analytic(
 
     if not best_sol:
         return False
-
+    
     phi_line, z_line, t_line = best_sol
 
     # Now measure arc_length = r_cluster * delta_phi

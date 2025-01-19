@@ -32,18 +32,14 @@ from helix_fitting import (
     generate_helix_line,
 )
 
-from line_fitting import (
-    fit_line_initial,
-    fit_line_direct,
-    generate_line_points_initial,
-    generate_line_polydata,
-)
+
 
 from histogram_window import HistogramWindow
 from module_histogram_window import ModuleHistogramWindow
 from analysis import (
     calculate_deltas,
     apply_helix_filter,
+    apply_line_filter,
 )
 from data_loader import load_data_from_root
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -70,7 +66,7 @@ class MainWindow(QMainWindow):
         self.loaded_files = {}
         # Initialize fitting step (1: initial fitting, 2: direct fitting)
         self.fitting_step = 1
-        self.using_line_fitting = False
+        self.using_line_fitting = True
 
         # Initialize pick mode
         self.pick_mode = "info"  # Default mode
@@ -366,7 +362,7 @@ class MainWindow(QMainWindow):
 
         # Button: Fit Helix
         self.btn_fit_helix = QPushButton("Fit Helix")
-        self.btn_fit_helix.clicked.connect(self.initiate_helix_fit)
+        self.btn_fit_helix.clicked.connect(self.initiate_fit)
         helix_layout.addWidget(self.btn_fit_helix)
 
         # Button: Reset Helix
@@ -581,7 +577,7 @@ class MainWindow(QMainWindow):
                 return filtered_points if filtered_points.n_points > 0 else None
 
     def _filter_data_line(
-        self, data: pv.PolyData, line_params_init
+        self, data: pv.PolyData, for_fitting: bool = False
     ) -> Optional[pv.PolyData]:
         """
         Example: Filter clusters by distance from the initial line in XY-plane (rphi_window)
@@ -589,49 +585,107 @@ class MainWindow(QMainWindow):
         """
         if data is None:
             return None
+
+        # 1) Spatial ranges from sliders
+        x_min, x_max = self.x_range_slider.value()
+        y_min, y_max = self.y_range_slider.value()
+        z_min, z_max = self.z_range_slider.value()
+
+        # 2) Side selection
+        selected_sides = []
+        if self.side0_checkbox.isChecked():
+            selected_sides.append(0)
+        if self.side1_checkbox.isChecked():
+            selected_sides.append(1)
+        if not selected_sides:
+            return None  # No sides selected => no points
+
+        # 3) Access point arrays
         points = data.points
-        # Retrieve line parameters
-        x0, y0, z0 = (
-            line_params_init["x0"],
-            line_params_init["y0"],
-            line_params_init["z0"],
+        side = data.point_data.get("side", np.zeros(data.n_points))
+
+        # 4) Spatial + side masks
+        side_mask = np.isin(side, selected_sides)
+        spatial_mask = (
+            (points[:, 0] >= x_min)
+            & (points[:, 0] <= x_max)
+            & (points[:, 1] >= y_min)
+            & (points[:, 1] <= y_max)
+            & (points[:, 2] >= z_min)
+            & (points[:, 2] <= z_max)
         )
-        dx, dy, dz = (
-            line_params_init["dir_x"],
-            line_params_init["dir_y"],
-            line_params_init["dir_z"],
-        )
+        combined_mask = side_mask & spatial_mask
 
-        # For each point, compute distance in XY-plane from the line
-        # A simple approach: project each point onto the line, then compare XY distance
-        # In reality, you might do 3D orth distance, or just XY-plane ignoring z, etc.
-        # We'll do a quick demonstration:
-        filter_mask = []
-        for pt in points:
-            px, py, pz = pt
-            # Vector from line origin to point
-            vx, vy, vz = px - x0, py - y0, pz - z0
-            # Dot with line direction
-            dot = vx * dx + vy * dy + vz * dz
-            # Projection point
-            projx = x0 + dot * dx
-            projy = y0 + dot * dy
-            # Compare distance in XY plane
-            dxy = np.sqrt((px - projx) ** 2 + (py - projy) ** 2)
-
-            # Compare z difference in your window approach
-            # Or measure difference in pz-projected_z if you prefer
-            # We'll do a naive approach: keep everything or apply some z window
-            z_diff = abs(pz - (z0 + dot * dz))
-
-            if dxy < self.rphi_window and z_diff < self.z_window:
-                filter_mask.append(True)
+        # 5) ADC filtering
+        adc_values = data.point_data.get("adc", None)
+        if adc_values is not None:
+            # Decide threshold based on data type
+            if data is self.cluster_data:
+                adc_threshold = self.cluster_adc_spinbox.value()
+            elif data is self.hit_data:
+                adc_threshold = self.hit_adc_spinbox.value()
             else:
-                filter_mask.append(False)
+                adc_threshold = 0
+            adc_mask = adc_values > adc_threshold
+            combined_mask &= adc_mask
 
-        filter_mask = np.array(filter_mask)
-        filtered_points = data.extract_points(np.where(filter_mask)[0])
-        return filtered_points if filtered_points.n_points > 0 else None
+        # 6) used_in_seed / used_in_track filters
+        used_in_seed = data.point_data.get("used_in_seed", None)
+        if used_in_seed is not None and self.seed_checkbox.isChecked():
+            combined_mask &= used_in_seed == 1
+
+        used_in_track = data.point_data.get("used_in_track", None)
+        if used_in_track is not None and self.track_checkbox.isChecked():
+            combined_mask &= used_in_track == 1
+
+        # 7) Extract points that pass the above filters
+        filtered_indices = np.where(combined_mask)[0]
+        filtered_points = data.extract_points(filtered_indices)
+        if filtered_points is None or filtered_points.n_points == 0:
+            return None
+
+        # 8) Optionally apply line-based filter for fitting or if user toggles
+        if for_fitting:
+            # We only apply line filtering if we have an initial line fit
+            if self.line_params_initial:
+                distance_mask = np.array(
+                    [
+                        apply_line_filter(
+                            pt,
+                            self.line_params_initial,
+                            self.rphi_window,
+                            self.z_window,
+                        )
+                        for pt in filtered_points.points
+                    ]
+                )
+                line_filtered = filtered_points.extract_points(distance_mask)
+                return line_filtered if line_filtered.n_points > 0 else None
+            else:
+                # If we don't have line parameters yet, just return the spatially filtered data
+                return filtered_points
+        else:
+            
+            if (
+                not self.toggle_filter_checkbox.isChecked()  # analogous to helix usage
+                and self.line_params_initial is not None
+            ):
+                distance_mask = np.array(
+                    [
+                        apply_line_filter(
+                            pt,
+                            self.line_params_initial,
+                            self.rphi_window,
+                            self.z_window,
+                        )
+                        for pt in filtered_points.points
+                    ]
+                )
+                line_filtered = filtered_points.extract_points(distance_mask)
+                return line_filtered if line_filtered.n_points > 0 else None
+            else:
+                # Return just the spatially filtered data
+                return filtered_points if filtered_points.n_points > 0 else None
 
     def add_file_checkbox(self, filename, cluster_data, hit_data):
         checkbox = QCheckBox(filename)
@@ -850,8 +904,13 @@ class MainWindow(QMainWindow):
                 and file_info["cluster"] is not None
                 and file_info["cluster"].n_points > 0
             ):
-                filtered_clusters_display = self._filter_data(file_info["cluster"])
-
+                if not self.using_line_fitting:
+                    
+                    filtered_clusters_display = self._filter_data(file_info["cluster"])
+                else:
+                    filtered_clusters_display = self._filter_data_line(file_info["cluster"])
+                
+                    
                 if filtered_clusters_display and filtered_clusters_display.n_points > 0:
                     cluster_color = file_info.get("color", "red")
                     self.plotter_widget.add_mesh(
@@ -972,14 +1031,7 @@ class MainWindow(QMainWindow):
             )
             return
 
-        # Require exactly three points for the initial fit
-        if len(self.selected_points_first) != 3:
-            QMessageBox.warning(
-                self,
-                "Track Fit",
-                "Please select exactly three cluster points before fitting.",
-            )
-            return
+       
 
         # Combine all selected cluster data
         selected_clusters = []
@@ -1003,13 +1055,21 @@ class MainWindow(QMainWindow):
         self.update_display()
 
     def do_line_fitting_flow(self):
+        # Require exactly three points for the initial fit
+        if len(self.selected_points_first) != 2:
+            QMessageBox.warning(
+                self,
+                "Track Fit",
+                "Please select exactly two cluster points before fitting.",
+            )
+            return
         """
         Perform the 2-step line fitting approach (initial + direct).
         """
         from line_fitting import (
             fit_line_initial,
             fit_line_direct,
-            generate_line_points_initial,
+            generate_line_points,
             generate_line_polydata,
         )
 
@@ -1021,7 +1081,7 @@ class MainWindow(QMainWindow):
 
         self.line_params_initial = line_params_init
         # Visualize the initial line
-        line_points_init = generate_line_points_initial(line_params_init, length=300)
+        line_points_init = generate_line_points(line_params_init, length=300)
         line_poly_init = generate_line_polydata(line_points_init)
         if line_poly_init is not None:
             actor = self.plotter_widget.add_mesh(
@@ -1035,7 +1095,7 @@ class MainWindow(QMainWindow):
 
         # 2) Filter clusters around this line
         filtered_clusters_for_fitting = self._filter_data_line(
-            self.cluster_data, line_params_init
+            self.cluster_data, for_fitting=True
         )
         if (
             filtered_clusters_for_fitting is None
@@ -1056,7 +1116,7 @@ class MainWindow(QMainWindow):
         self.line_params_refined = line_params_refined
 
         # Visualize refined line
-        line_points_refined = generate_line_points_initial(
+        line_points_refined = generate_line_points(
             line_params_refined, length=300
         )
         line_poly_refined = generate_line_polydata(line_points_refined)
@@ -1078,38 +1138,19 @@ class MainWindow(QMainWindow):
         # Optionally compute residuals, do histograms, etc.
         # self.track_counter += 1
         # ...
-
-    def initiate_helix_fit(self):
-        """Triggered when the user clicks the 'Fit Helix' button."""
-
-        if self.pick_mode != "helix":
-            QMessageBox.warning(
-                self,
-                "Helix Fit",
-                "Please switch to 'Pick for Helix Fitting' mode to fit a helix.",
-            )
-            return
-        selected_clusters = []
-        for filename, file_info in self.loaded_files.items():
-            item = file_info["item"]
-            if item.checkState() == Qt.Checked and file_info["cluster"] is not None:
-                selected_clusters.append(file_info["cluster"])
-        if not selected_clusters:
-            QMessageBox.warning(self, "Fit Error", "No cluster data loaded.")
-            return
-
-        # Combine all selected cluster data into one dataset
-        combined_cluster_data = pv.merge(selected_clusters)
-        self.cluster_data = combined_cluster_data
-
+        
+        
+    def do_helix_fitting_flow(self):
+        
+        
+         # Require exactly three points for the initial fit
         if len(self.selected_points_first) != 3:
             QMessageBox.warning(
                 self,
-                "Helix Fit",
-                "Please select exactly three points before fitting a helix.",
+                "Track Fit",
+                "Please select exactly three cluster points before fitting.",
             )
             return
-
         try:
             helix_params_initial = fit_helix_initial(self.selected_points_first)
         except ValueError as ve:

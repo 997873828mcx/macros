@@ -5,49 +5,46 @@ from scipy.optimize import least_squares
 
 def fit_line_initial(points):
     """
-    Fit a straight line to exactly three points (initial fitting).
-    Returns a dictionary of line parameters or None on failure.
+    Fit a straight line through two 3D points.
 
     Parameters
     ----------
-    points : array-like of shape (3, 3)
-        Three 3D points that the user picked.
+    points : array-like of shape (2, 3)
+        An array containing exactly two distinct 3D points.
 
     Returns
     -------
     dict or None
         Dictionary with line parameters:
             {
-              "x0": float,  # x of centroid
-              "y0": float,  # y of centroid
-              "z0": float,  # z of centroid
-              "dir_x": float,  # x-component of direction vector
-              "dir_y": float,  # y-component of direction vector
-              "dir_z": float,  # z-component of direction vector
+              "x0": float,  # x-coordinate of the midpoint
+              "y0": float,  # y-coordinate of the midpoint
+              "z0": float,  # z-coordinate of the midpoint
+              "dir_x": float,  # x-component of the normalized direction vector
+              "dir_y": float,  # y-component of the normalized direction vector
+              "dir_z": float,  # z-component of the normalized direction vector
             }
-        or None if fitting fails.
+        or None if the points are coincident or too close.
     """
-    points = np.asarray(points)
-    if points.shape != (3, 3):
-        print("fit_line_initial: Exactly 3 points are required.")
+    points = np.asarray(points, dtype=float)
+    if points.shape != (2, 3):
+        print("fit_line_two_points: Exactly two points of shape (3,) are required.")
         return None
 
-    # 1) Compute centroid
-    centroid = np.mean(points, axis=0)  # shape (3,)
-    # 2) Center the points
-    centered = points - centroid
-    # 3) SVD to get principal direction (the line direction)
-    U, S, Vt = np.linalg.svd(centered)
-    # The direction vector is the first right-singular vector
-    direction = Vt[0, :]  # shape (3,)
-
-    # Ensure direction is normalized
-    norm_dir = np.linalg.norm(direction)
-    if norm_dir < 1e-9:
-        print("fit_line_initial: Direction vector too small; points may be coincident.")
+    p1 = points[0]
+    p2 = points[1]
+    
+    # Compute the midpoint of the two points
+    centroid = (p1 + p2) / 2.0
+    
+    # Compute the direction vector from p1 to p2
+    direction = p2 - p1
+    norm = np.linalg.norm(direction)
+    if norm < 1e-9:
+        print("fit_line_two_points: Points are coincident or too close.")
         return None
-    direction /= norm_dir
-
+    direction /= norm  # Normalize the direction
+    
     return {
         "x0": centroid[0],
         "y0": centroid[1],
@@ -58,7 +55,8 @@ def fit_line_initial(points):
     }
 
 
-def generate_line_points_initial(params, length=300.0, num_points=200):
+
+def generate_line_points(params, length=300.0, num_points=200):
     """
     Generate line points from the initial line parameters for visualization.
 
@@ -218,7 +216,7 @@ def fit_line_direct(points, initial_params):
             args=(points,),
             method="trf",
             loss="huber",  # robust to outliers
-            f_scale=1.0,
+            f_scale=0.1,
             max_nfev=1000,
             verbose=2,  # set to 0 to silence
         )
