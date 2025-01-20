@@ -1,6 +1,7 @@
 import numpy as np
 import pyvista as pv
 from scipy.optimize import least_squares
+from analysis import find_line_points_at_radius_analytic
 
 
 def fit_line_initial(points):
@@ -56,7 +57,7 @@ def fit_line_initial(points):
 
 
 
-def generate_line_points(params, length=300.0, num_points=200):
+def generate_line_points(params, inner_cut, outer_cut, centroid, num_points=200):
     """
     Generate line points from the initial line parameters for visualization.
 
@@ -91,9 +92,36 @@ def generate_line_points(params, length=300.0, num_points=200):
     dy = params["dir_y"]
     dz = params["dir_z"]
 
-    # Parameter t goes from -length to +length
-    t_vals = np.linspace(-length, length, num_points)
-    # Generate points
+    t_cent = project_point_onto_line(centroid, params)
+    
+    inner_solutions = find_line_points_at_radius_analytic(inner_cut, params)
+    if not inner_solutions:
+        return None  # No intersection with inner cylinder
+
+    # Each solution is (phi_line, z_line, t_in)
+    # We pick the one that is "farther" from t_cent 
+    # "Farther" => maximize |t_in - t_cent|
+    chosen_inner = max(
+        inner_solutions,
+        key=lambda sol: abs(sol[2] - t_cent)
+    )
+    t_in = chosen_inner[2]
+    
+    outer_solutions = find_line_points_at_radius_analytic(outer_cut, params)
+    if not outer_solutions:
+        return None  # No intersection with outer cylinder
+
+    
+    chosen_outer = min(
+        outer_solutions,
+        key=lambda sol: abs(sol[2] - t_cent)
+    )
+    t_out = chosen_outer[2]
+    
+    t_min = min(t_in, t_out)
+    t_max = max(t_in, t_out)
+
+    t_vals = np.linspace(t_min, t_max, num_points)
     x = x0 + dx * t_vals
     y = y0 + dy * t_vals
     z = z0 + dz * t_vals
@@ -246,3 +274,26 @@ def fit_line_direct(points, initial_params):
     except Exception as e:
         print(f"fit_line_direct: Exception in fitting: {e}")
         return None
+
+
+def project_point_onto_line(point, line_params):
+    """
+    Project a 3D point onto a line defined by:
+        x0, y0, z0, dir_x, dir_y, dir_z
+    and return the parameter t where the projection falls.
+    """
+    x0 = line_params["x0"]
+    y0 = line_params["y0"]
+    z0 = line_params["z0"]
+    dx = line_params["dir_x"]
+    dy = line_params["dir_y"]
+    dz = line_params["dir_z"]
+    
+    # Vector from (x0, y0, z0) to the point
+    vx = point[0] - x0
+    vy = point[1] - y0
+    vz = point[2] - z0
+    
+    # Direction dot vector
+    dot = vx * dx + vy * dy + vz * dz
+    return dot  # This is the 't' that gives the projection

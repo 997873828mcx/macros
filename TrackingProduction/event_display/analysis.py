@@ -1,5 +1,4 @@
 # analysis.py
-
 import numpy as np
 import ROOT
 from ROOT import TFile, TTree, TH1D, TDirectory
@@ -286,6 +285,69 @@ def calculate_deltas(helix_params, clusters):
     return np.array(delta_rphi), np.array(delta_z)
 
 
+
+
+def calculate_deltas_line(line_params, clusters):
+    """
+    Calculate delta rphi and delta z for a set of clusters relative to a fitted line.
+    
+    Parameters:
+    -----------
+    line_params : dict
+        Parameters of the fitted line.
+    clusters : pv.PolyData
+        The set of cluster points.
+    
+    Returns:
+    --------
+    delta_rphi : np.ndarray
+        Array of Δrφ values.
+    delta_z : np.ndarray
+        Array of Δz values.
+    """
+    delta_rphi = []
+    delta_z = []
+
+    # Loop over each cluster point
+    for point in clusters.points:
+        x, y, z = point
+        r_meas = np.sqrt(x**2 + y**2)
+        phi_meas = np.arctan2(y, x)
+
+        # Find solutions on the line for the radius r_meas
+        solutions = find_line_points_at_radius_analytic(r_meas, line_params)
+        if not solutions:
+            continue  # Skip if no valid line intersections found
+
+        # Select the solution closest in φ to the measured point
+        min_dphi = float("inf")
+        best_solution = None
+        for phi_line, z_line, t_line in solutions:
+            dphi = abs(phi_meas - phi_line)
+            # Normalize angle difference to [0, π]
+            dphi = min(dphi, 2 * np.pi - dphi)
+            if dphi < min_dphi:
+                min_dphi = dphi
+                best_solution = (phi_line, z_line, t_line)
+
+        if best_solution is None:
+            continue
+
+        phi_line, z_line, t_line = best_solution
+
+        # Compute differences in φ and z
+        delta_phi = phi_meas - phi_line
+        # Normalize delta_phi to [-π, π]
+        delta_phi = (delta_phi + np.pi) % (2 * np.pi) - np.pi
+        # Calculate arc length in the r–φ plane
+        delta_rphi_val = r_meas * delta_phi
+        delta_z_val = z - z_line
+
+        delta_rphi.append(delta_rphi_val)
+        delta_z.append(delta_z_val)
+
+    return np.array(delta_rphi), np.array(delta_z)
+
 def find_helix_reference_points(clusters, helix_params, ref_theta):
     """
     Find reference points on the helix for each cluster.
@@ -402,7 +464,7 @@ def visualize_reference_points(plotter, clusters, helix_params):
             line = pv.Line(line_points[0], line_points[1])
             plotter.add_mesh(line, color="gray", opacity=0.3)
 
-
+'''
 def calculate_deltas_with_visualization(helix_params, clusters, plotter=None):
     """
     Calculate deltas and optionally visualize reference points.
@@ -434,7 +496,7 @@ def calculate_deltas_with_visualization(helix_params, clusters, plotter=None):
 
     return delta_rphi, delta_z
 
-
+'''
 def apply_line_filter(
     cluster_point, line_params, rphi_window, z_window
 ):
@@ -468,7 +530,7 @@ def apply_line_filter(
 
     if not best_sol:
         return False
-    
+
     phi_line, z_line, t_line = best_sol
 
     # Now measure arc_length = r_cluster * delta_phi
@@ -598,3 +660,20 @@ def save_tree(root_filename, track_id, delta_rphi, delta_z, sigma_rphi, sigma_z)
     # Close the file
     file.Close()
     logging.info(f"Saved entry for Track ID {track_id} to '{root_filename}'.")
+
+def compute_centroid(points):
+    """
+    Compute the centroid of a set of 3D points.
+
+    Parameters
+    ----------
+    points : array-like of shape (N, 3)
+        Array or list of 3D points.
+
+    Returns
+    -------
+    np.ndarray of shape (3,)
+        The coordinates of the centroid [x_mean, y_mean, z_mean].
+    """
+    points = np.asarray(points)
+    return np.mean(points, axis=0)

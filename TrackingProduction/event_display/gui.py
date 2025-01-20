@@ -40,6 +40,8 @@ from analysis import (
     calculate_deltas,
     apply_helix_filter,
     apply_line_filter,
+    calculate_deltas_line,
+    compute_centroid,
 )
 from data_loader import load_data_from_root
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -1073,15 +1075,17 @@ class MainWindow(QMainWindow):
             generate_line_polydata,
         )
 
-        # 1) Initial line fit from 3 picks
+        # 1) Initial line fit from 2 picks
         line_params_init = fit_line_initial(self.selected_points_first)
         if not line_params_init:
             QMessageBox.warning(self, "Line Fit", "Initial line fitting failed.")
             return
+        
+        centroid_initial = compute_centroid(self.selected_points_first)
 
         self.line_params_initial = line_params_init
         # Visualize the initial line
-        line_points_init = generate_line_points(line_params_init, length=300)
+        line_points_init = generate_line_points(line_params_init, self.inner_cut, self.outer_cut, centroid_initial)
         line_poly_init = generate_line_polydata(line_points_init)
         if line_poly_init is not None:
             actor = self.plotter_widget.add_mesh(
@@ -1114,10 +1118,13 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Line Fit", "Refined line fitting failed.")
             return
         self.line_params_refined = line_params_refined
+        
+        centroid_refined = compute_centroid(filtered_clusters_for_fitting.points)
+        
 
         # Visualize refined line
         line_points_refined = generate_line_points(
-            line_params_refined, length=300
+            line_params_refined, self.inner_cut, self.outer_cut, centroid_refined
         )
         line_poly_refined = generate_line_polydata(line_points_refined)
         if line_poly_refined is not None:
@@ -1135,6 +1142,25 @@ class MainWindow(QMainWindow):
                 "Refined line fitted and visualized.",
             )
 
+        # After successful refined line fit and visualization
+        if filtered_clusters_for_fitting is not None and filtered_clusters_for_fitting.n_points > 0:
+            # Calculate line residuals
+            delta_rphi, delta_z = calculate_deltas_line(self.line_params_refined, filtered_clusters_for_fitting)
+            
+            # Increment track counter and update histograms
+            self.track_counter += 1
+            if not self.histogram_window.isVisible():
+                self.histogram_window.show()
+            self.histogram_window.add_histograms(delta_rphi, delta_z, self.track_counter)
+        else:
+            QMessageBox.warning(
+                self,
+                "Line Fit",
+                "No clusters passed the filter. Cannot calculate deltas.",
+            )
+            return
+        
+        
         # Optionally compute residuals, do histograms, etc.
         # self.track_counter += 1
         # ...
@@ -1407,6 +1433,9 @@ class MainWindow(QMainWindow):
         self.helix_points = None  # Clear helix points
         self.helix_params_initial = None
         self.helix_params_refined = None
+        self.line_params_initial = None
+        self.line_params_refined = None
+        
         self.selected_points_first.clear()
         self.instruction_label.setText(
             "Instruction: Select 3 points for initial helix fitting."
