@@ -34,10 +34,10 @@ def fit_line_initial(points):
 
     p1 = points[0]
     p2 = points[1]
-    
+
     # Compute the midpoint of the two points
     centroid = (p1 + p2) / 2.0
-    
+
     # Compute the direction vector from p1 to p2
     direction = p2 - p1
     norm = np.linalg.norm(direction)
@@ -45,7 +45,7 @@ def fit_line_initial(points):
         print("fit_line_two_points: Points are coincident or too close.")
         return None
     direction /= norm  # Normalize the direction
-    
+
     return {
         "x0": centroid[0],
         "y0": centroid[1],
@@ -54,7 +54,6 @@ def fit_line_initial(points):
         "dir_y": direction[1],
         "dir_z": direction[2],
     }
-
 
 
 def generate_line_points(params, inner_cut, outer_cut, centroid, num_points=200):
@@ -93,31 +92,24 @@ def generate_line_points(params, inner_cut, outer_cut, centroid, num_points=200)
     dz = params["dir_z"]
 
     t_cent = project_point_onto_line(centroid, params)
-    
+
     inner_solutions = find_line_points_at_radius_analytic(inner_cut, params)
     if not inner_solutions:
         return None  # No intersection with inner cylinder
 
     # Each solution is (phi_line, z_line, t_in)
-    # We pick the one that is "farther" from t_cent 
+    # We pick the one that is "farther" from t_cent
     # "Farther" => maximize |t_in - t_cent|
-    chosen_inner = max(
-        inner_solutions,
-        key=lambda sol: abs(sol[2] - t_cent)
-    )
+    chosen_inner = max(inner_solutions, key=lambda sol: abs(sol[2] - t_cent))
     t_in = chosen_inner[2]
-    
+
     outer_solutions = find_line_points_at_radius_analytic(outer_cut, params)
     if not outer_solutions:
         return None  # No intersection with outer cylinder
 
-    
-    chosen_outer = min(
-        outer_solutions,
-        key=lambda sol: abs(sol[2] - t_cent)
-    )
+    chosen_outer = min(outer_solutions, key=lambda sol: abs(sol[2] - t_cent))
     t_out = chosen_outer[2]
-    
+
     t_min = min(t_in, t_out)
     t_max = max(t_in, t_out)
 
@@ -244,7 +236,7 @@ def fit_line_direct(points, initial_params):
             args=(points,),
             method="trf",
             loss="huber",  # robust to outliers
-            f_scale=0.1,
+            f_scale=0.4,
             max_nfev=1000,
             verbose=2,  # set to 0 to silence
         )
@@ -288,12 +280,12 @@ def project_point_onto_line(point, line_params):
     dx = line_params["dir_x"]
     dy = line_params["dir_y"]
     dz = line_params["dir_z"]
-    
+
     # Vector from (x0, y0, z0) to the point
     vx = point[0] - x0
     vy = point[1] - y0
     vz = point[2] - z0
-    
+
     # Direction dot vector
     dot = vx * dx + vy * dy + vz * dz
     return dot  # This is the 't' that gives the projection

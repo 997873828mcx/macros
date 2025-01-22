@@ -274,7 +274,7 @@ def fit_helix_direct(points, initial_params):
             args=(points,),
             method="trf",  # Trust Region Reflective algorithm
             loss="huber",  # Specify Huber loss for robustness
-            f_scale=0.1,  # Tuning parameter for Huber loss
+            f_scale=0.3,  # Tuning parameter for Huber loss
             max_nfev=1000,
             verbose=2,  # Enable verbosity for debugging; set to 0 for silent
         )
