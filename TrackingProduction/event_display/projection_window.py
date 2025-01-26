@@ -26,9 +26,7 @@ class GeometricProjectionWindow(QMainWindow):
         control_layout = QHBoxLayout()
 
         self.projection_combo = QComboBox()
-        self.projection_combo.addItems(
-            ["XY Projection", "XZ Projection", "YZ Projection"]
-        )
+        self.projection_combo.addItems(["XY Projection", "ZR Projection"])
         self.projection_combo.currentIndexChanged.connect(self.update_projection)
 
         control_layout.addWidget(self.projection_combo)
@@ -71,12 +69,13 @@ class GeometricProjectionWindow(QMainWindow):
         if projection_type == "XY Projection":
             # Set Z to 0
             projected_points[:, 2] = 0
-        elif projection_type == "XZ Projection":
+        elif projection_type == "ZR Projection":
             # Set Y to 0
-            projected_points[:, 1] = 0
-        elif projection_type == "YZ Projection":
-            # Set X to 0
-            projected_points[:, 0] = 0
+            r = np.sqrt(points[:, 0] ** 2 + points[:, 1] ** 2)
+
+            projected_points[:, 0] = r  # R coordinate
+            projected_points[:, 1] = points[:, 2]  # R coordinate# Z coordinate
+            projected_points[:, 2] = 0  # Set Z to 0 for 2D projection
 
         return projected_points
 
@@ -169,8 +168,8 @@ class GeometricProjectionWindow(QMainWindow):
 
     def update_display(
         self,
-        cluster_data: Optional[pv.PolyData] = None,
-        hit_data: Optional[pv.PolyData] = None,
+        clusters_info: Optional[list] = None,
+        hits_info: Optional[list] = None,
         helix_lines: Optional[list] = None,
         projection_type: Optional[str] = None,
     ):
@@ -190,9 +189,9 @@ class GeometricProjectionWindow(QMainWindow):
             One of 'XY Projection', 'XZ Projection', 'YZ Projection'.
         """
         # Store references for later refresh
-        self.current_cluster_data = cluster_data
+        """self.current_cluster_data = cluster_data
         self.current_hit_data = hit_data
-        self.current_helix_lines = helix_lines
+        self.current_helix_lines = helix_lines"""
 
         if projection_type is None:
             projection_type = self.projection_combo.currentText()
@@ -201,20 +200,32 @@ class GeometricProjectionWindow(QMainWindow):
         self.plotter.clear()
 
         # ------------- Project Clusters -------------
-        if cluster_data is not None and cluster_data.n_points > 0:
-            projected_clusters = self.project_polydata(cluster_data, projection_type)
-            if projected_clusters:
-                self.plotter.add_mesh(
-                    projected_clusters, style="points", point_size=5, color="red"
-                )
+
+        if clusters_info:
+            for filtered_clusters, color, file_info in clusters_info:
+                if filtered_clusters is not None and filtered_clusters.n_points > 0:
+                    projected_clusters = self.project_polydata(
+                        filtered_clusters, projection_type
+                    )
+                    if projected_clusters:
+                        self.plotter.add_mesh(
+                            projected_clusters,
+                            style="points",
+                            point_size=5,
+                            color=color,
+                        )
 
         # ------------- Project Hits -------------
-        if hit_data is not None and hit_data.n_points > 0:
-            projected_hits = self.project_polydata(hit_data, projection_type)
-            if projected_hits:
-                self.plotter.add_mesh(
-                    projected_hits, style="points", point_size=5, color="blue"
-                )
+        if hits_info:
+            for filtered_hits, color, file_info in hits_info:
+                if filtered_hits is not None and filtered_hits.n_points > 0:
+                    projected_hits = self.project_polydata(
+                        filtered_hits, projection_type
+                    )
+                    if projected_hits:
+                        self.plotter.add_mesh(
+                            projected_hits, style="points", point_size=5, color="blue"
+                        )
 
         # ------------- Project Helix Lines -------------
         if helix_lines:

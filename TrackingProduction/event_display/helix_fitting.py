@@ -96,12 +96,18 @@ def generate_helix_points_initial(params, inner_cut, outer_cut, num_points=500):
     alpha = params["alpha"]
     c_z = params["c_z"]
     ref_theta = params["ref_theta"]
+
+    inner_end = None
+    outer_end = None
     inner_solutions = find_helix_points_at_radius_analytic(
         inner_cut, params, ref_theta, np.pi / 2
     )
     outer_solutions = find_helix_points_at_radius_analytic(
         outer_cut, params, ref_theta, np.pi / 2
     )
+
+    if not inner_solutions or not outer_solutions:
+        return None
 
     max_dtheta = 0
     for solution in inner_solutions:
@@ -114,7 +120,7 @@ def generate_helix_points_initial(params, inner_cut, outer_cut, num_points=500):
             inner_end = solution
 
     if inner_end is None:
-        return False
+        return None
 
     min_dtheta = float("inf")
     for solution in outer_solutions:
@@ -127,7 +133,7 @@ def generate_helix_points_initial(params, inner_cut, outer_cut, num_points=500):
             outer_end = solution
 
     if outer_end is None:
-        return False
+        return None
 
     _, _, theta_inner = inner_end
     _, _, theta_outer = outer_end
@@ -152,12 +158,18 @@ def generate_helix_points_refined(params, inner_cut, outer_cut, num_points=500):
     ref_theta_direct = params["ref_theta_direct"]
     alpha = params["alpha"]
 
+    inner_end = None
+    outer_end = None
+
     inner_solutions = find_helix_points_at_radius_analytic(
         inner_cut, params, ref_theta_direct, np.pi / 2
     )
     outer_solutions = find_helix_points_at_radius_analytic(
         outer_cut, params, ref_theta_direct, np.pi / 2
     )
+
+    if not inner_solutions or not outer_solutions:
+        return None
 
     max_dtheta = 0
     for solution in inner_solutions:
@@ -170,7 +182,7 @@ def generate_helix_points_refined(params, inner_cut, outer_cut, num_points=500):
             inner_end = solution
 
     if inner_end is None:
-        return False
+        return None
 
     min_dtheta = float("inf")
     for solution in outer_solutions:
@@ -183,7 +195,7 @@ def generate_helix_points_refined(params, inner_cut, outer_cut, num_points=500):
             outer_end = solution
 
     if outer_end is None:
-        return False
+        return None
 
     _, _, theta_inner = inner_end
     _, _, theta_outer = outer_end

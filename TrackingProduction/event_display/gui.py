@@ -81,12 +81,15 @@ class MainWindow(QMainWindow):
         self.helix_line = None
         self.track_lines = []  # List to store all helix lines
 
+        self.display_filtered_clusters_info = []
+        self.display_filtered_hits_info = []
+
         self.helix_line_color = "grey"  # Default color for initial fitting
 
         self.track_counter = 0
 
         self.rphi_window = 0.5  # Default window size for rphi
-        self.z_window = 1.0  # Default window size for z
+        self.z_window = 1  # Default window size for z
 
         self.histogram_window = HistogramWindow()
         self.module_hist_window = ModuleHistogramWindow()
@@ -274,7 +277,7 @@ class MainWindow(QMainWindow):
         nmaps_layout = QHBoxLayout()
         nmaps_label = QLabel("NMAPS ≥")
         self.nmaps_spinbox = QSpinBox()
-        self.nmaps_spinbox.setRange(0, 100)
+        self.nmaps_spinbox.setRange(-10, 100)
         self.nmaps_spinbox.setValue(0)  # Default value
         self.nmaps_spinbox.valueChanged.connect(self.update_display)
         nmaps_layout.addWidget(nmaps_label)
@@ -575,31 +578,64 @@ class MainWindow(QMainWindow):
         Optional[pv.PolyData]
             The filtered data or None if no points pass.
         """
-        if data is None:
+
+        if data is None or data.n_points == 0:
+            print(f"DEBUG {'(fitting)' if for_fitting else ''}: No data provided.")
             return None
 
+        points = data.points
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Total points before filtering: {len(points)}"
+        )
         # Get event numbers from the data
         event_numbers = data.point_data.get("event", None)
         if event_numbers is None:
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Missing 'event' attribute in data."
+            )
             return None
 
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Unique event numbers in data: {np.unique(event_numbers)}"
+        )
         selected_events = []
         for i in range(self.event_combo.model().rowCount()):
             item = self.event_combo.model().item(i)
             if item.checkState() == Qt.Checked:
-                selected_events.append(i)
+                event_label = item.text()  # e.g., "Event 3"
+                try:
+                    # Extract numeric part from the label
+                    event_id = int(event_label.split()[1])
+                    selected_events.append(event_id)
+                except (ValueError, IndexError):
+                    # print(f"Invalid event ID format: {event_label}")
+                    continue
+
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Selected events: {selected_events}"
+        )
+
+        """if not selected_events:
+            print("No events selected.")
+            return None  # No events selected"""
 
         if not selected_events:
-            return None  # No events selected
-
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: No events selected, returning None"
+            )
+            return None
         event_mask = np.isin(event_numbers, selected_events)
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Points after event filter: {np.sum(event_mask)}"
+        )
 
         # Retrieve range values from sliders
         x_min, x_max = self.x_range_slider.value()
         y_min, y_max = self.y_range_slider.value()
         z_min, z_max = self.z_range_slider.value()
-
-        points = data.points
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Spatial ranges: X[{x_min}, {x_max}], Y[{y_min}, {y_max}], Z[{z_min}, {z_max}]"
+        )
 
         spatial_mask = (
             (points[:, 0] >= x_min)
@@ -610,7 +646,22 @@ class MainWindow(QMainWindow):
             & (points[:, 2] <= z_max)
         )
 
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: X range in data: [{np.min(points[:, 0])}, {np.max(points[:, 0])}]"
+        )
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Y range in data: [{np.min(points[:, 1])}, {np.max(points[:, 1])}]"
+        )
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Z range in data: [{np.min(points[:, 2])}, {np.max(points[:, 2])}]"
+        )
+
+        # print(f"Points after spatial filter: {np.sum(spatial_mask)}")
+
         combined_mask = spatial_mask & event_mask
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining masks: {np.sum(combined_mask)}"
+        )
 
         nmaps_values = data.point_data.get("nmaps", None)
 
@@ -618,6 +669,14 @@ class MainWindow(QMainWindow):
             nmaps_threshold = self.nmaps_spinbox.value()
             nmaps_mask = nmaps_values >= nmaps_threshold
             combined_mask = combined_mask & nmaps_mask
+            """print(
+                f"Points after NMAPS filter (>= {nmaps_threshold}): {np.sum(nmaps_mask)}"
+            )"""
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining NMAPS filter: {np.sum(combined_mask)}"
+            )
+        else:
+            print("No 'nmaps' attribute found; skipping NMAPS filter.")
 
         # --- ADC Filtering ---
         adc_values = data.point_data.get("adc", None)
@@ -636,6 +695,12 @@ class MainWindow(QMainWindow):
 
             adc_mask = adc_values >= adc_threshold
             combined_mask &= adc_mask
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining ADC filter: {np.sum(combined_mask)}"
+            )
+
+        else:
+            print("No 'adc' attribute found; skipping ADC filter.")
 
         layer_array = data.point_data.get("layer", np.full(data.n_points, -1))
         is_silicon = layer_array < 7
@@ -655,15 +720,29 @@ class MainWindow(QMainWindow):
         silicon_mask = is_silicon
         if crossing_val_sil != -2000:
             silicon_mask &= crossing_data == crossing_val_sil
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after crossing_val_sil filter ({crossing_val_sil}): {np.sum(crossing_data == crossing_val_sil)}"
+            )
         if t_cross_val_sil != -2000:
             silicon_mask &= t_crossing_data == t_cross_val_sil
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after t_cross_val_sil filter ({t_cross_val_sil}): {np.sum(t_crossing_data == t_cross_val_sil)}"
+            )
         if track_id_val_sil != -1:
             silicon_mask &= track_id_data == track_id_val_sil
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_id_val_sil filter ({track_id_val_sil}): {np.sum(track_id_data == track_id_val_sil)}"
+            )
         if self.seed_checkbox_silicon.isChecked():
             silicon_mask &= used_in_seed == 1
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after seed_checkbox_silicon filter: {np.sum(used_in_seed == 1)}"
+            )
         if self.track_checkbox_silicon.isChecked():
             silicon_mask &= used_in_track == 1
-
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_checkbox_silicon filter: {np.sum(used_in_track == 1)}"
+            )
         is_tpc = layer_array >= 7
         t_cross_val_tpc = self.t_crossing_spin_tpc.value()
         track_id_val_tpc = self.track_id_spin_tpc.value()
@@ -672,20 +751,34 @@ class MainWindow(QMainWindow):
         tpc_mask = is_tpc
         if t_cross_val_tpc != -2000:
             tpc_mask &= t_crossing_data == t_cross_val_tpc
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after t_cross_val_tpc filter ({t_cross_val_tpc}): {np.sum(t_crossing_data == t_cross_val_tpc)}"
+            )
         if track_id_val_tpc != -1:
             tpc_mask &= track_id_data == track_id_val_tpc
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_id_val_tpc filter ({track_id_val_tpc}): {np.sum(track_id_data == track_id_val_tpc)}"
+            )
 
         # Sides
-        sides_chosen = []
-        if self.side0_checkbox_tpc.isChecked():
-            sides_chosen.append(0)
-        if self.side1_checkbox_tpc.isChecked():
-            sides_chosen.append(1)
-        if sides_chosen:
-            tpc_mask &= np.isin(side_data, sides_chosen)
+        if side_data is not None:
+            sides_chosen = []
+            if self.side0_checkbox_tpc.isChecked():
+                sides_chosen.append(0)
+            if self.side1_checkbox_tpc.isChecked():
+                sides_chosen.append(1)
+            if sides_chosen:
+                tpc_mask &= np.isin(side_data, sides_chosen)
+                print(
+                    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after after sides_chosen filter ({sides_chosen}): {np.sum(np.isin(side_data, sides_chosen))}"
+                )
+            else:
+                # If no sides are checked, TPC mask => no points
+                tpc_mask &= False
+                print("No sides selected for TPC; excluding all TPC points.")
+
         else:
-            # If no sides are checked, TPC mask => no points
-            tpc_mask &= False
+            print("Missing 'side' attribute in data; skipping side filter.")
 
         if self.seed_checkbox_tpc.isChecked():
             tpc_mask &= used_in_seed == 1
@@ -698,9 +791,23 @@ class MainWindow(QMainWindow):
 
         filtered_indices = np.where(combined_mask)[0]
         filtered_points = data.extract_points(filtered_indices)
+        if filtered_points is None or filtered_points.n_points == 0:
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: No points passed the filters"
+            )
+            return None
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Final point count: {filtered_points.n_points}"
+        )
         if for_fitting:
             if self.helix_params_initial:
                 # Apply helix-based filtering using initial helix parameters
+                print("Applying helix-based proximity filtering for fitting.")
+                print("Helix initial params:", self.helix_params_initial)
+                print("rphi_window:", self.rphi_window, "z_window:", self.z_window)
+                print(
+                    f"Points before helix proximity filter: {filtered_points.n_points}"
+                )
                 distance_mask = np.array(
                     [
                         apply_helix_filter(
@@ -713,7 +820,13 @@ class MainWindow(QMainWindow):
                     ]
                 )
                 helix_filtered = filtered_points.extract_points(distance_mask)
+                print(f"Points after helix proximity filter: {helix_filtered.n_points}")
                 return helix_filtered if helix_filtered.n_points > 0 else None
+            else:
+                print(
+                    "Helix parameters not initialized; skipping helix proximity filter."
+                )
+                return filtered_points if filtered_points.n_points > 0 else None
 
         else:
             # If the filter checkbox is checked and initial helix exists, apply helix proximity filtering
@@ -1067,10 +1180,14 @@ class MainWindow(QMainWindow):
         Update the 3D visualization based on loaded data and current settings.
         Includes optional filtering based on helix tube.
         """
+
         # Save current camera position
         camera_position = self.plotter_widget.camera_position
         # Clear the current plotter
         self.plotter_widget.clear()
+
+        self.display_filtered_clusters_info.clear()
+        self.display_filtered_hits_info.clear()
 
         show_clusters = False
         show_hits = False
@@ -1102,6 +1219,9 @@ class MainWindow(QMainWindow):
 
                 if filtered_clusters_display and filtered_clusters_display.n_points > 0:
                     cluster_color = file_info.get("color", "red")
+                    self.display_filtered_clusters_info.append(
+                        (filtered_clusters_display, cluster_color, file_info)
+                    )
                     self.plotter_widget.add_mesh(
                         filtered_clusters_display,
                         style="points",
@@ -1118,6 +1238,9 @@ class MainWindow(QMainWindow):
                 filtered_hits_display = self._filter_data(file_info["hit"])
 
                 if filtered_hits_display and filtered_hits_display.n_points > 0:
+                    self.display_filtered_hits_info.append(
+                        (filtered_hits_display, "blue", file_info)
+                    )
                     self.plotter_widget.add_mesh(
                         filtered_hits_display,
                         style="points",
@@ -1219,17 +1342,68 @@ class MainWindow(QMainWindow):
             )
             return
 
-        # Combine all selected cluster data
-        selected_clusters = []
+        if not self.selected_points_first:
+            QMessageBox.warning(
+                self,
+                "Track Fit",
+                "Please select points for fitting first.",
+            )
+            return
+
+        selected_file = None
+        selected_points_set = set(map(tuple, self.selected_points_first))
+
+        for filename, file_info in self.loaded_files.items():
+            if file_info["cluster"] is not None:
+                # Convert points to set of tuples for comparison
+                file_points_set = set(map(tuple, file_info["cluster"].points))
+                # Check if any of the selected points are in this file
+                if any(point in file_points_set for point in selected_points_set):
+                    selected_file = filename
+                    self.cluster_data = file_info["cluster"]
+                    print(f"Using clusters from file: {filename}")
+                    print(f"Number of clusters: {self.cluster_data.n_points}")
+                    break
+
+        if selected_file is None:
+            QMessageBox.warning(
+                self,
+                "Fit Error",
+                "Could not find the file containing the selected points.",
+            )
+            return
+        """displayed_clusters = None
         for filename, file_info in self.loaded_files.items():
             item = file_info["item"]
             if item.checkState() == Qt.Checked and file_info["cluster"] is not None:
+                print(
+                    f"Using cluster data from {filename} with {file_info['cluster'].n_points} points"
+                )
+                displayed_clusters = file_info["cluster"]
+                break  # Use the first checked file's clusters
+
+        if displayed_clusters is None:
+            QMessageBox.warning(self, "Fit Error", "No cluster data loaded.")
+            return
+
+        self.cluster_data = displayed_clusters
+        print(f"Using cluster data with {self.cluster_data.n_points} points")"""
+
+        # Combine all selected cluster data
+        """selected_clusters = []
+        for filename, file_info in self.loaded_files.items():
+            item = file_info["item"]
+            if item.checkState() == Qt.Checked and file_info["cluster"] is not None:
+                print(
+                    f"Adding cluster data from {filename} with {file_info['cluster'].n_points} points"
+                )
                 selected_clusters.append(file_info["cluster"])
         if not selected_clusters:
             QMessageBox.warning(self, "Fit Error", "No cluster data loaded.")
             return
         combined_cluster_data = pv.merge(selected_clusters)
-        self.cluster_data = combined_cluster_data
+        print(f"Combined cluster data points: {combined_cluster_data.n_points}")
+        self.cluster_data = combined_cluster_data"""
 
         # --------------- If Using Line Fitting ---------------
         if self.using_line_fitting:
@@ -1535,7 +1709,10 @@ class MainWindow(QMainWindow):
                 if not self.histogram_window.isVisible():
                     self.histogram_window.show()
                 self.histogram_window.add_histograms(
-                    delta_rphi, delta_z, self.track_counter
+                    delta_rphi,
+                    delta_z,
+                    self.track_counter,
+                    points=filtered_clusters_for_fitting.points,
                 )
 
                 # **Calculate sigma (standard deviation)**
@@ -1683,43 +1860,12 @@ class MainWindow(QMainWindow):
 
     def show_projection_window(self):
         """Handle showing the 2D projection window."""
-        if self.projection_window is None:
-            self.projection_window = GeometricProjectionWindow(self)
 
-        # Get current data
-        current_clusters = None
-        current_hits = None
+        self.projection_window = GeometricProjectionWindow(self)
 
-        # Collect filtered data from all checked files
-        for filename, file_info in self.loaded_files.items():
-            item = file_info["item"]
-            if item.checkState() == Qt.Checked:
-                # Handle clusters
-                if file_info["cluster"] is not None:
-                    if not self.using_line_fitting:
-                        filtered_clusters = self._filter_data(file_info["cluster"])
-                    else:
-                        filtered_clusters = self._filter_data_line(file_info["cluster"])
-
-                    if filtered_clusters:
-                        # if current_clusters is None:
-                        current_clusters = filtered_clusters
-                        # else:
-                        #   current_clusters = current_clusters.merge(filtered_clusters)
-
-                # Handle hits
-                if file_info["hit"] is not None:
-                    filtered_hits = self._filter_data(file_info["hit"])
-                    if filtered_hits:
-                        # if current_hits is None:
-                        current_hits = filtered_hits
-                        # else:
-                        # current_hits = current_hits.merge(filtered_hits)
-
-        # Update projection window with current data
         self.projection_window.update_display(
-            cluster_data=current_clusters,
-            hit_data=current_hits,
+            clusters_info=self.display_filtered_clusters_info,  # Pass all clusters with their colors
+            hits_info=self.display_filtered_hits_info,  # Pass all hits
             helix_lines=self.track_lines,
             projection_type="XY Projection",
         )

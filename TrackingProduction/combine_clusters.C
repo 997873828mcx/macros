@@ -1,7 +1,7 @@
 void combine_clusters()
 {
   // Open input files
-  TFile *f_resid = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_52844_0_resid_edgeOff_staticOff_acts_0121.root", "READ");
+  TFile *f_resid = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_resid_edgeOff_staticOff_acts_0121_1.root", "READ");
 
   if (!f_resid || f_resid->IsZombie())
   {
@@ -9,21 +9,62 @@ void combine_clusters()
     return;
   }
 
-  TFile *f_seed = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_52844_0_clusters_edgeOff_staticOff_acts_0121.root", "READ");
+  TFile *f_seed = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_clusters_edgeOff_staticOff_acts_0121_1.root", "READ");
 
   if (!f_seed || f_seed->IsZombie())
   {
     std::cerr << "Error opening seed file\n";
+    f_resid->Close();
+    delete f_resid;
     return;
   }
 
   // Get trees from residual file
-  TTree *t_residual_clus = (TTree *)f_resid->Get("clustertree;4");
-  TTree *t_residual = (TTree *)f_resid->Get("residualtree;1");
-  TTree *t_hits = (TTree *)f_resid->Get("hittree;3");
+  TTree *t_residual_clus = (TTree *)f_resid->Get("clustertree");
+  TTree *t_residual = (TTree *)f_resid->Get("residualtree");
+  TTree *t_hits = (TTree *)f_resid->Get("hittree");
 
+  if (!t_residual_clus)
+  {
+    std::cerr << "Error: 'clustertree' not found in residual file.\n";
+    f_resid->Close();
+    f_seed->Close();
+    delete f_resid;
+    delete f_seed;
+    return;
+  }
+
+  if (!t_residual)
+  {
+    std::cerr << "Error: 'residualtree' not found in residual file.\n";
+    f_resid->Close();
+    f_seed->Close();
+    delete f_resid;
+    delete f_seed;
+    return;
+  }
+
+  if (!t_hits)
+  {
+    std::cerr << "Error: 'hittree' not found in residual file.\n";
+    f_resid->Close();
+    f_seed->Close();
+    delete f_resid;
+    delete f_seed;
+    return;
+  }
   // Get tracking_clusters tree from the tracking file
   TTree *t_seeding = (TTree *)f_seed->Get("tracking_clusters");
+
+  if (!t_seeding)
+  {
+    std::cerr << "Error: 'tracking_clusters' not found in seed file.\n";
+    f_resid->Close();
+    f_seed->Close();
+    delete f_resid;
+    delete f_seed;
+    return;
+  }
 
   unsigned long long seed_cluskey;
   float seed_x, seed_y, seed_z;
@@ -194,7 +235,7 @@ void combine_clusters()
   // --------------------------
   // Create output file and trees
   // --------------------------
-  TFile *outFile = new TFile("combined_cluster_and_hits_52844_0_edgeOff_staticOff_acts_0122.root", "RECREATE");
+  TFile *outFile = new TFile("combined_cluster_and_hits_53217_0_edgeOff_staticOff_acts_0122.root", "RECREATE");
 
   // Combined cluster tree
   // Keep all original cluster info plus used_in_seed and used_in_track
