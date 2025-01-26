@@ -61,6 +61,7 @@ class GeometricProjectionWindow(QMainWindow):
         np.ndarray
             (N, 3) array of projected points
         """
+        print(f"DEBUG: project_points called with projection_type='{projection_type}'")
         if points is None or len(points) == 0:
             return np.array([])
 
@@ -74,8 +75,11 @@ class GeometricProjectionWindow(QMainWindow):
             r = np.sqrt(points[:, 0] ** 2 + points[:, 1] ** 2)
 
             projected_points[:, 0] = r  # R coordinate
-            projected_points[:, 1] = points[:, 2]  # R coordinate# Z coordinate
+            projected_points[:, 1] = points[:, 2]  # Z coordinate
             projected_points[:, 2] = 0  # Set Z to 0 for 2D projection
+        print(f"Projection Type: {projection_type}")
+        print(f"Original Points Sample:\n{points[:5]}")
+        print(f"Projected Points Sample:\n{projected_points[:5]}")
 
         return projected_points
 
@@ -137,20 +141,12 @@ class GeometricProjectionWindow(QMainWindow):
                     circle_poly, color="gray", line_width=1, style="wireframe"
                 )
 
-        elif projection_type == "XZ Projection":
+        elif projection_type == "ZR Projection":
             # For XZ, the TPC is a 'vertical' range in Z and a horizontal range in X
             z_range = [-105.5, 105.5]  # half-length of TPC
             # We'll draw lines at x=±21.6 and x=±76.4
-            for x_val in (-76.4, -21.6, 21.6, 76.4):
-                line_poly = pv.Line([x_val, 0.0, z_range[0]], [x_val, 0.0, z_range[1]])
-                self.plotter.add_mesh(line_poly, color="gray", line_width=1)
-
-        elif projection_type == "YZ Projection":
-            # For YZ, the TPC is vertical in Z and horizontal in Y
-            z_range = [-105.5, 105.5]
-            # We'll draw lines at y=±21.6 and y=±76.4
-            for y_val in (-76.4, -21.6, 21.6, 76.4):
-                line_poly = pv.Line([0.0, y_val, z_range[0]], [0.0, y_val, z_range[1]])
+            for r_val in (21.6, 76.4):
+                line_poly = pv.Line([r_val, z_range[0], 0], [r_val, z_range[1], 0])
                 self.plotter.add_mesh(line_poly, color="gray", line_width=1)
 
     def update_projection(self):
@@ -159,6 +155,8 @@ class GeometricProjectionWindow(QMainWindow):
         Re-renders the current data (clusters, hits, lines) to the newly selected projection.
         """
         projection_type = self.projection_combo.currentText()
+        print(f"DEBUG: combo selection => {projection_type!r}")
+
         self.update_display(
             self.current_cluster_data,
             self.current_hit_data,
@@ -189,9 +187,9 @@ class GeometricProjectionWindow(QMainWindow):
             One of 'XY Projection', 'XZ Projection', 'YZ Projection'.
         """
         # Store references for later refresh
-        """self.current_cluster_data = cluster_data
-        self.current_hit_data = hit_data
-        self.current_helix_lines = helix_lines"""
+        self.current_cluster_data = clusters_info
+        self.current_hit_data = hits_info
+        self.current_helix_lines = helix_lines
 
         if projection_type is None:
             projection_type = self.projection_combo.currentText()
@@ -265,20 +263,19 @@ class GeometricProjectionWindow(QMainWindow):
             # Look down Z-axis
             self.plotter.camera.elevation = 90
             self.plotter.camera.azimuth = 0
-            self.plotter.camera.view_up = [0, 1, 0]
-        elif projection_type == "XZ Projection":
-            # Look down Y-axis
-            self.plotter.camera.elevation = 0
-            self.plotter.camera.azimuth = 0
-            self.plotter.camera.roll = -90
             self.plotter.camera.view_up = [0, 0, 1]
-        elif projection_type == "YZ Projection":
-            # Look down X-axis
-            self.plotter.camera.elevation = 0
-            self.plotter.camera.azimuth = 90
+        elif projection_type == "ZR Projection":
+            # Look down Y-axis
+            """self.plotter.camera.elevation = 0
+            self.plotter.camera.azimuth = 0
+            self.plotter.camera.roll = 0
+            self.plotter.camera.view_up = [0, 1, 0]"""
+            y_distance = 200
+            self.plotter.camera_position = [(0, y_distance, 0), (0, 0, 0), (0, 0, 1)]
             self.plotter.camera.view_up = [0, 0, 1]
 
         # Disable all mouse interactions (optional).
         # You can remove or replace this with plotter.disable_rotation_style()
         # if you only want to forbid rotation but allow panning/zooming.
         # self.plotter.disable_mouse_movements()
+        self.plotter.reset_camera()

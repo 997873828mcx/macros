@@ -237,6 +237,7 @@ def calculate_deltas(helix_params, clusters):
 
     delta_rphi = []
     delta_z = []
+    valid_points = []
 
     for point in clusters.points:
         x, y, z = point
@@ -281,23 +282,26 @@ def calculate_deltas(helix_params, clusters):
         delta_rphi_val = r_meas * delta_phi
         delta_rphi.append(delta_rphi_val)
         delta_z.append(delta_z_val)
+        valid_points.append(point)
 
-    return np.array(delta_rphi), np.array(delta_z)
-
-
+    return (
+        np.array(delta_rphi),
+        np.array(delta_z),
+        np.array(valid_points),
+    )
 
 
 def calculate_deltas_line(line_params, clusters):
     """
     Calculate delta rphi and delta z for a set of clusters relative to a fitted line.
-    
+
     Parameters:
     -----------
     line_params : dict
         Parameters of the fitted line.
     clusters : pv.PolyData
         The set of cluster points.
-    
+
     Returns:
     --------
     delta_rphi : np.ndarray
@@ -347,6 +351,7 @@ def calculate_deltas_line(line_params, clusters):
         delta_z.append(delta_z_val)
 
     return np.array(delta_rphi), np.array(delta_z)
+
 
 def find_helix_reference_points(clusters, helix_params, ref_theta):
     """
@@ -464,6 +469,7 @@ def visualize_reference_points(plotter, clusters, helix_params):
             line = pv.Line(line_points[0], line_points[1])
             plotter.add_mesh(line, color="gray", opacity=0.3)
 
+
 '''
 def calculate_deltas_with_visualization(helix_params, clusters, plotter=None):
     """
@@ -497,9 +503,9 @@ def calculate_deltas_with_visualization(helix_params, clusters, plotter=None):
     return delta_rphi, delta_z
 
 '''
-def apply_line_filter(
-    cluster_point, line_params, rphi_window, z_window
-):
+
+
+def apply_line_filter(cluster_point, line_params, rphi_window, z_window):
     """
     Check if cluster_point is within rphi_window, z_window of the line, by:
     1) Finding line intersection(s) at radius = r_cluster
@@ -511,9 +517,7 @@ def apply_line_filter(
     phi_meas = np.arctan2(y, x)
 
     # Find solutions for that radius
-    solutions = find_line_points_at_radius_analytic(
-        r_cluster, line_params
-    )
+    solutions = find_line_points_at_radius_analytic(r_cluster, line_params)
 
     if not solutions:
         return False
@@ -660,6 +664,7 @@ def save_tree(root_filename, track_id, delta_rphi, delta_z, sigma_rphi, sigma_z)
     # Close the file
     file.Close()
     logging.info(f"Saved entry for Track ID {track_id} to '{root_filename}'.")
+
 
 def compute_centroid(points):
     """

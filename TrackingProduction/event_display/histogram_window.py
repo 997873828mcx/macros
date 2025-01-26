@@ -21,12 +21,13 @@ class HistogramWindow(QWidget):
         self.canvas = FigureCanvasQTAgg(self.figure)
         layout.addWidget(self.canvas)
 
-        gs = gridspec.GridSpec(3, 2, height_ratios=[1, 1, 1.2])
+        gs = gridspec.GridSpec(4, 2, height_ratios=[1, 1, 1.2, 1.2])
         self.individual_ax_rphi = self.figure.add_subplot(gs[0, 0])
         self.individual_ax_z = self.figure.add_subplot(gs[0, 1])
         self.accumulated_ax_rphi = self.figure.add_subplot(gs[1, 0])
         self.accumulated_ax_z = self.figure.add_subplot(gs[1, 1])
         self.rphi_vs_r_ax = self.figure.add_subplot(gs[2, :])
+        self.z_vs_z_ax = self.figure.add_subplot(gs[3, :])
 
         # Titles for sections
         self.individual_ax_rphi.set_title("Individual Track Delta rphi")
@@ -196,6 +197,23 @@ class HistogramWindow(QWidget):
 
                 # Store r values for possible future use
                 self.accumulated_r_values.extend(r_values)
+
+            z_values = points[:, 2]
+            print(f"Track {track_id}: z_values length = {len(z_values)}")
+            print(f"Track {track_id}: delta_z length = {len(delta_z)}")
+
+            if len(z_values) != len(delta_z):
+                print(f"ERROR: Mismatch in lengths for delta z vs z.")
+                self.z_vs_z_ax.cla()
+                self.z_vs_z_ax.set_title(f"Track {track_id} Delta z vs. z (Mismatch)")
+            else:
+                self.z_vs_z_ax.cla()
+                self.z_vs_z_ax.scatter(z_values, delta_z, alpha=0.5, s=20)
+                self.z_vs_z_ax.set_title(f"Track {track_id} Delta z vs. z")
+                self.z_vs_z_ax.set_xlabel("z (cm)")
+                self.z_vs_z_ax.set_ylabel("Delta z (cm)")
+                self.z_vs_z_ax.grid(True, linestyle="--", alpha=0.7)
+                self.z_vs_z_ax.set_ylim(-2, 2)  # tweak as needed
 
         # Adjust layout to prevent overlap
         self.figure.tight_layout()

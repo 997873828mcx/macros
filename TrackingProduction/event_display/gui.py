@@ -1702,7 +1702,7 @@ class MainWindow(QMainWindow):
                 filtered_clusters_for_fitting is not None
                 and filtered_clusters_for_fitting.n_points > 0
             ):
-                delta_rphi, delta_z = calculate_deltas(
+                delta_rphi, delta_z, valid_points = calculate_deltas(
                     self.helix_params_refined, filtered_clusters_for_fitting
                 )
                 self.track_counter += 1
@@ -1712,7 +1712,7 @@ class MainWindow(QMainWindow):
                     delta_rphi,
                     delta_z,
                     self.track_counter,
-                    points=filtered_clusters_for_fitting.points,
+                    points=valid_points,
                 )
 
                 # **Calculate sigma (standard deviation)**
