@@ -1,7 +1,7 @@
 void combine_clusters()
 {
   // Open input files
-  TFile *f_resid = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_resid_edgeOff_staticOff_acts_0121_1.root", "READ");
+  TFile *f_resid = new TFile("/sphenix/user/mitrankova/PadPlane_Readout/real_data/new_map_no_corrections_clusters_seeds_52844-0_resid.root", "READ");
 
   if (!f_resid || f_resid->IsZombie())
   {
@@ -9,7 +9,7 @@ void combine_clusters()
     return;
   }
 
-  TFile *f_seed = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_clusters_edgeOff_staticOff_acts_0121_1.root", "READ");
+  /* TFile *f_seed = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_kso_53217_0_clusters_edgeOff_staticOff_acts_0121_1.root", "READ");
 
   if (!f_seed || f_seed->IsZombie())
   {
@@ -17,20 +17,20 @@ void combine_clusters()
     f_resid->Close();
     delete f_resid;
     return;
-  }
+  } */
 
   // Get trees from residual file
-  TTree *t_residual_clus = (TTree *)f_resid->Get("clustertree");
+  TTree *t_residual_clus = (TTree *)f_resid->Get("clustertree;2");
   TTree *t_residual = (TTree *)f_resid->Get("residualtree");
-  TTree *t_hits = (TTree *)f_resid->Get("hittree");
+  TTree *t_hits = (TTree *)f_resid->Get("hittree;3");
 
   if (!t_residual_clus)
   {
     std::cerr << "Error: 'clustertree' not found in residual file.\n";
     f_resid->Close();
-    f_seed->Close();
+    // f_seed->Close();
     delete f_resid;
-    delete f_seed;
+    // delete f_seed;
     return;
   }
 
@@ -38,9 +38,9 @@ void combine_clusters()
   {
     std::cerr << "Error: 'residualtree' not found in residual file.\n";
     f_resid->Close();
-    f_seed->Close();
+    // f_seed->Close();
     delete f_resid;
-    delete f_seed;
+    // delete f_seed;
     return;
   }
 
@@ -48,13 +48,13 @@ void combine_clusters()
   {
     std::cerr << "Error: 'hittree' not found in residual file.\n";
     f_resid->Close();
-    f_seed->Close();
+    // f_seed->Close();
     delete f_resid;
-    delete f_seed;
+    // delete f_seed;
     return;
   }
   // Get tracking_clusters tree from the tracking file
-  TTree *t_seeding = (TTree *)f_seed->Get("tracking_clusters");
+  /* TTree *t_seeding = (TTree *)f_seed->Get("tracking_clusters");
 
   if (!t_seeding)
   {
@@ -64,9 +64,9 @@ void combine_clusters()
     delete f_resid;
     delete f_seed;
     return;
-  }
+  } */
 
-  unsigned long long seed_cluskey;
+  /* unsigned long long seed_cluskey;
   float seed_x, seed_y, seed_z;
   int seed_used_in_seed;
 
@@ -82,7 +82,7 @@ void combine_clusters()
     float y;
     float z;
     int used_in_seed;
-  };
+  }; */
 
   struct ResidInfo
   {
@@ -94,19 +94,18 @@ void combine_clusters()
     int nmaps;
   };
 
-  std::map<unsigned long long, TrackingInfo> seeding_map;
+  /* std::map<unsigned long long, TrackingInfo> seeding_map;
   for (int i = 0; i < t_seeding->GetEntries(); i++)
   {
     t_seeding->GetEntry(i);
     TrackingInfo info = {seed_x, seed_y, seed_z, seed_used_in_seed};
     seeding_map[seed_cluskey] = info;
-  }
+  } */
 
   // --------------------------
   // Determine which clusters are used in tracks from residualtree
   // --------------------------
   std::vector<unsigned long long> *r_cluskeys = nullptr;
-
   std::vector<float> *r_clusgx_vec = nullptr;
   std::vector<float> *r_clusgy_vec = nullptr;
   std::vector<float> *r_clusgz_vec = nullptr;
@@ -198,7 +197,7 @@ void combine_clusters()
   Float_t m_sclusphi, m_scluseta, m_adc_clus, m_scluselx, m_scluselz, m_clusmaxadc;
   Int_t m_scluslayer, m_phisize, m_zsize, m_clussector;
 
-  t_residual_clus->SetBranchAddress("cluskey", &m_scluskey);
+  // t_residual_clus->SetBranchAddress("cluskey", &m_scluskey);
   t_residual_clus->SetBranchAddress("run", &m_runnumber);
   t_residual_clus->SetBranchAddress("segment", &m_segment);
   t_residual_clus->SetBranchAddress("job", &m_job);
@@ -207,9 +206,9 @@ void combine_clusters()
   t_residual_clus->SetBranchAddress("trbco", &m_bcotr);
   t_residual_clus->SetBranchAddress("lx", &m_scluslx);
   t_residual_clus->SetBranchAddress("lz", &m_scluslz);
-  t_residual_clus->SetBranchAddress("gx_corr", &m_sclusgx);
-  t_residual_clus->SetBranchAddress("gy_corr", &m_sclusgy);
-  t_residual_clus->SetBranchAddress("gz_corr", &m_sclusgz);
+  t_residual_clus->SetBranchAddress("gx", &m_sclusgx);
+  t_residual_clus->SetBranchAddress("gy", &m_sclusgy);
+  t_residual_clus->SetBranchAddress("gz", &m_sclusgz);
   t_residual_clus->SetBranchAddress("r", &m_sclusgr);
   t_residual_clus->SetBranchAddress("phi", &m_sclusphi);
   t_residual_clus->SetBranchAddress("eta", &m_scluseta);
@@ -230,12 +229,12 @@ void combine_clusters()
   t_residual_clus->SetBranchAddress("timebucket", &m_timebucket);
   t_residual_clus->SetBranchAddress("segtype", &m_segtype);
   t_residual_clus->SetBranchAddress("tile", &m_tileid);
-  t_residual_clus->SetBranchAddress("clust_crossings", &clust_crossings);
+  // t_residual_clus->SetBranchAddress("clust_crossings", &clust_crossings);
 
   // --------------------------
   // Create output file and trees
   // --------------------------
-  TFile *outFile = new TFile("combined_cluster_and_hits_53217_0_edgeOff_staticOff_acts_0122.root", "RECREATE");
+  TFile *outFile = new TFile("combined_cluster_and_hits_new_map_no_corrections_clusters_seeds_52844-0.root", "RECREATE");
 
   // Combined cluster tree
   // Keep all original cluster info plus used_in_seed and used_in_track
@@ -249,7 +248,7 @@ void combine_clusters()
   int m_nmaps = -1;
 
   TTree *t_combined_clusters = new TTree("combined_clusters", "Combined cluster info");
-  t_combined_clusters->Branch("cluskey", &m_scluskey, "cluskey/l");
+  // t_combined_clusters->Branch("cluskey", &m_scluskey, "cluskey/l");
   t_combined_clusters->Branch("run", &m_runnumber, "run/I");
   t_combined_clusters->Branch("segment", &m_segment, "segment/I");
   t_combined_clusters->Branch("job", &m_job, "job/I");
@@ -348,7 +347,7 @@ void combine_clusters()
       m_nmaps = -1;
     }
     // Check tracking info
-    if (seeding_map.find((unsigned long long)m_scluskey) != seeding_map.end())
+    /* if (seeding_map.find((unsigned long long)m_scluskey) != seeding_map.end())
     {
       out_used_in_seed = seeding_map[(unsigned long long)m_scluskey].used_in_seed;
       // out_x = seeding_map[(unsigned long long)m_scluskey].x;
@@ -356,10 +355,10 @@ void combine_clusters()
       // out_z = seeding_map[(unsigned long long)m_scluskey].z;
     }
     else
-    {
-      out_used_in_seed = 0;
-      // out_x = out_y = out_z = 0;
-    }
+    { */
+    out_used_in_seed = 0;
+    // out_x = out_y = out_z = 0;
+    // }
 
     // Check if used in track
     out_used_in_track = (clusters_in_tracks.find((unsigned long long)m_scluskey) != clusters_in_tracks.end()) ? 1 : 0;
@@ -390,7 +389,7 @@ void combine_clusters()
   outFile->Close();
 
   f_resid->Close();
-  f_seed->Close();
+  // f_seed->Close();
 
   std::cout << "Wrote separate_cluster_and_hits.root with combined_clusters and combined_hits trees." << std::endl;
 }
