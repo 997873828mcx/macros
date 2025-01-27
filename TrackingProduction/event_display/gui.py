@@ -157,15 +157,37 @@ class MainWindow(QMainWindow):
         silicon_layout = QVBoxLayout()
         silicon_group.setLayout(silicon_layout)
 
+        # Create a horizontal layout for the checkboxes
+        checkbox_layout = QHBoxLayout()
+
+        # Left column (Seed and Track)
+        left_column = QVBoxLayout()
         self.seed_checkbox_silicon = QCheckBox("Seed")
         self.seed_checkbox_silicon.setChecked(False)
         self.seed_checkbox_silicon.stateChanged.connect(self.update_display)
-        silicon_layout.addWidget(self.seed_checkbox_silicon)
+        left_column.addWidget(self.seed_checkbox_silicon)
 
         self.track_checkbox_silicon = QCheckBox("Track")
         self.track_checkbox_silicon.setChecked(False)
         self.track_checkbox_silicon.stateChanged.connect(self.update_display)
-        silicon_layout.addWidget(self.track_checkbox_silicon)
+        left_column.addWidget(self.track_checkbox_silicon)
+
+        # Right column (Clusters and Hits)
+        right_column = QVBoxLayout()
+        self.clusters_checkbox_silicon = QCheckBox("Clusters")
+        self.clusters_checkbox_silicon.setChecked(True)
+        self.clusters_checkbox_silicon.stateChanged.connect(self.update_display)
+        right_column.addWidget(self.clusters_checkbox_silicon)
+
+        self.hits_checkbox_silicon = QCheckBox("Hits")
+        self.hits_checkbox_silicon.setChecked(True)
+        self.hits_checkbox_silicon.stateChanged.connect(self.update_display)
+        right_column.addWidget(self.hits_checkbox_silicon)
+
+        # Add columns to checkbox layout
+        checkbox_layout.addLayout(left_column)
+        checkbox_layout.addLayout(right_column)
+        silicon_layout.addLayout(checkbox_layout)
 
         # crossing
         crossing_label_silicon = QLabel("Crossing:")
@@ -613,7 +635,7 @@ class MainWindow(QMainWindow):
         for i in range(self.event_combo.model().rowCount()):
             item = self.event_combo.model().item(i)
             if item.checkState() == Qt.Checked:
-                event_label = item.text()  # e.g., "Event 3"
+                event_label = item.text()
                 try:
                     # Extract numeric part from the label
                     event_id = int(event_label.split()[1])
@@ -679,7 +701,7 @@ class MainWindow(QMainWindow):
         if nmaps_values is not None:
             nmaps_threshold = self.nmaps_spinbox.value()
             nmaps_mask = nmaps_values >= nmaps_threshold
-            combined_mask = combined_mask & nmaps_mask
+            combined_mask &= nmaps_mask
             """print(
                 f"Points after NMAPS filter (>= {nmaps_threshold}): {np.sum(nmaps_mask)}"
             )"""
@@ -692,9 +714,7 @@ class MainWindow(QMainWindow):
         # --- ADC Filtering ---
         adc_values = data.point_data.get("adc", None)
         data_type_array = data.point_data.get("data_type", np.zeros(data.n_points))
-        # We can do a quick rule:
-        cluster_mask = data_type_array == 0
-        hit_mask = data_type_array == 1
+
         if adc_values is not None:
             # Determine threshold based on data type (cluster or hit)
             if data is self.cluster_data:
@@ -714,10 +734,6 @@ class MainWindow(QMainWindow):
             print("No 'adc' attribute found; skipping ADC filter.")
 
         layer_array = data.point_data.get("layer", np.full(data.n_points, -1))
-        is_silicon = layer_array < 7
-        crossing_val_sil = self.crossing_spin_silicon.value()
-        t_cross_val_sil = self.t_crossing_spin_silicon.value()
-        track_id_val_sil = self.track_id_spin_silicon.value()
 
         crossing_data = data.point_data.get("crossing", np.full(data.n_points, -2000))
         t_crossing_data = data.point_data.get(
@@ -727,8 +743,28 @@ class MainWindow(QMainWindow):
         used_in_seed = data.point_data.get("used_in_seed", np.zeros(data.n_points))
         used_in_track = data.point_data.get("used_in_track", np.zeros(data.n_points))
 
+        is_silicon = layer_array < 7
+        is_cluster = data_type_array == 0
+        is_hit = data_type_array == 1
+
         # For silicon points only
         silicon_mask = is_silicon
+        show_silicon_clusters = self.clusters_checkbox_silicon.isChecked()
+        show_silicon_hits = self.hits_checkbox_silicon.isChecked()
+
+        if show_silicon_clusters and show_silicon_hits:
+            pass  # Show both
+        elif show_silicon_clusters:
+            silicon_mask &= is_cluster
+        elif show_silicon_hits:
+            silicon_mask &= is_hit
+        else:
+            silicon_mask &= False  # Show neither
+
+        crossing_val_sil = self.crossing_spin_silicon.value()
+        t_cross_val_sil = self.t_crossing_spin_silicon.value()
+        track_id_val_sil = self.track_id_spin_silicon.value()
+
         if crossing_val_sil != -2000:
             silicon_mask &= crossing_data == crossing_val_sil
             print(
@@ -754,12 +790,26 @@ class MainWindow(QMainWindow):
             print(
                 f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_checkbox_silicon filter: {np.sum(used_in_track == 1)}"
             )
+
         is_tpc = layer_array >= 7
+
+        tpc_mask = is_tpc
+        show_tpc_clusters = self.clusters_checkbox_tpc.isChecked()
+        show_tpc_hits = self.hits_checkbox_tpc.isChecked()
+
+        if show_tpc_clusters and show_tpc_hits:
+            pass  # Show both
+        elif show_tpc_clusters:
+            tpc_mask &= is_cluster
+        elif show_tpc_hits:
+            tpc_mask &= is_hit
+        else:
+            tpc_mask &= False  # Show neither
+
         t_cross_val_tpc = self.t_crossing_spin_tpc.value()
         track_id_val_tpc = self.track_id_spin_tpc.value()
         side_data = data.point_data.get("side", None)
 
-        tpc_mask = is_tpc
         if t_cross_val_tpc != -2000:
             tpc_mask &= t_crossing_data == t_cross_val_tpc
             print(
@@ -1341,26 +1391,14 @@ class MainWindow(QMainWindow):
         self.display_filtered_clusters_info.clear()
         self.display_filtered_hits_info.clear()
 
-        show_clusters = False
-        show_hits = False
-        for i in range(self.input_combo.count()):
-            itm = self.input_combo.model().item(i)
-            if itm.text() == "Clusters" and itm.checkState() == Qt.Checked:
-                show_clusters = True
-            if itm.text() == "Hits" and itm.checkState() == Qt.Checked:
-                show_hits = True
-
         for filename, file_info in self.loaded_files.items():
             item = file_info["item"]
             if item.checkState() != Qt.Checked:
                 continue
 
             # --- Clusters ---
-            if (
-                show_clusters
-                and file_info["cluster"] is not None
-                and file_info["cluster"].n_points > 0
-            ):
+            if file_info["cluster"] is not None and file_info["cluster"].n_points > 0:
+
                 if not self.using_line_fitting:
 
                     filtered_clusters_display = self._filter_data(file_info["cluster"])
@@ -1382,11 +1420,7 @@ class MainWindow(QMainWindow):
                     )
 
             # --- Hits ---
-            if (
-                show_hits
-                and file_info["hit"] is not None
-                and file_info["hit"].n_points > 0
-            ):
+            if file_info["hit"] is not None and file_info["hit"].n_points > 0:
                 filtered_hits_display = self._filter_data(file_info["hit"])
 
                 if filtered_hits_display and filtered_hits_display.n_points > 0:
@@ -1423,10 +1457,6 @@ class MainWindow(QMainWindow):
         self.plotter_widget.camera_position = camera_position
 
         self.create_tpc_cylinders()
-        # self.plotter_widget.set_scale(xscale=1, yscale=1, zscale=1)
-
-        # Update the camera clipping range to include all data
-        # self.plotter_widget.reset_camera_clipping_range()
 
         self.plotter_widget.show_axes()
 
