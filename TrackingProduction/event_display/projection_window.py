@@ -261,18 +261,18 @@ class GeometricProjectionWindow(QMainWindow):
         # Minimal transformations for each plane
         if projection_type == "XY Projection":
             # Look down Z-axis
-            self.plotter.camera.elevation = 90
+            self.plotter.camera.elevation = 0
             self.plotter.camera.azimuth = 0
-            self.plotter.camera.view_up = [0, 0, 1]
+            self.plotter.camera.view_up = [0, 1, 0]
         elif projection_type == "ZR Projection":
             # Look down Y-axis
-            """self.plotter.camera.elevation = 0
+            self.plotter.camera.elevation = 0
             self.plotter.camera.azimuth = 0
-            self.plotter.camera.roll = 0
-            self.plotter.camera.view_up = [0, 1, 0]"""
-            y_distance = 200
+            # self.plotter.camera.roll = 0
+            self.plotter.camera.view_up = [0, 1, 0]
+            """y_distance = 200
             self.plotter.camera_position = [(0, y_distance, 0), (0, 0, 0), (0, 0, 1)]
-            self.plotter.camera.view_up = [0, 0, 1]
+            self.plotter.camera.view_up = [0, 0, 1]"""
 
         # Disable all mouse interactions (optional).
         # You can remove or replace this with plotter.disable_rotation_style()

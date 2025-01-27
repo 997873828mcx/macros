@@ -43,6 +43,7 @@ from analysis import (
     apply_line_filter,
     calculate_deltas_line,
     compute_centroid,
+    calculate_dca_to_beam,
 )
 from data_loader import load_data_from_root
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -278,7 +279,7 @@ class MainWindow(QMainWindow):
         nmaps_label = QLabel("NMAPS ≥")
         self.nmaps_spinbox = QSpinBox()
         self.nmaps_spinbox.setRange(-10, 100)
-        self.nmaps_spinbox.setValue(0)  # Default value
+        self.nmaps_spinbox.setValue(-1)  # Default value
         self.nmaps_spinbox.valueChanged.connect(self.update_display)
         nmaps_layout.addWidget(nmaps_label)
         nmaps_layout.addWidget(self.nmaps_spinbox)
@@ -334,9 +335,19 @@ class MainWindow(QMainWindow):
 
         top_filter_layout.addWidget(files_group)
 
+        projection_buttons_layout = QVBoxLayout()
+        projection_buttons_layout.setContentsMargins(0, 0, 0, 0)
+
         self.btn_show_projection = QPushButton("Show 2D Projection")
         self.btn_show_projection.clicked.connect(self.show_projection_window)
-        top_filter_layout.addWidget(self.btn_show_projection)
+        projection_buttons_layout.addWidget(self.btn_show_projection)
+
+        self.btn_toggle_field = QPushButton("Field On")
+        self.btn_toggle_field.setCheckable(True)
+        self.btn_toggle_field.clicked.connect(self.toggle_field_mode)
+        projection_buttons_layout.addWidget(self.btn_toggle_field)
+
+        top_filter_layout.addLayout(projection_buttons_layout)
 
         self.projection_window = None
 
@@ -858,29 +869,64 @@ class MainWindow(QMainWindow):
         Example: Filter clusters by distance from the initial line in XY-plane (rphi_window)
                  and by Z-window. This is analogous to 'apply_helix_filter' but for lines.
         """
-        if data is None:
+        if data is None or data.n_points == 0:
+            print(f"DEBUG {'(fitting)' if for_fitting else ''}: No data provided.")
             return None
+
+        points = data.points
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Total points before filtering: {len(points)}"
+        )
+
+        event_numbers = data.point_data.get("event", None)
+
+        if event_numbers is None:
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Missing 'event' attribute in data."
+            )
+            return None
+
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Unique event numbers in data: {np.unique(event_numbers)}"
+        )
+        selected_events = []
+        for i in range(self.event_combo.model().rowCount()):
+            item = self.event_combo.model().item(i)
+            if item.checkState() == Qt.Checked:
+                event_label = item.text()  # e.g., "Event 3"
+                try:
+                    # Extract numeric part from the label
+                    event_id = int(event_label.split()[1])
+                    selected_events.append(event_id)
+                except (ValueError, IndexError):
+                    # print(f"Invalid event ID format: {event_label}")
+                    continue
+
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Selected events: {selected_events}"
+        )
+
+        """if not selected_events:
+            print("No events selected.")
+            return None  # No events selected"""
+
+        if not selected_events:
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: No events selected, returning None"
+            )
+            return None
+        event_mask = np.isin(event_numbers, selected_events)
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Points after event filter: {np.sum(event_mask)}"
+        )
 
         # 1) Spatial ranges from sliders
         x_min, x_max = self.x_range_slider.value()
         y_min, y_max = self.y_range_slider.value()
         z_min, z_max = self.z_range_slider.value()
-
-        # 2) Side selection
-        selected_sides = []
-        if self.side0_checkbox.isChecked():
-            selected_sides.append(0)
-        if self.side1_checkbox.isChecked():
-            selected_sides.append(1)
-        if not selected_sides:
-            return None  # No sides selected => no points
-
-        # 3) Access point arrays
-        points = data.points
-        side = data.point_data.get("side", np.zeros(data.n_points))
-
-        # 4) Spatial + side masks
-        side_mask = np.isin(side, selected_sides)
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Spatial ranges: X[{x_min}, {x_max}], Y[{y_min}, {y_max}], Z[{z_min}, {z_max}]"
+        )
         spatial_mask = (
             (points[:, 0] >= x_min)
             & (points[:, 0] <= x_max)
@@ -889,55 +935,159 @@ class MainWindow(QMainWindow):
             & (points[:, 2] >= z_min)
             & (points[:, 2] <= z_max)
         )
-        combined_mask = side_mask & spatial_mask
 
-        # 5) ADC filtering
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: X range in data: [{np.min(points[:, 0])}, {np.max(points[:, 0])}]"
+        )
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Y range in data: [{np.min(points[:, 1])}, {np.max(points[:, 1])}]"
+        )
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Z range in data: [{np.min(points[:, 2])}, {np.max(points[:, 2])}]"
+        )
+
+        combined_mask = spatial_mask & event_mask
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining masks: {np.sum(combined_mask)}"
+        )
+
+        nmaps_values = data.point_data.get("nmaps", None)
+
+        if nmaps_values is not None:
+            nmaps_threshold = self.nmaps_spinbox.value()
+            nmaps_mask = nmaps_values >= nmaps_threshold
+            combined_mask = combined_mask & nmaps_mask
+            """print(
+                f"Points after NMAPS filter (>= {nmaps_threshold}): {np.sum(nmaps_mask)}"
+            )"""
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining NMAPS filter: {np.sum(combined_mask)}"
+            )
+        else:
+            print("No 'nmaps' attribute found; skipping NMAPS filter.")
+
+        # --- ADC Filtering ---
         adc_values = data.point_data.get("adc", None)
+        data_type_array = data.point_data.get("data_type", np.zeros(data.n_points))
+        # We can do a quick rule:
+        cluster_mask = data_type_array == 0
+        hit_mask = data_type_array == 1
         if adc_values is not None:
-            # Decide threshold based on data type
+            # Determine threshold based on data type (cluster or hit)
             if data is self.cluster_data:
                 adc_threshold = self.cluster_adc_spinbox.value()
             elif data is self.hit_data:
                 adc_threshold = self.hit_adc_spinbox.value()
             else:
                 adc_threshold = 0
-            adc_mask = adc_values > adc_threshold
+
+            adc_mask = adc_values >= adc_threshold
             combined_mask &= adc_mask
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining ADC filter: {np.sum(combined_mask)}"
+            )
 
-        # 6) used_in_seed / used_in_track filters
-        used_in_seed = data.point_data.get("used_in_seed", None)
-        if used_in_seed is not None and self.seed_checkbox.isChecked():
-            combined_mask &= used_in_seed == 1
+        else:
+            print("No 'adc' attribute found; skipping ADC filter.")
 
-        used_in_track = data.point_data.get("used_in_track", None)
-        if used_in_track is not None and self.track_checkbox.isChecked():
-            combined_mask &= used_in_track == 1
+        layer_array = data.point_data.get("layer", np.full(data.n_points, -1))
+        is_silicon = layer_array < 7
+        crossing_val_sil = self.crossing_spin_silicon.value()
+        t_cross_val_sil = self.t_crossing_spin_silicon.value()
+        track_id_val_sil = self.track_id_spin_silicon.value()
 
-        chosen_trackid = self.track_id_spin.value()
-        chosen_crossing = self.crossing_spin.value()
-        chosen_t_crossing = self.t_crossing_spin.value()
+        crossing_data = data.point_data.get("crossing", np.full(data.n_points, -2000))
+        t_crossing_data = data.point_data.get(
+            "t_crossing", np.full(data.n_points, -2000)
+        )
+        track_id_data = data.point_data.get("trackid", np.full(data.n_points, -1))
+        used_in_seed = data.point_data.get("used_in_seed", np.zeros(data.n_points))
+        used_in_track = data.point_data.get("used_in_track", np.zeros(data.n_points))
 
-        # Retrieve arrays from point_data (default to -1 if not present)
-        track_ids = data.point_data.get("trackid", np.full(data.n_points, -1))
-        crossings = data.point_data.get("crossing", np.full(data.n_points, -2000))
-        t_crossings = data.point_data.get("t_crossing", np.full(data.n_points, -2000))
-        if chosen_trackid != -1:
-            trackid_mask = track_ids == chosen_trackid
-            combined_mask &= trackid_mask
+        # For silicon points only
+        silicon_mask = is_silicon
+        if crossing_val_sil != -2000:
+            silicon_mask &= crossing_data == crossing_val_sil
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after crossing_val_sil filter ({crossing_val_sil}): {np.sum(crossing_data == crossing_val_sil)}"
+            )
+        if t_cross_val_sil != -2000:
+            silicon_mask &= t_crossing_data == t_cross_val_sil
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after t_cross_val_sil filter ({t_cross_val_sil}): {np.sum(t_crossing_data == t_cross_val_sil)}"
+            )
+        if track_id_val_sil != -1:
+            silicon_mask &= track_id_data == track_id_val_sil
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_id_val_sil filter ({track_id_val_sil}): {np.sum(track_id_data == track_id_val_sil)}"
+            )
+        if self.seed_checkbox_silicon.isChecked():
+            silicon_mask &= used_in_seed == 1
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after seed_checkbox_silicon filter: {np.sum(used_in_seed == 1)}"
+            )
+        if self.track_checkbox_silicon.isChecked():
+            silicon_mask &= used_in_track == 1
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_checkbox_silicon filter: {np.sum(used_in_track == 1)}"
+            )
+        is_tpc = layer_array >= 7
+        t_cross_val_tpc = self.t_crossing_spin_tpc.value()
+        track_id_val_tpc = self.track_id_spin_tpc.value()
+        side_data = data.point_data.get("side", None)
 
-        # If the user-specified crossing != -1, only keep points with that crossing
-        if chosen_crossing != -2000:
-            crossing_mask = crossings == chosen_crossing
-            combined_mask &= crossing_mask
+        tpc_mask = is_tpc
+        if t_cross_val_tpc != -2000:
+            tpc_mask &= t_crossing_data == t_cross_val_tpc
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after t_cross_val_tpc filter ({t_cross_val_tpc}): {np.sum(t_crossing_data == t_cross_val_tpc)}"
+            )
+        if track_id_val_tpc != -1:
+            tpc_mask &= track_id_data == track_id_val_tpc
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_id_val_tpc filter ({track_id_val_tpc}): {np.sum(track_id_data == track_id_val_tpc)}"
+            )
 
-        if chosen_t_crossing != -2000:
-            combined_mask &= t_crossings == chosen_t_crossing
+        # Sides
+        if side_data is not None:
+            sides_chosen = []
+            if self.side0_checkbox_tpc.isChecked():
+                sides_chosen.append(0)
+            if self.side1_checkbox_tpc.isChecked():
+                sides_chosen.append(1)
+            if sides_chosen:
+                tpc_mask &= np.isin(side_data, sides_chosen)
+                print(
+                    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after after sides_chosen filter ({sides_chosen}): {np.sum(np.isin(side_data, sides_chosen))}"
+                )
+            else:
+                # If no sides are checked, TPC mask => no points
+                tpc_mask &= False
+                print("No sides selected for TPC; excluding all TPC points.")
+
+        else:
+            print("Missing 'side' attribute in data; skipping side filter.")
+
+        if self.seed_checkbox_tpc.isChecked():
+            tpc_mask &= used_in_seed == 1
+        if self.track_checkbox_tpc.isChecked():
+            tpc_mask &= used_in_track == 1
+
+        combined_mask = combined_mask & (silicon_mask | tpc_mask)
+        if not np.any(combined_mask):
+            return None
 
         # 7) Extract points that pass the above filters
         filtered_indices = np.where(combined_mask)[0]
         filtered_points = data.extract_points(filtered_indices)
         if filtered_points is None or filtered_points.n_points == 0:
+            print(
+                f"DEBUG {'(fitting)' if for_fitting else ''}: No points passed the filters"
+            )
             return None
+        print(
+            f"DEBUG {'(fitting)' if for_fitting else ''}: Final point count: {filtered_points.n_points}"
+        )
 
         # 8) Optionally apply line-based filter for fitting or if user toggles
         if for_fitting:
@@ -946,19 +1096,19 @@ class MainWindow(QMainWindow):
                 distance_mask = np.array(
                     [
                         apply_line_filter(
-                            pt,
+                            point,
                             self.line_params_initial,
                             self.rphi_window,
                             self.z_window,
                         )
-                        for pt in filtered_points.points
+                        for point in filtered_points.points
                     ]
                 )
                 line_filtered = filtered_points.extract_points(distance_mask)
                 return line_filtered if line_filtered.n_points > 0 else None
             else:
                 # If we don't have line parameters yet, just return the spatially filtered data
-                return filtered_points
+                return filtered_points if filtered_points.n_points > 0 else None
         else:
 
             if (
@@ -1106,15 +1256,17 @@ class MainWindow(QMainWindow):
         picked_coordinates = mesh.points[point_id]
 
         self.selected_points_first.append(picked_coordinates)
+        required_points = 2 if self.using_line_fitting else 3
         self.instruction_label.setText(
-            f"Selected {len(self.selected_points_first)}/3 points for initial helix fitting."
+            f"Selected {len(self.selected_points_first)}/{required_points} points for initial fitting."
         )
-        if len(self.selected_points_first) == 3:
-            QMessageBox.information(
-                self,
-                "Helix Fit",
-                "Three points selected. Click 'Fit Helix' to perform initial helix fitting.",
+        if len(self.selected_points_first) == required_points:
+            msg = (
+                "Click 'Fit Helix' to perform fitting."
+                if not self.using_line_fitting
+                else "Click 'Fit Helix' to perform line fitting."
             )
+            QMessageBox.information(self, "Track Fit", msg)
         """
         # Add a marker for the selected point
         marker = pv.Sphere(radius=2, center=picked_coordinates)
@@ -1439,6 +1591,14 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Line Fit", "Initial line fitting failed.")
             return
 
+        pca_line, pca_beam, dca = calculate_dca_to_beam(line_params_init)
+        info_text = self.info_panel.toPlainText()
+        info_text += "\n\nDCA Analysis:"
+        info_text += f"\nDCA to beam axis: {dca:.3f} cm"
+        if pca_line is not None:
+            info_text += f"\nPCA on track: ({pca_line[0]:.3f}, {pca_line[1]:.3f}, {pca_line[2]:.3f}) cm"
+            info_text += f"\nPCA on beam: ({pca_beam[0]:.3f}, {pca_beam[1]:.3f}, {pca_beam[2]:.3f}) cm"
+        self.info_panel.setText(info_text)
         centroid_initial = compute_centroid(self.selected_points_first)
 
         self.line_params_initial = line_params_init
@@ -1507,7 +1667,7 @@ class MainWindow(QMainWindow):
             and filtered_clusters_for_fitting.n_points > 0
         ):
             # Calculate line residuals
-            delta_rphi, delta_z = calculate_deltas_line(
+            delta_rphi, delta_z, valid_points = calculate_deltas_line(
                 self.line_params_refined, filtered_clusters_for_fitting
             )
 
@@ -1516,7 +1676,10 @@ class MainWindow(QMainWindow):
             if not self.histogram_window.isVisible():
                 self.histogram_window.show()
             self.histogram_window.add_histograms(
-                delta_rphi, delta_z, self.track_counter
+                delta_rphi,
+                delta_z,
+                self.track_counter,
+                points=valid_points,
             )
         else:
             QMessageBox.warning(
@@ -1872,3 +2035,23 @@ class MainWindow(QMainWindow):
 
         # Show the window
         self.projection_window.show()
+
+    def toggle_field_mode(self):
+        """Toggle between helix and straight line fitting modes."""
+        self.using_line_fitting = not self.using_line_fitting
+
+        # Update button text
+        if self.using_line_fitting:
+            self.btn_toggle_field.setText("Field Off")
+            self.instruction_label.setText(
+                "Instruction: Select 2 points for initial line fitting."
+            )
+        else:
+            self.btn_toggle_field.setText("Field On")
+            self.instruction_label.setText(
+                "Instruction: Select 3 points for initial helix fitting."
+            )
+
+        # Clear any existing selections
+        self.selected_points_first.clear()
+        self.update_display()

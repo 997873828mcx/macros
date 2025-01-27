@@ -311,6 +311,7 @@ def calculate_deltas_line(line_params, clusters):
     """
     delta_rphi = []
     delta_z = []
+    valid_points = []
 
     # Loop over each cluster point
     for point in clusters.points:
@@ -349,8 +350,9 @@ def calculate_deltas_line(line_params, clusters):
 
         delta_rphi.append(delta_rphi_val)
         delta_z.append(delta_z_val)
+        valid_points.append(point)
 
-    return np.array(delta_rphi), np.array(delta_z)
+    return np.array(delta_rphi), np.array(delta_z), np.array(valid_points)
 
 
 def find_helix_reference_points(clusters, helix_params, ref_theta):
@@ -682,3 +684,149 @@ def compute_centroid(points):
     """
     points = np.asarray(points)
     return np.mean(points, axis=0)
+
+
+def find_pca_two_tracks(a1, b1, a2, b2):
+
+    # Convert inputs to numpy arrays
+    a1 = np.asarray(a1, dtype=float)
+    b1 = np.asarray(b1, dtype=float)
+    a2 = np.asarray(a2, dtype=float)
+    b2 = np.asarray(b2, dtype=float)
+
+    # --- 1) Calculate DCA using cross product
+    b_cross_b = np.cross(b1, b2)
+    mag_b_cross_b = np.linalg.norm(b_cross_b)
+    a2_a1 = a2 - a1
+
+    # If cross product is zero, lines are parallel => your snippet returned 999 or skip
+    # For directness, replicate the approach:
+    if mag_b_cross_b == 0:
+        # Lines are parallel or coincide; handle as needed
+        dca = 999.0
+        pca1 = None
+        pca2 = None
+        return pca1, pca2, dca
+
+    # The sign of dca is typically made positive by abs
+    dca = abs(np.dot(b_cross_b, a2_a1)) / mag_b_cross_b
+
+    # --- 2) Calculate 'c' and 'd' (the scalars) from the snippet
+    # Carefully replicate each step:
+    #
+    # double X = b1.dot(b2) - b1.dot(b1)*b2.dot(b2)/b2.dot(b1);
+    # double Y = (a2.dot(b2) - a1.dot(b2)) - (a2.dot(b1) - a1.dot(b1)) * b2.dot(b2)/b2.dot(b1);
+    # double c = Y / X;
+    #
+    # double F = b1.dot(b1)/b2.dot(b1);
+    # double G = -( (a2.dot(b1) - a1.dot(b1)) / b2.dot(b1) );
+    # double d = c * F + G;
+
+    dot_b1_b2 = np.dot(b1, b2)
+    dot_b1_b1 = np.dot(b1, b1)
+    dot_b2_b2 = np.dot(b2, b2)
+    dot_a2_b2_minus_a1_b2 = np.dot(a2, b2) - np.dot(a1, b2)
+    dot_a2_b1_minus_a1_b1 = np.dot(a2, b1) - np.dot(a1, b1)
+    dot_b2_b1 = np.dot(b2, b1)  # same as dot_b1_b2 but let's keep naming consistent
+
+    # Check for zero denominators
+    # The snippet implicitly assumes b2.dot(b1) != 0
+    if dot_b2_b1 == 0:
+        # Lines are orthonormal or parallel in some sense => snippet would break
+        # Decide how to handle it, for directness we do the same:
+        dca = 999.0
+        return None, None, dca
+
+    X = dot_b1_b2 - (dot_b1_b1 * dot_b2_b2 / dot_b2_b1)
+    Y = (dot_a2_b2_minus_a1_b2) - (dot_a2_b1_minus_a1_b1) * dot_b2_b2 / dot_b2_b1
+    c = Y / X
+
+    F = dot_b1_b1 / dot_b2_b1
+    G = -(dot_a2_b1_minus_a1_b1 / dot_b2_b1)
+    d = c * F + G
+
+    # --- 3) Points of closest approach
+    pca1 = a1 + c * b1
+    pca2 = a2 + d * b2
+
+    return pca1, pca2, dca
+
+
+def calculate_dca_to_beam(line_params):
+    """
+    Calculate DCA and PCA between a fitted line and the beam axis (z-axis).
+
+    Parameters
+    ----------
+    line_params : dict
+        The line parameters from fit_line_initial or fit_line_direct:
+        {
+            "x0": float,  # point on the line
+            "y0": float,
+            "z0": float,
+            "dir_x": float,  # direction vector
+            "dir_y": float,
+            "dir_z": float,
+        }
+
+    Returns
+    -------
+    tuple
+        (pca_line, pca_beam, dca) where:
+        - pca_line is the point of closest approach on the fitted line
+        - pca_beam is the point of closest approach on the beam axis
+        - dca is the distance of closest approach
+    """
+    # Point on your fitted line
+    a1 = np.array([line_params["x0"], line_params["y0"], line_params["z0"]])
+
+    # Direction vector of your fitted line
+    b1 = np.array([line_params["dir_x"], line_params["dir_y"], line_params["dir_z"]])
+
+    # Point on the beam axis (we can use the origin)
+    a2 = np.array([0.0, 0.0, 0.0])
+
+    # Direction vector of beam axis (unit vector along z)
+    b2 = np.array([0.0, 0.0, 1.0])
+
+    # Calculate PCA and DCA
+    pca_line, pca_beam, dca = find_pca_two_tracks(a1, b1, a2, b2)
+
+    return pca_line, pca_beam, dca
+
+
+def format_dca_info(line_params):
+    """
+    Format DCA information for a fitted line into a string.
+
+    Parameters
+    ----------
+    line_params : dict
+        The line parameters from fit_line_initial or fit_line_direct
+
+    Returns
+    -------
+    str
+        Formatted string containing DCA and PCA information
+    """
+    pca_line, pca_beam, dca = calculate_dca_to_beam(line_params)
+
+    info = [f"Distance of Closest Approach (DCA): {dca:.3f} cm"]
+
+    if pca_line is not None:
+        info.extend(
+            [
+                "\nPoint of Closest Approach on fitted line:",
+                f"x: {pca_line[0]:.3f} cm",
+                f"y: {pca_line[1]:.3f} cm",
+                f"z: {pca_line[2]:.3f} cm",
+                "\nPoint of Closest Approach on beam axis:",
+                f"x: {pca_beam[0]:.3f} cm",
+                f"y: {pca_beam[1]:.3f} cm",
+                f"z: {pca_beam[2]:.3f} cm",
+            ]
+        )
+    else:
+        info.append("Note: PCA points could not be calculated (lines may be parallel)")
+
+    return "\n".join(info)
