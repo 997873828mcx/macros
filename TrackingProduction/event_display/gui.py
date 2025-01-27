@@ -125,28 +125,6 @@ class MainWindow(QMainWindow):
         top_filter_layout = QHBoxLayout()
 
         # --------------------------------------------------------------------
-        # 1) A QGroupBox for the "Input" (Clusters/Hits) in a checkable combo
-
-        input_group = QGroupBox("Input")
-        input_layout = QVBoxLayout()
-        input_group.setLayout(input_layout)
-
-        self.input_combo = QComboBox()
-        input_model = QStandardItemModel(self.input_combo)
-        self.input_combo.setModel(input_model)
-
-        # Create checkable items for "Clusters" and "Hits"
-        for name in ("Clusters", "Hits"):
-            item = QStandardItem(name)
-            item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
-            item.setData(Qt.Checked, Qt.CheckStateRole)
-            input_model.appendRow(item)
-
-        # We watch for changes to re-draw
-        input_model.itemChanged.connect(lambda i: self.update_display())
-
-        input_layout.addWidget(self.input_combo)
-        top_filter_layout.addWidget(input_group)
 
         # --------------------------------------------------------------------
         # 2) Silicon group
@@ -228,15 +206,34 @@ class MainWindow(QMainWindow):
         tpc_layout = QVBoxLayout()
         tpc_group.setLayout(tpc_layout)
 
+        checkbox_layout = QHBoxLayout()
+
+        left_column = QVBoxLayout()
         self.seed_checkbox_tpc = QCheckBox("Seed")
         self.seed_checkbox_tpc.setChecked(False)
         self.seed_checkbox_tpc.stateChanged.connect(self.update_display)
-        tpc_layout.addWidget(self.seed_checkbox_tpc)
+        left_column.addWidget(self.seed_checkbox_tpc)
 
         self.track_checkbox_tpc = QCheckBox("Track")
         self.track_checkbox_tpc.setChecked(False)
         self.track_checkbox_tpc.stateChanged.connect(self.update_display)
-        tpc_layout.addWidget(self.track_checkbox_tpc)
+        left_column.addWidget(self.track_checkbox_tpc)
+
+        right_column = QVBoxLayout()
+
+        self.clusters_checkbox_tpc = QCheckBox("Clusters")
+        self.clusters_checkbox_tpc.setChecked(True)
+        self.clusters_checkbox_tpc.stateChanged.connect(self.update_display)
+        right_column.addWidget(self.clusters_checkbox_tpc)
+
+        self.hits_checkbox_tpc = QCheckBox("Hits")
+        self.hits_checkbox_tpc.setChecked(True)
+        self.hits_checkbox_tpc.stateChanged.connect(self.update_display)
+        right_column.addWidget(self.hits_checkbox_tpc)
+
+        checkbox_layout.addLayout(left_column)
+        checkbox_layout.addLayout(right_column)
+        tpc_layout.addLayout(checkbox_layout)
 
         t_crossing_label_tpc = QLabel("T-Crossing:")
         self.t_crossing_spin_tpc = QSpinBox()
@@ -1041,11 +1038,6 @@ class MainWindow(QMainWindow):
             print("No 'adc' attribute found; skipping ADC filter.")
 
         layer_array = data.point_data.get("layer", np.full(data.n_points, -1))
-        is_silicon = layer_array < 7
-        crossing_val_sil = self.crossing_spin_silicon.value()
-        t_cross_val_sil = self.t_crossing_spin_silicon.value()
-        track_id_val_sil = self.track_id_spin_silicon.value()
-
         crossing_data = data.point_data.get("crossing", np.full(data.n_points, -2000))
         t_crossing_data = data.point_data.get(
             "t_crossing", np.full(data.n_points, -2000)
@@ -1053,9 +1045,27 @@ class MainWindow(QMainWindow):
         track_id_data = data.point_data.get("trackid", np.full(data.n_points, -1))
         used_in_seed = data.point_data.get("used_in_seed", np.zeros(data.n_points))
         used_in_track = data.point_data.get("used_in_track", np.zeros(data.n_points))
+        is_silicon = layer_array < 7
+        is_cluster = data_type_array == 0
+        is_hit = data_type_array == 1
+        silicon_mask = is_silicon
+        show_silicon_clusters = self.clusters_checkbox_silicon.isChecked()
+        show_silicon_hits = self.hits_checkbox_silicon.isChecked()
+
+        if show_silicon_clusters and show_silicon_hits:
+            pass  # Show both
+        elif show_silicon_clusters:
+            silicon_mask &= is_cluster
+        elif show_silicon_hits:
+            silicon_mask &= is_hit
+        else:
+            silicon_mask &= False  # Show neither
+        crossing_val_sil = self.crossing_spin_silicon.value()
+        t_cross_val_sil = self.t_crossing_spin_silicon.value()
+        track_id_val_sil = self.track_id_spin_silicon.value()
 
         # For silicon points only
-        silicon_mask = is_silicon
+
         if crossing_val_sil != -2000:
             silicon_mask &= crossing_data == crossing_val_sil
             print(
@@ -1082,11 +1092,23 @@ class MainWindow(QMainWindow):
                 f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_checkbox_silicon filter: {np.sum(used_in_track == 1)}"
             )
         is_tpc = layer_array >= 7
+        tpc_mask = is_tpc
+        show_tpc_clusters = self.clusters_checkbox_tpc.isChecked()
+        show_tpc_hits = self.hits_checkbox_tpc.isChecked()
+
+        if show_tpc_clusters and show_tpc_hits:
+            pass  # Show both
+        elif show_tpc_clusters:
+            tpc_mask &= is_cluster
+        elif show_tpc_hits:
+            tpc_mask &= is_hit
+        else:
+            tpc_mask &= False  # Show neither
+
         t_cross_val_tpc = self.t_crossing_spin_tpc.value()
         track_id_val_tpc = self.track_id_spin_tpc.value()
         side_data = data.point_data.get("side", None)
 
-        tpc_mask = is_tpc
         if t_cross_val_tpc != -2000:
             tpc_mask &= t_crossing_data == t_cross_val_tpc
             print(
