@@ -31,6 +31,7 @@ from helix_fitting import (
     generate_helix_points_initial,
     generate_helix_points_refined,
     generate_helix_line,
+    find_vertex_z,
 )
 
 
@@ -321,6 +322,10 @@ class MainWindow(QMainWindow):
         self.radio_pick_helix = QRadioButton("Pick for Helix Fitting")
         self.radio_pick_helix.toggled.connect(self.on_pick_mode_changed)
         pick_mode_layout.addWidget(self.radio_pick_helix)
+        
+        self.radio_pick_vertex = QRadioButton("Pick for Vertex Finding")
+        self.radio_pick_vertex.toggled.connect(self.on_pick_mode_changed)
+        pick_mode_layout.addWidget(self.radio_pick_vertex)
 
         top_filter_layout.addWidget(pick_mode_group)
 
@@ -1362,7 +1367,7 @@ class MainWindow(QMainWindow):
         picked_coordinates = mesh.points[point_id]
 
         self.selected_points_first.append(picked_coordinates)
-        required_points = 2 if self.using_line_fitting else 3
+        required_points = 2 if (self.pick_mode == "vertex" or self.using_line_fitting) else 3
         self.instruction_label.setText(
             f"Selected {len(self.selected_points_first)}/{required_points} points for initial fitting."
         )
@@ -1566,7 +1571,7 @@ class MainWindow(QMainWindow):
         If self.using_line_fitting=True, do line approach.
         Otherwise, do helix approach.
         """
-        if self.pick_mode != "helix":
+        if self.pick_mode not in ["helix", "vertex"]:
             QMessageBox.warning(
                 self,
                 "Track Fit",
@@ -1604,44 +1609,66 @@ class MainWindow(QMainWindow):
                 "Could not find the file containing the selected points.",
             )
             return
-        """displayed_clusters = None
-        for filename, file_info in self.loaded_files.items():
-            item = file_info["item"]
-            if item.checkState() == Qt.Checked and file_info["cluster"] is not None:
-                print(
-                    f"Using cluster data from {filename} with {file_info['cluster'].n_points} points"
+        try:
+            if self.pick_mode == "vertex":
+                # Perform vertex finding and helix fitting
+                vertex_params = find_vertex_z(
+                    self.selected_points_first[0],
+                    self.selected_points_first[1]
                 )
-                displayed_clusters = file_info["cluster"]
-                break  # Use the first checked file's clusters
-
-        if displayed_clusters is None:
-            QMessageBox.warning(self, "Fit Error", "No cluster data loaded.")
-            return
-
-        self.cluster_data = displayed_clusters
-        print(f"Using cluster data with {self.cluster_data.n_points} points")"""
-
-        # Combine all selected cluster data
-        """selected_clusters = []
-        for filename, file_info in self.loaded_files.items():
-            item = file_info["item"]
-            if item.checkState() == Qt.Checked and file_info["cluster"] is not None:
-                print(
-                    f"Adding cluster data from {filename} with {file_info['cluster'].n_points} points"
+                
+                # Create helix parameters from vertex results
+                helix_params = {
+                    'c_x': vertex_params['c_x'],
+                    'c_y': vertex_params['c_y'],
+                    'r': vertex_params['r'],
+                    'alpha': vertex_params['alpha'],
+                    'c_z': vertex_params['vertex_z'],
+                    't0': vertex_params['theta_vertex'],
+                    'ref_theta': vertex_params['theta_vertex']
+                }
+                
+                # Store parameters and generate visualization
+                self.helix_params_initial = helix_params
+                helix_points = generate_helix_points_initial(
+                    helix_params, 
+                    self.inner_cut, 
+                    self.outer_cut
                 )
-                selected_clusters.append(file_info["cluster"])
-        if not selected_clusters:
-            QMessageBox.warning(self, "Fit Error", "No cluster data loaded.")
-            return
-        combined_cluster_data = pv.merge(selected_clusters)
-        print(f"Combined cluster data points: {combined_cluster_data.n_points}")
-        self.cluster_data = combined_cluster_data"""
+                
+                if helix_points is not None:
+                    helix_line = generate_helix_line(helix_points)
+                    actor = self.plotter_widget.add_mesh(
+                        helix_line,
+                        color='red',  # Different color for vertex-based helix
+                        line_width=3,
+                        style='wireframe',
+                        pickable=False
+                    )
+                    self.track_lines.append(actor)
+                    
+                    # Display vertex information
+                    info_text = "Vertex Finding Results:\n"
+                    info_text += f"Vertex Z: {vertex_params['vertex_z']:.3f} cm\n"
+                    info_text += f"Helix radius: {vertex_params['r']:.3f} cm\n"
+                    info_text += f"Helix center: ({vertex_params['c_x']:.3f}, {vertex_params['c_y']:.3f}) cm\n"
+                    info_text += f"Pitch parameter (alpha): {vertex_params['alpha']:.3f}\n"
+                    self.info_panel.setText(info_text)
+                    
+            elif self.using_line_fitting:
+                # Perform line fitting
+                self.do_line_fitting_flow()
+                    
+            else:
+                # Perform regular helix fitting
+                self.do_helix_fitting_flow()
 
-        # --------------- If Using Line Fitting ---------------
-        if self.using_line_fitting:
-            self.do_line_fitting_flow()
-        else:
-            self.do_helix_fitting_flow()
+        except ValueError as e:
+            QMessageBox.warning(self, "Fit Error", str(e))
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"An unexpected error occurred:\n{str(e)}")
+
+        
 
         self.selected_points_first.clear()
         self.update_display()
