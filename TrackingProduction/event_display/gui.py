@@ -592,7 +592,10 @@ class MainWindow(QMainWindow):
         self.update_point_picking()
 
     def _filter_data(
-        self, data: pv.PolyData, for_fitting: bool = False
+        self,
+        data: pv.PolyData,
+        *,
+        for_fitting: bool = False,
     ) -> Optional[pv.PolyData]:
         """
         General-purpose filtering for clusters and hits based on spatial ranges,
@@ -857,8 +860,23 @@ class MainWindow(QMainWindow):
         print(
             f"DEBUG {'(fitting)' if for_fitting else ''}: Final point count: {filtered_points.n_points}"
         )
+
         if for_fitting:
-            if self.helix_params_initial:
+
+            if self.using_line_fitting and self.line_params_initial:
+                distance_mask = [
+                    apply_line_filter(
+                        pt,
+                        self.line_params_initial,
+                        self.rphi_window,
+                        self.z_window,
+                    )
+                    for pt in filtered_points.points
+                ]
+
+                line_filtered = filtered_points.extract_points(distance_mask)
+                return line_filtered if line_filtered.n_points > 0 else None
+            elif not self.using_line_fitting and self.helix_params_initial:
                 # Apply helix-based filtering using initial helix parameters
                 print("Applying helix-based proximity filtering for fitting.")
                 print("Helix initial params:", self.helix_params_initial)
@@ -884,28 +902,44 @@ class MainWindow(QMainWindow):
                 print(
                     "Helix parameters not initialized; skipping helix proximity filter."
                 )
-                return filtered_points if filtered_points.n_points > 0 else None
+                return None
 
         else:
             # If the filter checkbox is checked and initial helix exists, apply helix proximity filtering
-            if (
-                not self.toggle_filter_checkbox.isChecked()
-                and self.helix_params_initial
-            ):
-                # Apply helix-based filtering using initial helix parameters
-                distance_mask = np.array(
-                    [
-                        apply_helix_filter(
-                            point,
-                            self.helix_params_initial,
-                            self.rphi_window,
-                            self.z_window,
-                        )
-                        for point in filtered_points.points
-                    ]
-                )
-                helix_filtered = filtered_points.extract_points(distance_mask)
-                return helix_filtered if helix_filtered.n_points > 0 else None
+            if not self.toggle_filter_checkbox.isChecked():
+                if self.using_line_fitting and self.line_params_initial is not None:
+                    distance_mask = np.array(
+                        [
+                            apply_line_filter(
+                                pt,
+                                self.line_params_initial,
+                                self.rphi_window,
+                                self.z_window,
+                            )
+                            for pt in filtered_points.points
+                        ]
+                    )
+                    line_filtered = filtered_points.extract_points(distance_mask)
+                    return line_filtered if line_filtered.n_points > 0 else None
+
+                elif (
+                    not self.using_line_fitting
+                    and self.helix_params_initial is not None
+                ):
+                    # Apply helix-based filtering using initial helix parameters
+                    distance_mask = np.array(
+                        [
+                            apply_helix_filter(
+                                point,
+                                self.helix_params_initial,
+                                self.rphi_window,
+                                self.z_window,
+                            )
+                            for point in filtered_points.points
+                        ]
+                    )
+                    helix_filtered = filtered_points.extract_points(distance_mask)
+                    return helix_filtered if helix_filtered.n_points > 0 else None
             else:
                 return filtered_points if filtered_points.n_points > 0 else None
 
@@ -1421,13 +1455,7 @@ class MainWindow(QMainWindow):
             # --- Clusters ---
             if file_info["cluster"] is not None and file_info["cluster"].n_points > 0:
 
-                if not self.using_line_fitting:
-
-                    filtered_clusters_display = self._filter_data(file_info["cluster"])
-                else:
-                    filtered_clusters_display = self._filter_data_line(
-                        file_info["cluster"]
-                    )
+                filtered_clusters_display = self._filter_data(file_info["cluster"])
 
                 if filtered_clusters_display and filtered_clusters_display.n_points > 0:
                     cluster_color = file_info.get("color", "red")
@@ -1670,7 +1698,7 @@ class MainWindow(QMainWindow):
             self.track_lines.append(actor)
 
         # 2) Filter clusters around this line
-        filtered_clusters_for_fitting = self._filter_data_line(
+        filtered_clusters_for_fitting = self._filter_data(
             self.cluster_data, for_fitting=True
         )
         if (

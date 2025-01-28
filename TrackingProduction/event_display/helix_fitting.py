@@ -316,3 +316,68 @@ def fit_helix_direct(points, initial_params):
     except Exception as e:
         print(f"Error during direct helix fitting: {e}")
         return None
+
+
+def find_vertex_z(p1, p2):
+    """
+    Find the z-coordinate of the vertex given two points on the helix,
+    assuming the vertex is at x=0, y=0, and the points are in the same turn
+    as the vertex.
+    
+    Parameters:
+    -----------
+    p1, p2 : np.ndarray
+        3D points on the helix
+        
+    Returns:
+    --------
+    dict
+        Contains vertex_z and helix parameters
+    """
+    # Use the origin (0,0) as the third point for circle fitting
+    vertex_point = np.array([0, 0])
+    
+    # Fit circle using existing function
+    center_xy, radius = fit_circle_2d(vertex_point, p1[:2], p2[:2])
+    
+    if center_xy is None or radius is None:
+        raise ValueError("Circle fitting failed")
+    
+    # Calculate angles for all points including (0,0) as vertex
+    def calc_theta(p):
+        return np.arctan2(p[1] - center_xy[1], p[0] - center_xy[0])
+    
+    # Calculate theta for vertex (0,0) and both points
+    theta_vertex = calc_theta(vertex_point)
+    theta1 = calc_theta(p1[:2])
+    theta2 = calc_theta(p2[:2])
+    
+    # Unwrap angles to ensure continuity
+    thetas = np.unwrap([theta_vertex, theta1, theta2])
+    theta_vertex, theta1, theta2 = thetas
+    
+    # Always check if points span more than one turn from vertex
+    if abs(theta1 - theta_vertex) > 2*np.pi or abs(theta2 - theta_vertex) > 2*np.pi:
+        raise ValueError("Points must be in the same turn as the vertex")
+    
+    # Now solve for the pitch (alpha) and vertex z
+    # z = z_vertex + alpha * (theta - theta_vertex)
+    
+    A = np.array([[1, theta1 - theta_vertex],
+                  [1, theta2 - theta_vertex]])
+    b = np.array([p1[2], p2[2]])
+    
+    try:
+        z_vertex, alpha = np.linalg.solve(A, b)
+    except np.linalg.LinAlgError:
+        raise ValueError("Could not solve for vertex z (singular matrix)")
+    
+    # Return all relevant parameters
+    return {
+        'vertex_z': z_vertex,
+        'c_x': center_xy[0],
+        'c_y': center_xy[1],
+        'r': radius,
+        'alpha': alpha,
+        'theta_vertex': theta_vertex
+    }
