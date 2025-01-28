@@ -1263,13 +1263,18 @@ class MainWindow(QMainWindow):
             self.instruction_label.setText(
                 "Instruction: Select 3 points for initial helix fitting."
             )
-            self.update_display()
+           
+            
         elif self.radio_pick_helix.isChecked():
             self.pick_mode = "helix"
             self.instruction_label.setText(
                 "Instruction: Select 3 points for initial helix fitting."
             )
-            self.update_display()
+            
+            
+        elif self.radio_pick_vertex.isChecked():
+            self.pick_mode = "vertex"
+            self.instruction_label.setText("Select 2 points for vertex finding.")
 
         # Update the point picking callback based on the mode
         self.update_point_picking()
@@ -1284,7 +1289,7 @@ class MainWindow(QMainWindow):
             self.plotter_widget.enable_point_picking(
                 callback=self.on_point_picked_info, show_message=True, use_picker=True
             )
-        elif self.pick_mode == "helix":
+        elif self.pick_mode in ["helix", "vertex"]:
             # Enable point picking for helix fitting
             self.plotter_widget.enable_point_picking(
                 callback=self.on_point_picked_helix, show_message=True, use_picker=True
@@ -1635,6 +1640,11 @@ class MainWindow(QMainWindow):
                     self.inner_cut, 
                     self.outer_cut
                 )
+                
+                print("Vertex Params:", vertex_params)
+                print("Helix Params:", helix_params)
+                print("Helix Points size:", 
+                    None if helix_points is None else len(helix_points))
                 
                 if helix_points is not None:
                     helix_line = generate_helix_line(helix_points)

@@ -197,7 +197,7 @@ void combine_clusters()
   Float_t m_sclusphi, m_scluseta, m_adc_clus, m_scluselx, m_scluselz, m_clusmaxadc;
   Int_t m_scluslayer, m_phisize, m_zsize, m_clussector;
 
-  // t_residual_clus->SetBranchAddress("cluskey", &m_scluskey);
+  t_residual_clus->SetBranchAddress("cluskey", &m_scluskey);
   t_residual_clus->SetBranchAddress("run", &m_runnumber);
   t_residual_clus->SetBranchAddress("segment", &m_segment);
   t_residual_clus->SetBranchAddress("job", &m_job);
@@ -234,7 +234,7 @@ void combine_clusters()
   // --------------------------
   // Create output file and trees
   // --------------------------
-  TFile *outFile = new TFile("combined_cluster_and_hits_new_map_no_corrections_clusters_seeds_52844-0.root", "RECREATE");
+  TFile *outFile = new TFile("combined_cluster_and_hits_new_map_no_corrections_clusters_seeds_52844-0_0128.root", "RECREATE");
 
   // Combined cluster tree
   // Keep all original cluster info plus used_in_seed and used_in_track
@@ -248,7 +248,7 @@ void combine_clusters()
   int m_nmaps = -1;
 
   TTree *t_combined_clusters = new TTree("combined_clusters", "Combined cluster info");
-  // t_combined_clusters->Branch("cluskey", &m_scluskey, "cluskey/l");
+  t_combined_clusters->Branch("cluskey", &m_scluskey, "cluskey/l");
   t_combined_clusters->Branch("run", &m_runnumber, "run/I");
   t_combined_clusters->Branch("segment", &m_segment, "segment/I");
   t_combined_clusters->Branch("job", &m_job, "job/I");
