@@ -1719,6 +1719,8 @@ class MainWindow(QMainWindow):
             info_text += f"\nPCA on beam: ({pca_beam[0]:.3f}, {pca_beam[1]:.3f}, {pca_beam[2]:.3f}) cm"
         self.info_panel.setText(info_text)
         centroid_initial = compute_centroid(self.selected_points_first)
+        z_dca = pca_line[2] if pca_line is not None else None
+        
 
         self.line_params_initial = line_params_init
         # Visualize the initial line
@@ -1799,6 +1801,7 @@ class MainWindow(QMainWindow):
                 delta_z,
                 self.track_counter,
                 points=valid_points,
+                dca_z = z_dca,
             )
         else:
             QMessageBox.warning(

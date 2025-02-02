@@ -21,13 +21,14 @@ class HistogramWindow(QWidget):
         self.canvas = FigureCanvasQTAgg(self.figure)
         layout.addWidget(self.canvas)
 
-        gs = gridspec.GridSpec(4, 2, height_ratios=[1, 1, 1.2, 1.2])
+        gs = gridspec.GridSpec(5, 2, height_ratios=[1, 1, 1.2, 1.2, 1])
         self.individual_ax_rphi = self.figure.add_subplot(gs[0, 0])
         self.individual_ax_z = self.figure.add_subplot(gs[0, 1])
         self.accumulated_ax_rphi = self.figure.add_subplot(gs[1, 0])
         self.accumulated_ax_z = self.figure.add_subplot(gs[1, 1])
         self.rphi_vs_r_ax = self.figure.add_subplot(gs[2, :])
         self.z_vs_z_ax = self.figure.add_subplot(gs[3, :])
+        self.accumulated_ax_dca_z = self.figure.add_subplot(gs[4, :])
 
         # Titles for sections
         self.individual_ax_rphi.set_title("Individual Track Delta rphi")
@@ -35,6 +36,7 @@ class HistogramWindow(QWidget):
         self.accumulated_ax_rphi.set_title("Accumulated Delta rphi")
         self.accumulated_ax_z.set_title("Accumulated Delta z")
         self.rphi_vs_r_ax.set_title("Delta rphi vs. r")
+        self.accumulated_ax_dca_z.set_title("Accumulated DCA z")
 
         # Labels for axes
         self.individual_ax_rphi.set_xlabel("Delta rphi (cm)")
@@ -47,13 +49,16 @@ class HistogramWindow(QWidget):
         self.accumulated_ax_z.set_ylabel("Counts")
         self.rphi_vs_r_ax.set_xlabel("r (cm)")
         self.rphi_vs_r_ax.set_ylabel("Delta rphi (cm)")
+        self.accumulated_ax_dca_z.set_xlabel("DCA z (cm)")
+        self.accumulated_ax_dca_z.set_ylabel("Counts")
 
         # Store all delta values for accumulation
         self.accumulated_delta_rphi = []
         self.accumulated_delta_z = []
         self.accumulated_r_values = []
+        self.accumulated_dca_z = []
 
-    def add_histograms(self, delta_rphi, delta_z, track_id, points=None):
+    def add_histograms(self, delta_rphi, delta_z, track_id, points=None, dca_z=None):
         """Add new histograms for a new track and update accumulated histograms."""
         # --- Individual Histograms ---
 
@@ -173,17 +178,16 @@ class HistogramWindow(QWidget):
                 print(
                     f"r_values length: {len(r_values)}, delta_rphi length: {len(delta_rphi)}"
                 )
-                # Optionally, raise an exception or handle the mismatch
-                # For now, we'll skip plotting this scatter
+            
                 self.rphi_vs_r_ax.cla()
                 self.rphi_vs_r_ax.set_title(
                     f"Track {track_id} Delta rphi vs. r (Plot Skipped Due to Mismatch)"
                 )
             else:
-                # Clear the plot
+                
                 self.rphi_vs_r_ax.cla()
 
-                # Create scatter plot
+                
                 self.rphi_vs_r_ax.scatter(r_values, delta_rphi, alpha=0.5, s=20)
                 self.rphi_vs_r_ax.set_title(f"Track {track_id} Delta rphi vs. r")
                 self.rphi_vs_r_ax.set_xlabel("r (cm)")
@@ -214,6 +218,17 @@ class HistogramWindow(QWidget):
                 self.z_vs_z_ax.set_ylabel("Delta z (cm)")
                 self.z_vs_z_ax.grid(True, linestyle="--", alpha=0.7)
                 self.z_vs_z_ax.set_ylim(-2, 2)  # tweak as needed
+                
+                
+        if dca_z is not None:
+            self.accumulated_dca_z.append(dca_z)
+            self.accumulated_ax_dca_z.cla()
+            self.accumulated_ax_dca_z.hist(
+                self.accumulated_dca_z, bins=50, color="orange", alpha=0.7
+            )
+            self.accumulated_ax_dca_z.set_title("Accumulated DCA z")
+            self.accumulated_ax_dca_z.set_xlabel("DCA z (cm)")
+            self.accumulated_ax_dca_z.set_ylabel("Counts")
 
         # Adjust layout to prevent overlap
         self.figure.tight_layout()
