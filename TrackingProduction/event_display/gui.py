@@ -32,6 +32,7 @@ from helix_fitting import (
     generate_helix_points_refined,
     generate_helix_line,
     find_vertex_z,
+    find_dca_and_closest_point,
 )
 
 
@@ -322,7 +323,7 @@ class MainWindow(QMainWindow):
         self.radio_pick_helix = QRadioButton("Pick for Helix Fitting")
         self.radio_pick_helix.toggled.connect(self.on_pick_mode_changed)
         pick_mode_layout.addWidget(self.radio_pick_helix)
-        
+
         self.radio_pick_vertex = QRadioButton("Pick for Vertex Finding")
         self.radio_pick_vertex.toggled.connect(self.on_pick_mode_changed)
         pick_mode_layout.addWidget(self.radio_pick_vertex)
@@ -1263,15 +1264,13 @@ class MainWindow(QMainWindow):
             self.instruction_label.setText(
                 "Instruction: Select 3 points for initial helix fitting."
             )
-           
-            
+
         elif self.radio_pick_helix.isChecked():
             self.pick_mode = "helix"
             self.instruction_label.setText(
                 "Instruction: Select 3 points for initial helix fitting."
             )
-            
-            
+
         elif self.radio_pick_vertex.isChecked():
             self.pick_mode = "vertex"
             self.instruction_label.setText("Select 2 points for vertex finding.")
@@ -1372,7 +1371,9 @@ class MainWindow(QMainWindow):
         picked_coordinates = mesh.points[point_id]
 
         self.selected_points_first.append(picked_coordinates)
-        required_points = 2 if (self.pick_mode == "vertex" or self.using_line_fitting) else 3
+        required_points = (
+            2 if (self.pick_mode == "vertex" or self.using_line_fitting) else 3
+        )
         self.instruction_label.setText(
             f"Selected {len(self.selected_points_first)}/{required_points} points for initial fitting."
         )
@@ -1618,57 +1619,58 @@ class MainWindow(QMainWindow):
             if self.pick_mode == "vertex":
                 # Perform vertex finding and helix fitting
                 vertex_params = find_vertex_z(
-                    self.selected_points_first[0],
-                    self.selected_points_first[1]
+                    self.selected_points_first[0], self.selected_points_first[1]
                 )
-                
+
                 # Create helix parameters from vertex results
                 helix_params = {
-                    'c_x': vertex_params['c_x'],
-                    'c_y': vertex_params['c_y'],
-                    'r': vertex_params['r'],
-                    'alpha': vertex_params['alpha'],
-                    'c_z': vertex_params['vertex_z'],
-                    't0': vertex_params['theta_vertex'],
-                    'ref_theta': vertex_params['theta_vertex']
+                    "c_x": vertex_params["c_x"],
+                    "c_y": vertex_params["c_y"],
+                    "r": vertex_params["r"],
+                    "alpha": vertex_params["alpha"],
+                    "c_z": vertex_params["c_z"],
+                    "t0": vertex_params["ref_theta"],
+                    "ref_theta": vertex_params["ref_theta"],
                 }
-                
+
                 # Store parameters and generate visualization
                 self.helix_params_initial = helix_params
                 helix_points = generate_helix_points_initial(
-                    helix_params, 
-                    self.inner_cut, 
-                    self.outer_cut
+                    helix_params, self.inner_cut, self.outer_cut
                 )
-                
+
                 print("Vertex Params:", vertex_params)
                 print("Helix Params:", helix_params)
-                print("Helix Points size:", 
-                    None if helix_points is None else len(helix_points))
-                
+                print(
+                    "Helix Points size:",
+                    None if helix_points is None else len(helix_points),
+                )
+
                 if helix_points is not None:
                     helix_line = generate_helix_line(helix_points)
                     actor = self.plotter_widget.add_mesh(
                         helix_line,
-                        color='red',  # Different color for vertex-based helix
+                        color="grey",
                         line_width=3,
-                        style='wireframe',
-                        pickable=False
+                        style="wireframe",
+                        pickable=False,
                     )
                     self.track_lines.append(actor)
-                    
+
                     # Display vertex information
                     info_text = "Vertex Finding Results:\n"
                     info_text += f"Vertex Z: {vertex_params['vertex_z']:.3f} cm\n"
                     info_text += f"Helix radius: {vertex_params['r']:.3f} cm\n"
                     info_text += f"Helix center: ({vertex_params['c_x']:.3f}, {vertex_params['c_y']:.3f}) cm\n"
-                    info_text += f"Pitch parameter (alpha): {vertex_params['alpha']:.3f}\n"
+                    info_text += (
+                        f"Pitch parameter (alpha): {vertex_params['alpha']:.3f}\n"
+                    )
                     self.info_panel.setText(info_text)
-                    
+
             elif self.using_line_fitting:
                 # Perform line fitting
                 self.do_line_fitting_flow()
-                    
+
             else:
                 # Perform regular helix fitting
                 self.do_helix_fitting_flow()
@@ -1676,9 +1678,9 @@ class MainWindow(QMainWindow):
         except ValueError as e:
             QMessageBox.warning(self, "Fit Error", str(e))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"An unexpected error occurred:\n{str(e)}")
-
-        
+            QMessageBox.critical(
+                self, "Error", f"An unexpected error occurred:\n{str(e)}"
+            )
 
         self.selected_points_first.clear()
         self.update_display()
@@ -1936,6 +1938,7 @@ class MainWindow(QMainWindow):
                 helix_params_refined = fit_helix_direct(
                     filtered_clusters_for_fitting.points, self.helix_params_initial
                 )
+
             except ValueError as ve:
                 QMessageBox.warning(self, "Helix Fit", str(ve))
                 return
@@ -1954,11 +1957,13 @@ class MainWindow(QMainWindow):
             helix_points_refined = generate_helix_points_refined(
                 helix_params_refined, self.inner_cut, self.outer_cut
             )
+            print(f"Helix Points Refined: {helix_points_refined}")
             self.helix_points = (
                 helix_points_refined  # Update helix points for distance calculations
             )
 
             helix_line_refined = generate_helix_line(helix_points_refined)
+            print(f"Helix Line Refined: {helix_line_refined}")
             if helix_line_refined is not None:
                 actor = self.plotter_widget.add_mesh(
                     helix_line_refined,
@@ -1973,6 +1978,30 @@ class MainWindow(QMainWindow):
                     "Helix Fit",
                     "Refined helix fitted and visualized.",
                 )
+
+                dca_result = find_dca_and_closest_point(
+                    helix_params_refined, helix_params_refined["ref_theta_direct"]
+                )
+                if dca_result is not None:
+                    dca_val = dca_result["dca"]
+                    closest_point_3d = dca_result["closest_point_3d"]
+                    z_dca = closest_point_3d[2]  # Extract the z-coordinate
+
+                    # Display DCA and Z at DCA in the info panel
+                    info_text = self.info_panel.toPlainText()
+                    info_text += (
+                        f"\nRefined Helix Fit:\n"
+                        f"DCA to Beam Axis = {dca_val:.3f} cm\n"
+                        f"Z at DCA        = {z_dca:.3f} cm\n"
+                    )
+                    self.info_panel.setText(info_text)
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "DCA Calculation",
+                        "Failed to calculate DCA after helix fitting.",
+                    )
+
             else:
                 QMessageBox.warning(
                     self, "Helix Fit", "Failed to create refined helix visualization."
@@ -2014,8 +2043,9 @@ class MainWindow(QMainWindow):
                     return
                 """
                 # **Update info panel with sigma values**
-                info_text = (
-                    f"Track ID: {track_id}\n"
+                info_text = self.info_panel.toPlainText()
+                info_text += (
+                    f"\nTrack ID: {track_id}\n"
                     f"Sigma Delta rphi: {sigma_rphi:.4f} cm\n"
                     f"Sigma Delta z: {sigma_z:.4f} cm\n"
                 )
@@ -2038,40 +2068,6 @@ class MainWindow(QMainWindow):
             "Instruction: Select 3 points for initial helix fitting."
         )
         self.update_display()
-
-    '''def plot_histograms(self, delta_rphi, delta_z, track_id):
-        """
-        Plot histograms of delta rphi and delta z for a given track.
-
-        Parameters:
-        -----------
-        delta_rphi : np.ndarray
-            Array of delta rphi (arc length) values.
-        delta_z : np.ndarray
-            Array of delta z values.
-        track_id : int
-            Unique identifier for the track.
-        """
-        # Clear previous histograms
-        self.hist_ax_rphi.clear()
-        self.hist_ax_z.clear()
-
-        # Plot Delta rphi
-        self.hist_ax_rphi.hist(
-            delta_rphi, bins=50, range=(-1, 1), color="red", alpha=0.7
-        )
-        self.hist_ax_rphi.set_title(f"Delta rphi Distribution for Track {track_id}")
-        self.hist_ax_rphi.set_xlabel("Delta rphi (cm)")  # Adjust units as needed
-        self.hist_ax_rphi.set_ylabel("Counts")
-
-        # Plot Delta z
-        self.hist_ax_z.hist(delta_z, bins=50, range=(-2, 2), color="blue", alpha=0.7)
-        self.hist_ax_z.set_title(f"Delta z Distribution for Track {track_id}")
-        self.hist_ax_z.set_xlabel("Delta z (cm)")
-        self.hist_ax_z.set_ylabel("Counts")
-
-        # Refresh the canvas
-        self.hist_canvas.draw()'''
 
     def reset_helix(self):
         """Clears the fitted helix and resets the selection."""

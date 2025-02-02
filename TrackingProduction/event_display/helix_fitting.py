@@ -323,12 +323,12 @@ def find_vertex_z(p1, p2):
     Find the z-coordinate of the vertex given two points on the helix,
     assuming the vertex is at x=0, y=0, and the points are in the same turn
     as the vertex.
-    
+
     Parameters:
     -----------
     p1, p2 : np.ndarray
         3D points on the helix
-        
+
     Returns:
     --------
     dict
@@ -336,48 +336,160 @@ def find_vertex_z(p1, p2):
     """
     # Use the origin (0,0) as the third point for circle fitting
     vertex_point = np.array([0, 0])
-    
+
     # Fit circle using existing function
     center_xy, radius = fit_circle_2d(vertex_point, p1[:2], p2[:2])
-    
+
     if center_xy is None or radius is None:
         raise ValueError("Circle fitting failed")
-    
+
     # Calculate angles for all points including (0,0) as vertex
     def calc_theta(p):
         return np.arctan2(p[1] - center_xy[1], p[0] - center_xy[0])
-    
+
     # Calculate theta for vertex (0,0) and both points
     theta_vertex = calc_theta(vertex_point)
     theta1 = calc_theta(p1[:2])
     theta2 = calc_theta(p2[:2])
-    
+
     # Unwrap angles to ensure continuity
     thetas = np.unwrap([theta_vertex, theta1, theta2])
     theta_vertex, theta1, theta2 = thetas
-    
+
     # Always check if points span more than one turn from vertex
-    if abs(theta1 - theta_vertex) > 2*np.pi or abs(theta2 - theta_vertex) > 2*np.pi:
+    if abs(theta1 - theta_vertex) > 2 * np.pi or abs(theta2 - theta_vertex) > 2 * np.pi:
         raise ValueError("Points must be in the same turn as the vertex")
-    
+
     # Now solve for the pitch (alpha) and vertex z
     # z = z_vertex + alpha * (theta - theta_vertex)
-    
-    A = np.array([[1, theta1 - theta_vertex],
-                  [1, theta2 - theta_vertex]])
+
+    A = np.array([[1, theta1 - theta_vertex], [1, theta2 - theta_vertex]])
     b = np.array([p1[2], p2[2]])
-    
+
     try:
         z_vertex, alpha = np.linalg.solve(A, b)
     except np.linalg.LinAlgError:
         raise ValueError("Could not solve for vertex z (singular matrix)")
-    
+
+    c_z = z_vertex - alpha * theta_vertex
+
     # Return all relevant parameters
     return {
-        'vertex_z': z_vertex,
-        'c_x': center_xy[0],
-        'c_y': center_xy[1],
-        'r': radius,
-        'alpha': alpha,
-        'theta_vertex': theta_vertex
+        "vertex_z": z_vertex,
+        "c_x": center_xy[0],
+        "c_y": center_xy[1],
+        "r": radius,
+        "alpha": alpha,
+        "c_z": c_z,
+        "ref_theta": theta1,
     }
+
+
+def find_dca_and_closest_point(params, theta_ref):
+    """
+    Find the Distance of Closest Approach (DCA) of a 3D helix to the z-axis (beam axis)
+    and the corresponding 3D point on the helix.
+
+    Parameters
+    ----------
+    params : dict
+        Dictionary with helix parameters, e.g.:
+            {
+                "c_x": float,   # center x
+                "c_y": float,   # center y
+                "c_z": float,   # z-offset
+                "r": float,     # radius in the XY plane
+                "alpha": float, # pitch parameter (dz/dtheta)
+            }
+    theta_ref : float
+        Reference angle (unwrapped) from the data to determine the correct turn.
+
+    Returns
+    -------
+    dict
+        {
+            "dca": float,
+            "closest_point_3d": np.ndarray of shape (3,),
+            "theta_closest": float
+        }
+    """
+    cx = params["c_x"]
+    cy = params["c_y"]
+    cz = params["c_z"]
+    r = params["r"]
+    alpha = params["alpha"]
+
+    # Distance of helix center from origin in XY plane
+    rc = np.sqrt(cx**2 + cy**2)
+
+    # The DCA is |rc - r|
+    dca = abs(rc - r)
+
+    # Special case: if center ~ (0,0), parameter is degenerate
+    # If rc < a tiny threshold, pick any direction for the circle
+    eps = 1e-12
+    if rc < eps:
+        # All points on the circle are at distance r from origin
+        # DCA = r if rc ~ 0. The "closest point" can be chosen arbitrarily on that circle.
+        # Let's choose theta_closest = 0 for simplicity.
+        theta_closest = 0.0
+        x_closest = r
+        y_closest = 0.0
+        z_closest = cz + alpha * theta_closest
+        return {
+            "dca": r,
+            "closest_point_3d": np.array([x_closest, y_closest, z_closest]),
+            "theta_closest": theta_closest,
+        }
+
+    # General case: find the XY point on the circle that lies on the line
+    # from the origin through (cx, cy). This is done by scaling the center vector.
+    factor = 1.0 - (r / rc)
+    x_closest_xy = cx * factor
+    y_closest_xy = cy * factor
+
+    # Calculate theta_closest using arctan2, which correctly handles angle quadrants
+    theta_raw = np.arctan2(y_closest_xy - cy, x_closest_xy - cx)
+
+    # Normalize theta_raw to be within [-pi, pi)
+    theta_raw = theta_raw % (2 * np.pi)
+    if theta_raw >= np.pi:
+        theta_raw -= 2 * np.pi  # Map to [-pi, pi)
+
+    # Now, pick the correct theta by aligning with theta_ref
+    theta_corrected = pick_turn_for_dca(theta_raw, theta_ref)
+
+    # Compute the z-coordinate corresponding to theta_corrected
+    z_closest = cz + alpha * theta_corrected
+
+    # Construct the final 3D point
+    closest_point_3d = np.array([x_closest_xy, y_closest_xy, z_closest])
+
+    return {
+        "dca": dca,
+        "closest_point_3d": closest_point_3d,
+        "theta_closest": theta_corrected,
+    }
+
+
+def pick_turn_for_dca(theta_raw, theta_ref):
+    """
+    Given an angle from the DCA formula (theta_raw in [-pi, pi))
+    and a reference angle from the data (theta_ref, unwrapped),
+    return the angle (theta_raw + 2pi*k) that is closest to theta_ref.
+
+    Parameters
+    ----------
+    theta_raw : float
+        The raw theta value in [-pi, pi).
+    theta_ref : float
+        The reference unwrapped theta from the data.
+
+    Returns
+    -------
+    float
+        The corrected theta closest to theta_ref.
+    """
+    k = np.round((theta_ref - theta_raw) / (2 * np.pi))
+    theta_corrected = theta_raw + 2 * np.pi * k
+    return theta_corrected
