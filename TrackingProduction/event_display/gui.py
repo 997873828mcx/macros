@@ -51,14 +51,13 @@ from data_loader import load_data_from_root
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt5.QtGui import QStandardItem, QStandardItemModel
-from PyQt5.QtCore import Qt
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Event Display")
-        self.resize(1600, 900)  # Increased size for better visibility
+        self.resize(1600, 900)
         self.file_colors = [
             "red",
             "green",
@@ -79,10 +78,9 @@ class MainWindow(QMainWindow):
 
         self.inner_cut = 21.6
         self.outer_cut = 76.4
-        # Add a new attribute to track the helix tube color
 
         self.helix_line = None
-        self.track_lines = []  # List to store all helix lines
+        self.track_lines = []  # List to store all track lines
 
         self.display_filtered_clusters_info = []
         self.display_filtered_hits_info = []
@@ -110,9 +108,11 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(splitter)
 
         # Left side panel
-        left_panel = QWidget()
+        """left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(5, 5, 5, 5)
+        left_layout.setContentsMargins(5, 5, 5, 5)"""
+        left_splitter = QSplitter(Qt.Vertical)
+        left_splitter.setContentsMargins(5, 5, 5, 5)
 
         # === Control Area ===
         control_area = QWidget()
@@ -127,12 +127,8 @@ class MainWindow(QMainWindow):
         top_filter_layout = QHBoxLayout()
 
         # --------------------------------------------------------------------
-
-        # --------------------------------------------------------------------
         # 2) Silicon group
-        #    - seed checkbox, track checkbox
-        #    - crossing spin box, T-crossing spin box
-        #    - track id spin box
+
         silicon_group = QGroupBox("Silicon")
         silicon_layout = QVBoxLayout()
         silicon_group.setLayout(silicon_layout)
@@ -200,10 +196,7 @@ class MainWindow(QMainWindow):
 
         # --------------------------------------------------------------------
         # 3) TPC group
-        #    - seed checkbox, track checkbox
-        #    - T-crossing spin box
-        #    - track id spin box
-        #    - side 0 / side 1 checkboxes
+
         tpc_group = QGroupBox("TPC")
         tpc_layout = QVBoxLayout()
         tpc_group.setLayout(tpc_layout)
@@ -288,8 +281,8 @@ class MainWindow(QMainWindow):
         hit_adc_layout = QHBoxLayout()
         hit_adc_label = QLabel("Hit ADC ≥")
         self.hit_adc_spinbox = QDoubleSpinBox()
-        self.hit_adc_spinbox.setRange(0, 10000)  # Adjust range as needed
-        self.hit_adc_spinbox.setValue(0)  # Default threshold
+        self.hit_adc_spinbox.setRange(0, 10000)
+        self.hit_adc_spinbox.setValue(0)
         self.hit_adc_spinbox.setDecimals(0)
         self.hit_adc_spinbox.valueChanged.connect(self.update_display)
         hit_adc_layout.addWidget(hit_adc_label)
@@ -300,7 +293,7 @@ class MainWindow(QMainWindow):
         nmaps_label = QLabel("NMAPS ≥")
         self.nmaps_spinbox = QSpinBox()
         self.nmaps_spinbox.setRange(-10, 100)
-        self.nmaps_spinbox.setValue(-1)  # Default value
+        self.nmaps_spinbox.setValue(-1)
         self.nmaps_spinbox.valueChanged.connect(self.update_display)
         nmaps_layout.addWidget(nmaps_label)
         nmaps_layout.addWidget(self.nmaps_spinbox)
@@ -315,7 +308,7 @@ class MainWindow(QMainWindow):
 
         # Radio Button for Viewing Point Info
         self.radio_view_info = QRadioButton("View Point Info")
-        self.radio_view_info.setChecked(True)  # Default selection
+        self.radio_view_info.setChecked(True)
         self.radio_view_info.toggled.connect(self.on_pick_mode_changed)
         pick_mode_layout.addWidget(self.radio_view_info)
 
@@ -339,7 +332,7 @@ class MainWindow(QMainWindow):
         # Set up a model to allow checkable items in the combo box
         model = QStandardItemModel(self.file_combo)
         self.file_combo.setModel(model)
-        # Connect item changes to update_display so changes refresh visualization
+
         model.itemChanged.connect(lambda item: self.update_display())
 
         files_layout.addWidget(self.file_combo)
@@ -351,7 +344,7 @@ class MainWindow(QMainWindow):
         for event_num in range(31):  # 0 to 30
             item = QStandardItem(f"Event {event_num}")
             item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
-            item.setData(Qt.Unchecked, Qt.CheckStateRole)  # Default checked
+            item.setData(Qt.Unchecked, Qt.CheckStateRole)
             event_model.appendRow(item)
 
         event_model.itemChanged.connect(lambda i: self.update_display())
@@ -396,10 +389,8 @@ class MainWindow(QMainWindow):
         label_width = 30
         spinbox_width = 50
 
-        # Define overall ranges for each axis
         overall_ranges = {"X": (-150, 150), "Y": (-150, 150), "Z": (-400, 400)}
 
-        # Function to create axis controls
         def create_axis_controls(
             axis_label, initial_min, initial_max, overall_min, overall_max
         ):
@@ -423,7 +414,6 @@ class MainWindow(QMainWindow):
             slider.setValue([initial_min, initial_max])
             slider.setFixedWidth(slider_width)
 
-            # Connect spin boxes to slider
             def on_min_spin_change(value):
                 current_max = slider.value()[1]
                 if value > current_max:
@@ -431,7 +421,7 @@ class MainWindow(QMainWindow):
                     min_spin.setValue(current_max)
                     min_spin.blockSignals(False)
                     value = current_max
-                slider.setValue([value, current_max])  # Only update handle positions
+                slider.setValue([value, current_max])
                 self.update_display()
 
             def on_max_spin_change(value):
@@ -441,13 +431,12 @@ class MainWindow(QMainWindow):
                     max_spin.setValue(current_min)
                     max_spin.blockSignals(False)
                     value = current_min
-                slider.setValue([current_min, value])  # Only update handle positions
+                slider.setValue([current_min, value])
                 self.update_display()
 
             min_spin.valueChanged.connect(on_min_spin_change)
             max_spin.valueChanged.connect(on_max_spin_change)
 
-            # Connect slider to spin boxes
             def on_slider_change(values):
                 min_val, max_val = values
                 min_spin.blockSignals(True)
@@ -477,7 +466,6 @@ class MainWindow(QMainWindow):
 
             return container
 
-        # Create and add axis controls horizontally
         x_axis_widget = create_axis_controls(
             "X", -100, 100, overall_ranges["X"][0], overall_ranges["X"][1]
         )
@@ -492,83 +480,72 @@ class MainWindow(QMainWindow):
         range_layout.addWidget(z_axis_widget)
         control_layout.addWidget(range_group)
 
-        # === Helix Fitting Controls ===
-        helix_group = QGroupBox("Helix Fitting")
-        helix_layout = QHBoxLayout()
-        helix_group.setLayout(helix_layout)
+        # === Track Fitting Controls ===
+        track_group = QGroupBox("Track Fitting")
+        track_layout = QHBoxLayout()
+        track_group.setLayout(track_layout)
 
-        # Button: Fit Helix
-        self.btn_fit_helix = QPushButton("Fit Helix")
-        self.btn_fit_helix.clicked.connect(self.initiate_fit)
-        helix_layout.addWidget(self.btn_fit_helix)
+        self.btn_fit_track = QPushButton("Fit Track")
+        self.btn_fit_track.clicked.connect(self.initiate_fit)
+        track_layout.addWidget(self.btn_fit_track)
 
-        # Button: Reset Helix
-        self.btn_reset_helix = QPushButton("Reset Helix")
-        self.btn_reset_helix.clicked.connect(self.reset_helix)
-        helix_layout.addWidget(self.btn_reset_helix)
+        self.btn_reset_track = QPushButton("Reset Track")
+        self.btn_reset_track.clicked.connect(self.reset_track)
+        track_layout.addWidget(self.btn_reset_track)
 
-        # clear helix lines
-        self.btn_clear_helix = QPushButton("Clear Helix Lines")
-        self.btn_clear_helix.clicked.connect(self.clear_helix_lines)
-        helix_layout.addWidget(self.btn_clear_helix)
+        self.btn_clear_track = QPushButton("Clear Track Lines")
+        self.btn_clear_track.clicked.connect(self.clear_track_lines)
+        track_layout.addWidget(self.btn_clear_track)
 
-        # Toggle for Module-Based Fitting
-        self.module_based_fitting_checkbox = QCheckBox("Module-Based Fitting")
-        self.module_based_fitting_checkbox.setChecked(False)  # Default: disabled
-        helix_layout.addWidget(self.module_based_fitting_checkbox)
-        # --- Toggle Checkbox ---
+        self.module_based_fitting_checkbox = QCheckBox("Module Fitting")
+        self.module_based_fitting_checkbox.setChecked(False)
+        track_layout.addWidget(self.module_based_fitting_checkbox)
+
+        self.track_toggle_checkbox = QCheckBox("Show Lines")
+        self.track_toggle_checkbox.setChecked(True)
+        self.track_toggle_checkbox.stateChanged.connect(self.on_track_toggle)
+
+        track_layout.addWidget(self.track_toggle_checkbox)
+
         self.toggle_filter_checkbox = QCheckBox("Show Points Outside Tube")
-        self.toggle_filter_checkbox.setChecked(True)  # Default to showing all points
+        self.toggle_filter_checkbox.setChecked(True)
         self.toggle_filter_checkbox.stateChanged.connect(self.update_display)
-        helix_layout.addWidget(self.toggle_filter_checkbox)
+        track_layout.addWidget(self.toggle_filter_checkbox)
 
-        # --- Instruction Label (Optional) ---
         self.instruction_label = QLabel(
-            "Instruction: Select 3 points for initial helix fitting."
+            "Instruction: Select 3 points for initial track fitting."
         )
-        helix_layout.addWidget(self.instruction_label)
+        track_layout.addWidget(self.instruction_label)
 
-        control_layout.addWidget(helix_group)
+        control_layout.addWidget(track_group)
 
-        left_layout.addWidget(control_area)
+        # left_layout.addWidget(control_area)
 
         # 3D Visualization Area
         self.plotter_widget = QtInteractor()
-        left_layout.addWidget(self.plotter_widget)
+        # left_layout.addWidget(self.plotter_widget)
 
-        # A frame line at the bottom for neatness (optional)
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setFrameShadow(QFrame.Sunken)
-        left_layout.addWidget(line)
+        left_splitter.addWidget(control_area)
+        left_splitter.addWidget(self.plotter_widget)
+
+        # line = QFrame()
+        # line.setFrameShape(QFrame.HLine)
+        # line.setFrameShadow(QFrame.Sunken)
+        # left_layout.addWidget(line)
 
         # Sidebar for info
         sidebar = QWidget()
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(5, 5, 5, 5)
 
-        # --- Cluster/Hit Information ---
         info_label = QLabel("Cluster/Hit Information")
         sidebar_layout.addWidget(info_label)
 
         self.info_panel = QTextEdit()
         self.info_panel.setReadOnly(True)
         sidebar_layout.addWidget(self.info_panel)
-        """
-        # --- Event Information ---
-        event_info_label = QLabel("Event Information")
-        sidebar_layout.addWidget(event_info_label)
 
-        
-        # Replace QTextEdit with QLabel for fixed event information
-        self.event_info_panel = QLabel(
-            "<b>ZDC coincidence:</b> Raw: 1,869,750 Live: 1,868,219"
-        )
-        self.event_info_panel.setWordWrap(True)
-        sidebar_layout.addWidget(self.event_info_panel)
-"""
-
-        splitter.addWidget(left_panel)
+        splitter.addWidget(left_splitter)
         splitter.addWidget(sidebar)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
@@ -579,11 +556,7 @@ class MainWindow(QMainWindow):
         self.cluster_polydata = None
         self.hit_polydata = None
 
-        self.selected_points_first = (
-            []
-        )  # Store 3 picked points for initial helix fitting
-        self.selected_points_second = []
-        self.helix_line = None
+        self.selected_points_first = []  # Used for point selection
         self.helix_points = None
         self.helix_params_initial = None
         self.helix_params_refined = None
@@ -594,7 +567,6 @@ class MainWindow(QMainWindow):
 
         self.plotter_widget.show_axes()
 
-        # Enable initial point picking for info mode
         self.update_point_picking()
 
     def _filter_data(
@@ -603,56 +575,42 @@ class MainWindow(QMainWindow):
         *,
         for_fitting: bool = False,
     ) -> Optional[pv.PolyData]:
-        """
-        General-purpose filtering for clusters and hits based on spatial ranges,
-        side selection, and optional helix proximity.
-
-        Parameters:
-        -----------
-        data : pv.PolyData
-            The dataset to filter (clusters or hits).
-
-        Returns:
-        --------
-        Optional[pv.PolyData]
-            The filtered data or None if no points pass.
-        """
 
         if data is None or data.n_points == 0:
-            print(f"DEBUG {'(fitting)' if for_fitting else ''}: No data provided.")
+            # print(f"DEBUG {'(fitting)' if for_fitting else ''}: No data provided.")
             return None
 
         points = data.points
-        print(
-            f"DEBUG {'(fitting)' if for_fitting else ''}: Total points before filtering: {len(points)}"
-        )
-        # Get event numbers from the data
+        # print(
+        #   f"DEBUG {'(fitting)' if for_fitting else ''}: Total points before filtering: {len(points)}"
+        # )
+
         event_numbers = data.point_data.get("event", None)
         if event_numbers is None:
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: Missing 'event' attribute in data."
-            )
+            # print(
+            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Missing 'event' attribute in data."
+            # )
             return None
 
-        print(
-            f"DEBUG {'(fitting)' if for_fitting else ''}: Unique event numbers in data: {np.unique(event_numbers)}"
-        )
+        # print(
+        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Unique event numbers in data: {np.unique(event_numbers)}"
+        # )
         selected_events = []
         for i in range(self.event_combo.model().rowCount()):
             item = self.event_combo.model().item(i)
             if item.checkState() == Qt.Checked:
                 event_label = item.text()
                 try:
-                    # Extract numeric part from the label
+
                     event_id = int(event_label.split()[1])
                     selected_events.append(event_id)
                 except (ValueError, IndexError):
-                    # print(f"Invalid event ID format: {event_label}")
+
                     continue
 
-        print(
-            f"DEBUG {'(fitting)' if for_fitting else ''}: Selected events: {selected_events}"
-        )
+        # print(
+        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Selected events: {selected_events}"
+        # )
 
         """if not selected_events:
             print("No events selected.")
@@ -664,11 +622,10 @@ class MainWindow(QMainWindow):
             )
             return None
         event_mask = np.isin(event_numbers, selected_events)
-        print(
-            f"DEBUG {'(fitting)' if for_fitting else ''}: Points after event filter: {np.sum(event_mask)}"
-        )
+        # print(
+        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after event filter: {np.sum(event_mask)}"
+        # )
 
-        # Retrieve range values from sliders
         x_min, x_max = self.x_range_slider.value()
         y_min, y_max = self.y_range_slider.value()
         z_min, z_max = self.z_range_slider.value()
@@ -1043,7 +1000,7 @@ class MainWindow(QMainWindow):
         if nmaps_values is not None:
             nmaps_threshold = self.nmaps_spinbox.value()
             nmaps_mask = nmaps_values >= nmaps_threshold
-            combined_mask = combined_mask & nmaps_mask
+            combined_mask &= nmaps_mask
             """print(
                 f"Points after NMAPS filter (>= {nmaps_threshold}): {np.sum(nmaps_mask)}"
             )"""
@@ -1057,8 +1014,7 @@ class MainWindow(QMainWindow):
         adc_values = data.point_data.get("adc", None)
         data_type_array = data.point_data.get("data_type", np.zeros(data.n_points))
         # We can do a quick rule:
-        cluster_mask = data_type_array == 0
-        hit_mask = data_type_array == 1
+
         if adc_values is not None:
             # Determine threshold based on data type (cluster or hit)
             if data is self.cluster_data:
@@ -1244,18 +1200,6 @@ class MainWindow(QMainWindow):
                 # Return just the spatially filtered data
                 return filtered_points if filtered_points.n_points > 0 else None
 
-    def add_file_checkbox(self, filename, cluster_data, hit_data):
-        checkbox = QCheckBox(filename)
-        checkbox.setChecked(True)  # Display file data by default
-        checkbox.stateChanged.connect(self.update_display)
-        self.file_toggle_layout.addWidget(checkbox)
-
-        self.loaded_files[filename] = {
-            "cluster": cluster_data,
-            "hit": hit_data,
-            "checkbox": checkbox,
-        }
-
     # --- Method to Handle Mode Changes ---
     def on_pick_mode_changed(self):
         """Handle changes in the pick mode based on radio button selection."""
@@ -1299,18 +1243,18 @@ class MainWindow(QMainWindow):
         Callback function for viewing point information.
         Displays info without affecting helix fitting.
         """
+        actor = picker.GetActor()
+        # If the actor is one of the track (helix) actors, ignore the pick.
+        if actor in self.track_lines:
+            return
         # Extract the point ID from the picker
         point_id = picker.GetPointId()
 
         # Extract the mesh (dataset) from the picker
         mesh = picker.GetDataSet()
 
-        # Validate the picked point
-        if point_id < 0:
-            return  # No valid point was picked
-
-        if mesh is None:
-            return  # No mesh was picked
+        if point_id < 0 or mesh is None:
+            return
 
         # Ensure 'data_type' exists in the mesh's point data
         if "data_type" not in mesh.point_data:
@@ -1318,6 +1262,9 @@ class MainWindow(QMainWindow):
 
         # Retrieve the data_type for the picked point
         data_type = mesh.point_data["data_type"][point_id]
+
+        if data_type not in (0, 1):
+            return
         label = "Cluster" if data_type == 0 else "Hit"
 
         # Display information about the picked point
@@ -1384,15 +1331,17 @@ class MainWindow(QMainWindow):
                 else "Click 'Fit Helix' to perform line fitting."
             )
             QMessageBox.information(self, "Track Fit", msg)
-        """
-        # Add a marker for the selected point
-        marker = pv.Sphere(radius=2, center=picked_coordinates)
-        self.plotter_widget.add_mesh(
-            marker,
-            color="yellow",
-            pickable=False,
-        )
-        """
+
+    def on_track_toggle(self, state):
+        visible = state == Qt.Checked
+        self.set_track_lines_visibility(visible)
+
+    def set_track_lines_visibility(self, visible):
+        for actor in self.track_lines:
+            # Set the visibility property on the actor.
+            # Using VTK’s method: 1 means visible, 0 means hidden.
+            actor.SetVisibility(1 if visible else 0)
+        self.plotter_widget.render()
 
     def load_data(self):
         """
@@ -1494,17 +1443,6 @@ class MainWindow(QMainWindow):
                         point_size=5,
                         color="blue",
                     )
-        """
-        for mesh in self.helix_lines:
-            self.plotter_widget.add_mesh(
-                mesh,  # mesh is a pyvista mesh
-                color=self.helix_line_color,
-                line_width=3,
-                style="wireframe",
-                pickable=False,
-            )
-            
-        """
 
         for actor in self.track_lines:
             # Re-add the stored actor to the renderer
@@ -1647,15 +1585,22 @@ class MainWindow(QMainWindow):
                 )
 
                 if helix_points is not None:
-                    helix_line = generate_helix_line(helix_points)
-                    actor = self.plotter_widget.add_mesh(
-                        helix_line,
+                    # helix_line = generate_helix_line(helix_points)
+                    actor = self.plotter_widget.add_lines(
+                        helix_points,
                         color="grey",
-                        line_width=3,
-                        style="wireframe",
-                        pickable=False,
+                        width=3,
+                        # style="wireframe",
+                        # pickable=False,
                     )
+                    # actor.GetProperty().SetRepresentationToWireframe()
+                    # actor.GetProperty().SetPointSize(0)
+                    actor.GetProperty().SetRepresentationToWireframe()
+                    actor.GetProperty().SetPointSize(0)
+                    actor.PickableOff()
                     self.track_lines.append(actor)
+
+                    vertex_pca = np.array([0.0, 0.0, vertex_params["vertex_z"]])
 
                     # Display vertex information
                     info_text = "Vertex Finding Results:\n"
@@ -1666,6 +1611,17 @@ class MainWindow(QMainWindow):
                         f"Pitch parameter (alpha): {vertex_params['alpha']:.3f}\n"
                     )
                     self.info_panel.setText(info_text)
+
+                    self.track_counter += 1
+                    if not self.histogram_window.isVisible():
+                        self.histogram_window.show()
+                    self.histogram_window.add_histograms(
+                        [],
+                        [],
+                        self.track_counter,
+                        points=None,
+                        pca=vertex_pca,
+                    )
 
             elif self.using_line_fitting:
                 # Perform line fitting
@@ -1684,6 +1640,8 @@ class MainWindow(QMainWindow):
 
         self.selected_points_first.clear()
         self.update_display()
+        self.plotter_widget.disable_picking()
+        self.update_point_picking()
 
     def do_line_fitting_flow(self):
         # Require exactly three points for the initial fit
@@ -1719,8 +1677,7 @@ class MainWindow(QMainWindow):
             info_text += f"\nPCA on beam: ({pca_beam[0]:.3f}, {pca_beam[1]:.3f}, {pca_beam[2]:.3f}) cm"
         self.info_panel.setText(info_text)
         centroid_initial = compute_centroid(self.selected_points_first)
-        z_dca = pca_line[2] if pca_line is not None else None
-        
+        line_pca = pca_line if pca_line is not None else None
 
         self.line_params_initial = line_params_init
         # Visualize the initial line
@@ -1801,7 +1758,7 @@ class MainWindow(QMainWindow):
                 delta_z,
                 self.track_counter,
                 points=valid_points,
-                dca_z = z_dca,
+                pca=line_pca,
             )
         else:
             QMessageBox.warning(
@@ -1833,7 +1790,7 @@ class MainWindow(QMainWindow):
 
         # Store initial helix parameters
         self.helix_params_initial = helix_params_initial
-        # self.helix_line_color = "green"
+
         self.helix_line_color = "grey"
         # Generate helix points and create a tube
         helix_points_initial = generate_helix_points_initial(
@@ -1953,7 +1910,6 @@ class MainWindow(QMainWindow):
             # Store refined helix parameters
             self.helix_params_refined = helix_params_refined
 
-            # self.helix_line_color = "blue"
             self.helix_line_color = "grey"
 
             # Generate refined helix points and create a tube
@@ -1998,6 +1954,7 @@ class MainWindow(QMainWindow):
                         f"Z at DCA        = {z_dca:.3f} cm\n"
                     )
                     self.info_panel.setText(info_text)
+
                 else:
                     QMessageBox.warning(
                         self,
@@ -2025,6 +1982,7 @@ class MainWindow(QMainWindow):
                     delta_z,
                     self.track_counter,
                     points=valid_points,
+                    pca=closest_point_3d,
                 )
 
                 # **Calculate sigma (standard deviation)**
@@ -2072,7 +2030,7 @@ class MainWindow(QMainWindow):
         )
         self.update_display()
 
-    def reset_helix(self):
+    def reset_track(self):
         """Clears the fitted helix and resets the selection."""
         self.helix_line = None
         self.helix_points = None  # Clear helix points
@@ -2130,7 +2088,7 @@ class MainWindow(QMainWindow):
 
         return {"mod1": mod1, "mod2": mod2, "mod3": mod3}
 
-    def clear_helix_lines(self):
+    def clear_track_lines(self):
         """Clears all displayed helix lines from the plot."""
         # Clear the list of helix lines
         self.track_lines = []

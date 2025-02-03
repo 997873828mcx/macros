@@ -216,6 +216,7 @@ def generate_helix_line(helix_points):
         ([helix_points.shape[0]], np.arange(helix_points.shape[0]))
     ).astype(np.int64)
     helix_poly.lines = lines
+    helix_poly["data_type"] = np.full(helix_points.shape[0], -1)
     return helix_poly
 
 

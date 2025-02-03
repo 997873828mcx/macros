@@ -28,7 +28,8 @@ class HistogramWindow(QWidget):
         self.accumulated_ax_z = self.figure.add_subplot(gs[1, 1])
         self.rphi_vs_r_ax = self.figure.add_subplot(gs[2, :])
         self.z_vs_z_ax = self.figure.add_subplot(gs[3, :])
-        self.accumulated_ax_dca_z = self.figure.add_subplot(gs[4, :])
+        self.accumulated_ax_pca_xy = self.figure.add_subplot(gs[4, 0])
+        self.accumulated_ax_pca_z = self.figure.add_subplot(gs[4, 1])
 
         # Titles for sections
         self.individual_ax_rphi.set_title("Individual Track Delta rphi")
@@ -36,7 +37,8 @@ class HistogramWindow(QWidget):
         self.accumulated_ax_rphi.set_title("Accumulated Delta rphi")
         self.accumulated_ax_z.set_title("Accumulated Delta z")
         self.rphi_vs_r_ax.set_title("Delta rphi vs. r")
-        self.accumulated_ax_dca_z.set_title("Accumulated DCA z")
+        self.accumulated_ax_pca_xy.set_title("Accumulated PCA xy")
+        self.accumulated_ax_pca_z.set_title("Accumulated PCA z")
 
         # Labels for axes
         self.individual_ax_rphi.set_xlabel("Delta rphi (cm)")
@@ -49,70 +51,96 @@ class HistogramWindow(QWidget):
         self.accumulated_ax_z.set_ylabel("Counts")
         self.rphi_vs_r_ax.set_xlabel("r (cm)")
         self.rphi_vs_r_ax.set_ylabel("Delta rphi (cm)")
-        self.accumulated_ax_dca_z.set_xlabel("DCA z (cm)")
-        self.accumulated_ax_dca_z.set_ylabel("Counts")
+        self.accumulated_ax_pca_xy.set_xlabel("PCA x (cm)")
+        self.accumulated_ax_pca_xy.set_ylabel("PCA y (cm)")
+        self.accumulated_ax_pca_z.set_xlabel("PCA z (cm)")
+        self.accumulated_ax_pca_z.set_ylabel("Counts")
 
         # Store all delta values for accumulation
         self.accumulated_delta_rphi = []
         self.accumulated_delta_z = []
         self.accumulated_r_values = []
-        self.accumulated_dca_z = []
 
-    def add_histograms(self, delta_rphi, delta_z, track_id, points=None, dca_z=None):
+        self.accumulated_pca_xy = []
+        self.accumulated_pca_z = []
+
+    def add_histograms(self, delta_rphi, delta_z, track_id, points=None, pca=None):
         """Add new histograms for a new track and update accumulated histograms."""
         # --- Individual Histograms ---
 
         # Clear individual histograms
         self.individual_ax_rphi.cla()
         self.individual_ax_z.cla()
+        if delta_rphi is not None and len(delta_rphi) > 0:
+            # Plot individual track delta_rphi
+            self.individual_ax_rphi.hist(
+                delta_rphi, bins=50, range=(-1, 1), color="red", alpha=0.7
+            )
+            self.individual_ax_rphi.set_title(f"Track {track_id} Delta rphi")
+            self.individual_ax_rphi.set_xlabel("Delta rphi (cm)")
+            self.individual_ax_rphi.set_ylabel("Counts")
 
-        # Plot individual track delta_rphi
-        self.individual_ax_rphi.hist(
-            delta_rphi, bins=50, range=(-1, 1), color="red", alpha=0.7
-        )
-        self.individual_ax_rphi.set_title(f"Track {track_id} Delta rphi")
-        self.individual_ax_rphi.set_xlabel("Delta rphi (cm)")
-        self.individual_ax_rphi.set_ylabel("Counts")
+            # Calculate and annotate mean and std for delta_rphi
+            mean_rphi = np.mean(delta_rphi)
+            std_rphi = np.std(delta_rphi)
+            self.individual_ax_rphi.text(
+                0.95,
+                0.95,
+                f"mean={mean_rphi:.4f}, std={std_rphi:.4f}",
+                transform=self.individual_ax_rphi.transAxes,
+                ha="right",
+                va="top",
+                bbox=dict(facecolor="white", alpha=0.5),
+            )
 
-        # Calculate and annotate mean and std for delta_rphi
-        mean_rphi = np.mean(delta_rphi)
-        std_rphi = np.std(delta_rphi)
-        self.individual_ax_rphi.text(
-            0.95,
-            0.95,
-            f"mean={mean_rphi:.4f}, std={std_rphi:.4f}",
-            transform=self.individual_ax_rphi.transAxes,
-            ha="right",
-            va="top",
-            bbox=dict(facecolor="white", alpha=0.5),
-        )
+        else:
+            # If no data, indicate that on the axis
+            self.individual_ax_rphi.text(
+                0.5,
+                0.5,
+                "No delta rphi data",
+                transform=self.individual_ax_rphi.transAxes,
+                ha="center",
+                va="center",
+            )
+            self.individual_ax_rphi.set_title(f"Track {track_id} Delta rphi")
 
         # Plot individual track delta_z
-        self.individual_ax_z.hist(
-            delta_z, bins=50, range=(-2, 2), color="blue", alpha=0.7
-        )
-        self.individual_ax_z.set_title(f"Track {track_id} Delta z")
-        self.individual_ax_z.set_xlabel("Delta z (cm)")
-        self.individual_ax_z.set_ylabel("Counts")
+        if delta_z is not None and len(delta_z) > 0:
+            self.individual_ax_z.hist(
+                delta_z, bins=50, range=(-2, 2), color="blue", alpha=0.7
+            )
+            self.individual_ax_z.set_title(f"Track {track_id} Delta z")
+            self.individual_ax_z.set_xlabel("Delta z (cm)")
+            self.individual_ax_z.set_ylabel("Counts")
 
-        # Calculate and annotate mean and std for delta_z
-        mean_z = np.mean(delta_z)
-        std_z = np.std(delta_z)
-        self.individual_ax_z.text(
-            0.95,
-            0.95,
-            f"mean={mean_z:.4f}, std={std_z:.4f}",
-            transform=self.individual_ax_z.transAxes,
-            ha="right",
-            va="top",
-            bbox=dict(facecolor="white", alpha=0.5),
-        )
-
+            # Calculate and annotate mean and std for delta_z
+            mean_z = np.mean(delta_z)
+            std_z = np.std(delta_z)
+            self.individual_ax_z.text(
+                0.95,
+                0.95,
+                f"mean={mean_z:.4f}, std={std_z:.4f}",
+                transform=self.individual_ax_z.transAxes,
+                ha="right",
+                va="top",
+                bbox=dict(facecolor="white", alpha=0.5),
+            )
+        else:
+            self.individual_ax_z.text(
+                0.5,
+                0.5,
+                "No delta z data",
+                transform=self.individual_ax_z.transAxes,
+                ha="center",
+                va="center",
+            )
+            self.individual_ax_z.set_title(f"Track {track_id} Delta z")
         # --- Accumulated Histograms ---
 
         # Accumulate the delta values
-        self.accumulated_delta_rphi.extend(delta_rphi)
-        self.accumulated_delta_z.extend(delta_z)
+        self.accumulated_delta_rphi.extend(delta_rphi if delta_rphi is not None else [])
+        self.accumulated_delta_z.extend(delta_z if delta_z is not None else [])
 
         # Clear accumulated histograms
         self.accumulated_ax_rphi.cla()
@@ -131,17 +159,18 @@ class HistogramWindow(QWidget):
         self.accumulated_ax_rphi.set_ylabel("Counts")
 
         # Calculate and annotate mean and std for accumulated delta_rphi
-        mean_acc_rphi = np.mean(self.accumulated_delta_rphi)
-        std_acc_rphi = np.std(self.accumulated_delta_rphi)
-        self.accumulated_ax_rphi.text(
-            0.95,
-            0.95,
-            f"mean={mean_acc_rphi:.4f}, std={std_acc_rphi:.4f}",
-            transform=self.accumulated_ax_rphi.transAxes,
-            ha="right",
-            va="top",
-            bbox=dict(facecolor="white", alpha=0.5),
-        )
+        if len(self.accumulated_delta_rphi) > 0:
+            mean_acc_rphi = np.mean(self.accumulated_delta_rphi)
+            std_acc_rphi = np.std(self.accumulated_delta_rphi)
+            self.accumulated_ax_rphi.text(
+                0.95,
+                0.95,
+                f"mean={mean_acc_rphi:.4f}, std={std_acc_rphi:.4f}",
+                transform=self.accumulated_ax_rphi.transAxes,
+                ha="right",
+                va="top",
+                bbox=dict(facecolor="white", alpha=0.5),
+            )
 
         # Plot accumulated delta_z
         self.accumulated_ax_z.hist(
@@ -152,17 +181,18 @@ class HistogramWindow(QWidget):
         self.accumulated_ax_z.set_ylabel("Counts")
 
         # Calculate and annotate mean and std for accumulated delta_z
-        mean_acc_z = np.mean(self.accumulated_delta_z)
-        std_acc_z = np.std(self.accumulated_delta_z)
-        self.accumulated_ax_z.text(
-            0.95,
-            0.95,
-            f"mean={mean_acc_z:.4f}, std={std_acc_z:.4f}",
-            transform=self.accumulated_ax_z.transAxes,
-            ha="right",
-            va="top",
-            bbox=dict(facecolor="white", alpha=0.5),
-        )
+        if len(self.accumulated_delta_z) > 0:
+            mean_acc_z = np.mean(self.accumulated_delta_z)
+            std_acc_z = np.std(self.accumulated_delta_z)
+            self.accumulated_ax_z.text(
+                0.95,
+                0.95,
+                f"mean={mean_acc_z:.4f}, std={std_acc_z:.4f}",
+                transform=self.accumulated_ax_z.transAxes,
+                ha="right",
+                va="top",
+                bbox=dict(facecolor="white", alpha=0.5),
+            )
 
         # --- Delta rphi vs. r Plot ---
         if points is not None:
@@ -178,16 +208,15 @@ class HistogramWindow(QWidget):
                 print(
                     f"r_values length: {len(r_values)}, delta_rphi length: {len(delta_rphi)}"
                 )
-            
+
                 self.rphi_vs_r_ax.cla()
                 self.rphi_vs_r_ax.set_title(
                     f"Track {track_id} Delta rphi vs. r (Plot Skipped Due to Mismatch)"
                 )
             else:
-                
+
                 self.rphi_vs_r_ax.cla()
 
-                
                 self.rphi_vs_r_ax.scatter(r_values, delta_rphi, alpha=0.5, s=20)
                 self.rphi_vs_r_ax.set_title(f"Track {track_id} Delta rphi vs. r")
                 self.rphi_vs_r_ax.set_xlabel("r (cm)")
@@ -218,17 +247,40 @@ class HistogramWindow(QWidget):
                 self.z_vs_z_ax.set_ylabel("Delta z (cm)")
                 self.z_vs_z_ax.grid(True, linestyle="--", alpha=0.7)
                 self.z_vs_z_ax.set_ylim(-2, 2)  # tweak as needed
-                
-                
-        if dca_z is not None:
-            self.accumulated_dca_z.append(dca_z)
-            self.accumulated_ax_dca_z.cla()
-            self.accumulated_ax_dca_z.hist(
-                self.accumulated_dca_z, bins=50, color="orange", alpha=0.7
+
+        if pca is not None:
+            pca_z = pca[2]
+            self.accumulated_pca_z.append(pca_z)
+            self.accumulated_ax_pca_z.cla()
+
+            self.accumulated_ax_pca_z.hist(
+                self.accumulated_pca_z, bins=50, color="orange", alpha=0.7
             )
-            self.accumulated_ax_dca_z.set_title("Accumulated DCA z")
-            self.accumulated_ax_dca_z.set_xlabel("DCA z (cm)")
-            self.accumulated_ax_dca_z.set_ylabel("Counts")
+            self.accumulated_ax_pca_z.set_title("Accumulated PCA z")
+            self.accumulated_ax_pca_z.set_xlabel("PCA z (cm)")
+            self.accumulated_ax_pca_z.set_ylabel("Counts")
+
+            mean_acc_pca_z = np.mean(self.accumulated_pca_z)
+            std_acc_pca_z = np.std(self.accumulated_pca_z)
+
+            self.accumulated_ax_pca_z.text(
+                0.95,
+                0.95,
+                f"mean={mean_acc_pca_z:.4f}, std={std_acc_pca_z:.4f}",
+                transform=self.accumulated_ax_pca_z.transAxes,
+                ha="right",
+                va="top",
+                bbox=dict(facecolor="white", alpha=0.5),
+            )
+
+            self.accumulated_pca_xy.append((pca[0], pca[1]))
+            self.accumulated_ax_pca_xy.cla()
+            pca_x = [pt[0] for pt in self.accumulated_pca_xy]
+            pca_y = [pt[1] for pt in self.accumulated_pca_xy]
+            self.accumulated_ax_pca_xy.scatter(pca_x, pca_y, color="magenta", alpha=0.7)
+            self.accumulated_ax_pca_xy.set_title("Accumulated PCA (x vs y)")
+            self.accumulated_ax_pca_xy.set_xlabel("PCA x (cm)")
+            self.accumulated_ax_pca_xy.set_ylabel("PCA y (cm)")
 
         # Adjust layout to prevent overlap
         self.figure.tight_layout()
