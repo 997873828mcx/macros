@@ -246,6 +246,7 @@ class GeometricProjectionWindow(QMainWindow):
         # ------------- Camera Setup -------------
         self.setup_camera(projection_type)
         self.plotter.reset_camera()
+        self.plotter.render()
 
     def setup_camera(self, projection_type: str):
         """

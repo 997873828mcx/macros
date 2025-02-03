@@ -629,9 +629,9 @@ class MainWindow(QMainWindow):
         x_min, x_max = self.x_range_slider.value()
         y_min, y_max = self.y_range_slider.value()
         z_min, z_max = self.z_range_slider.value()
-        print(
-            f"DEBUG {'(fitting)' if for_fitting else ''}: Spatial ranges: X[{x_min}, {x_max}], Y[{y_min}, {y_max}], Z[{z_min}, {z_max}]"
-        )
+        # print(
+        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Spatial ranges: X[{x_min}, {x_max}], Y[{y_min}, {y_max}], Z[{z_min}, {z_max}]"
+        # )
 
         spatial_mask = (
             (points[:, 0] >= x_min)
@@ -642,22 +642,22 @@ class MainWindow(QMainWindow):
             & (points[:, 2] <= z_max)
         )
 
-        print(
-            f"DEBUG {'(fitting)' if for_fitting else ''}: X range in data: [{np.min(points[:, 0])}, {np.max(points[:, 0])}]"
-        )
-        print(
-            f"DEBUG {'(fitting)' if for_fitting else ''}: Y range in data: [{np.min(points[:, 1])}, {np.max(points[:, 1])}]"
-        )
-        print(
-            f"DEBUG {'(fitting)' if for_fitting else ''}: Z range in data: [{np.min(points[:, 2])}, {np.max(points[:, 2])}]"
-        )
+        # print(
+        #    f"DEBUG {'(fitting)' if for_fitting else ''}: X range in data: [{np.min(points[:, 0])}, {np.max(points[:, 0])}]"
+        # )
+        # print(
+        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Y range in data: [{np.min(points[:, 1])}, {np.max(points[:, 1])}]"
+        # )
+        # print(
+        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Z range in data: [{np.min(points[:, 2])}, {np.max(points[:, 2])}]"
+        # )
 
         # print(f"Points after spatial filter: {np.sum(spatial_mask)}")
 
         combined_mask = spatial_mask & event_mask
-        print(
-            f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining masks: {np.sum(combined_mask)}"
-        )
+        # print(
+        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining masks: {np.sum(combined_mask)}"
+        # )
 
         nmaps_values = data.point_data.get("nmaps", None)
 
@@ -668,9 +668,9 @@ class MainWindow(QMainWindow):
             """print(
                 f"Points after NMAPS filter (>= {nmaps_threshold}): {np.sum(nmaps_mask)}"
             )"""
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining NMAPS filter: {np.sum(combined_mask)}"
-            )
+            # print(
+            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining NMAPS filter: {np.sum(combined_mask)}"
+            # )
         else:
             print("No 'nmaps' attribute found; skipping NMAPS filter.")
 
@@ -689,9 +689,9 @@ class MainWindow(QMainWindow):
 
             adc_mask = adc_values >= adc_threshold
             combined_mask &= adc_mask
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining ADC filter: {np.sum(combined_mask)}"
-            )
+            # print(
+            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining ADC filter: {np.sum(combined_mask)}"
+            # )
 
         else:
             print("No 'adc' attribute found; skipping ADC filter.")
@@ -730,29 +730,29 @@ class MainWindow(QMainWindow):
 
         if crossing_val_sil != -2000:
             silicon_mask &= crossing_data == crossing_val_sil
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after crossing_val_sil filter ({crossing_val_sil}): {np.sum(crossing_data == crossing_val_sil)}"
-            )
+            # print(
+            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after crossing_val_sil filter ({crossing_val_sil}): {np.sum(crossing_data == crossing_val_sil)}"
+            # )
         if t_cross_val_sil != -2000:
             silicon_mask &= t_crossing_data == t_cross_val_sil
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after t_cross_val_sil filter ({t_cross_val_sil}): {np.sum(t_crossing_data == t_cross_val_sil)}"
-            )
+            # print(
+            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after t_cross_val_sil filter ({t_cross_val_sil}): {np.sum(t_crossing_data == t_cross_val_sil)}"
+            # )
         if track_id_val_sil != -1:
             silicon_mask &= track_id_data == track_id_val_sil
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_id_val_sil filter ({track_id_val_sil}): {np.sum(track_id_data == track_id_val_sil)}"
-            )
+            # print(
+            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_id_val_sil filter ({track_id_val_sil}): {np.sum(track_id_data == track_id_val_sil)}"
+            # )
         if self.seed_checkbox_silicon.isChecked():
             silicon_mask &= used_in_seed == 1
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after seed_checkbox_silicon filter: {np.sum(used_in_seed == 1)}"
-            )
+            # print(
+            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after seed_checkbox_silicon filter: {np.sum(used_in_seed == 1)}"
+            # )
         if self.track_checkbox_silicon.isChecked():
             silicon_mask &= used_in_track == 1
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_checkbox_silicon filter: {np.sum(used_in_track == 1)}"
-            )
+            # print(
+            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_checkbox_silicon filter: {np.sum(used_in_track == 1)}"
+            # )
 
         is_tpc = layer_array >= 7
 
@@ -775,14 +775,14 @@ class MainWindow(QMainWindow):
 
         if t_cross_val_tpc != -2000:
             tpc_mask &= t_crossing_data == t_cross_val_tpc
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after t_cross_val_tpc filter ({t_cross_val_tpc}): {np.sum(t_crossing_data == t_cross_val_tpc)}"
-            )
+            # print(
+            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after t_cross_val_tpc filter ({t_cross_val_tpc}): {np.sum(t_crossing_data == t_cross_val_tpc)}"
+            # )
         if track_id_val_tpc != -1:
             tpc_mask &= track_id_data == track_id_val_tpc
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_id_val_tpc filter ({track_id_val_tpc}): {np.sum(track_id_data == track_id_val_tpc)}"
-            )
+            # print(
+            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_id_val_tpc filter ({track_id_val_tpc}): {np.sum(track_id_data == track_id_val_tpc)}"
+            # )
 
         # Sides
         if side_data is not None:
@@ -793,9 +793,9 @@ class MainWindow(QMainWindow):
                 sides_chosen.append(1)
             if sides_chosen:
                 tpc_mask &= np.isin(side_data, sides_chosen)
-                print(
-                    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after after sides_chosen filter ({sides_chosen}): {np.sum(np.isin(side_data, sides_chosen))}"
-                )
+                # print(
+                #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after after sides_chosen filter ({sides_chosen}): {np.sum(np.isin(side_data, sides_chosen))}"
+                # )
             else:
                 # If no sides are checked, TPC mask => no points
                 tpc_mask &= False
@@ -816,13 +816,13 @@ class MainWindow(QMainWindow):
         filtered_indices = np.where(combined_mask)[0]
         filtered_points = data.extract_points(filtered_indices)
         if filtered_points is None or filtered_points.n_points == 0:
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: No points passed the filters"
-            )
+            # print(
+            #    f"DEBUG {'(fitting)' if for_fitting else ''}: No points passed the filters"
+            # )
             return None
-        print(
-            f"DEBUG {'(fitting)' if for_fitting else ''}: Final point count: {filtered_points.n_points}"
-        )
+        # print(
+        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Final point count: {filtered_points.n_points}"
+        # )
 
         if for_fitting:
 
@@ -1458,6 +1458,13 @@ class MainWindow(QMainWindow):
         self.create_tpc_cylinders()
 
         self.plotter_widget.show_axes()
+        if self.projection_window is not None and self.projection_window.isVisible():
+            self.projection_window.update_display(
+                clusters_info=self.display_filtered_clusters_info,
+                hits_info=self.display_filtered_hits_info,
+                helix_lines=self.track_lines,
+                projection_type=self.projection_window.projection_combo.currentText(),
+            )
 
     def create_tpc_cylinders(self):
         """
@@ -2097,8 +2104,8 @@ class MainWindow(QMainWindow):
 
     def show_projection_window(self):
         """Handle showing the 2D projection window."""
-
-        self.projection_window = GeometricProjectionWindow(self)
+        if self.projection_window is None:
+            self.projection_window = GeometricProjectionWindow(self)
 
         self.projection_window.update_display(
             clusters_info=self.display_filtered_clusters_info,  # Pass all clusters with their colors
@@ -2108,6 +2115,8 @@ class MainWindow(QMainWindow):
         )
 
         # Show the window
+        self.projection_window.raise_()
+        self.projection_window.activateWindow()
         self.projection_window.show()
 
     def toggle_field_mode(self):
