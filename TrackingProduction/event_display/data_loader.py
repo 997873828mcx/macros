@@ -68,7 +68,25 @@ def load_data_from_root(filename):
     cluster_polydata = pv.PolyData(cpoints)
     for name in cluster_data.keys():
         if name not in ("gx", "gy", "gz"):
-            cluster_polydata.point_data[name] = cluster_data[name]
+            try:
+                if name == "clust_hitkeys":
+                    # Convert the vector of hitkeys into a list or object array
+                    hitkeys_list = [
+                        list(hitkeys) if isinstance(hitkeys, np.ndarray) else []
+                        for hitkeys in cluster_data[name]
+                    ]
+                    cluster_polydata.hitkeys = hitkeys_list
+                    print("Hitkeys data verification:")
+                    print(f"Number of clusters with hitkeys: {len(hitkeys_list)}")
+                    print(f"First 3 clusters' hitkeys: {hitkeys_list[:3]}")
+                    print(
+                        f"Number of hits in first cluster: {len(hitkeys_list[0]) if hitkeys_list else 0}"
+                    )
+                else:
+                    # Handle other non-vector branches normally
+                    cluster_polydata.point_data[name] = cluster_data[name]
+            except Exception as e:
+                print(f"Warning: Could not add branch {name} to point_data: {e}")
 
     # Add a 'data_type' attribute to distinguish clusters (0)
     cluster_polydata.point_data["data_type"] = np.zeros(

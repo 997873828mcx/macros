@@ -1360,6 +1360,15 @@ class MainWindow(QMainWindow):
                 # Use the data_loader module to load data
                 cluster_polydata, hit_polydata = load_data_from_root(filename)
 
+                if hasattr(cluster_polydata, "hitkeys"):
+                    hitkeys = cluster_polydata.hitkeys
+                    print("In GUI - Hitkeys verification:")
+                    print(f"First cluster's hitkeys: {hitkeys[0]}")
+                    print(f"Type of hitkeys data: {type(hitkeys)}")
+                    print(f"Length of hitkeys list: {len(hitkeys)}")
+                else:
+                    print("Warning: No hitkeys found in cluster_polydata")
+
             except FileNotFoundError as fnf_err:
                 QMessageBox.critical(self, "Load Error", str(fnf_err))
             except KeyError as key_err:

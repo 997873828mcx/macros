@@ -44,7 +44,14 @@
 #include <trackingdiagnostics/TrackResiduals.h>
 #include <trackingdiagnostics/TrkrNtuplizer.h>
 #include <trackingdiagnostics/KshortReconstruction.h>
-#include <stdio.h>
+
+#include <fstream>
+#include <iostream>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+#include <limits>
+#include <string>
 
 /*#include <float.h>
 
@@ -70,21 +77,16 @@ R__LOAD_LIBRARY(libTrackingDiagnostics.so)
 R__LOAD_LIBRARY(libtrackingqa.so)
 R__LOAD_LIBRARY(libEventDisplay.so)
 R__LOAD_LIBRARY(libtpcqa.so)
-// 52844
+
 void Fun4All_FullReconstruction(
     const int nIn = 1,
     const std::string tpcfilename = "DST_STREAMING_EVENT_run2pp_ana441_2024p007-00052844-00000.root",
     const std::string tpcdir = "/sphenix/lustre01/sphnxpro/physics/slurp/streaming/physics/ana441_2024p007/run_00052800_00052900/",
     const std::string outfilename = "clusters_seeds",
     const bool convertSeeds = false,
-    const int nEvents = 30)
+    const int nEvents = 5)
 {
 
-  // Get current date
-  auto now = std::time(nullptr);
-  auto tm = *std::localtime(&now);
-  std::ostringstream dateStr;
-  dateStr << std::put_time(&tm, "%Y%m%d");
   std::string inputtpcRawHitFile = tpcdir + tpcfilename;
 
   G4TRACKING::convert_seeds_to_svtxtracks = convertSeeds;
@@ -112,16 +114,16 @@ void Fun4All_FullReconstruction(
   ACTSGEOM::mvtxMisalignment = 100;
   ACTSGEOM::inttMisalignment = 100.;
   ACTSGEOM::tpotMisalignment = 100.;
-  TString outfile = outfilename + "_" + runnumber + "-" + segment + ".root";
+  TString outfile = TString::Format("%s_%d-%d.root", outfilename.c_str(), runnumber, segment);
   std::string theOutfile = outfile.Data();
 
-  string outDir = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/myKShortReco/";
-  string outputFileName = "outputFile_kso_" + to_string(runnumber) + "_" + to_string(segment);
+  std::string outDir = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/myKShortReco/";
+  std::string outputFileName = "outputFile_" + std::to_string(runnumber) + "_" + std::to_string(segment);
 
-  string outputRecoDir = outDir + "inReconstruction/";
-  string makeDirectory = "mkdir -p " + outputRecoDir;
+  std::string outputRecoDir = outDir + "inReconstruction/";
+  std::string makeDirectory = "mkdir -p " + outputRecoDir;
   system(makeDirectory.c_str());
-  string outputRecoFile = outputRecoDir + outputFileName + ".root";
+  std::string outputRecoFile = outputRecoDir + outputFileName + ".root";
 
   auto se = Fun4AllServer::instance();
   se->Verbosity(2);
@@ -154,6 +156,15 @@ void Fun4All_FullReconstruction(
   // G4TPC::USE_PHI_AS_RAD_AVERAGE_CORRECTIONS = false;
   // G4TPC::average_correction_filename = std::string(getenv("CALIBRATIONROOT")) + "/distortion_maps/average_minus_static_distortion_inverted_10-new.root";
 
+  std::string edgeStatus = (G4TPC::ENABLE_MODULE_EDGE_CORRECTIONS ? "edgeOn" : "edgeOff");
+  std::string staticStatus = (G4TPC::ENABLE_STATIC_CORRECTIONS ? "staticOn" : "staticOff");
+  std::string seedType = (convertSeeds ? "seeds" : "acts");
+
+  std::time_t now = std::time(nullptr);
+  std::tm tm = *std::localtime(&now);
+  char dateStr[9];
+  std::strftime(dateStr, sizeof(dateStr), "%m%d", &tm);
+
   G4MAGNET::magfield_rescale = 1;
   TrackingInit();
 
@@ -171,7 +182,13 @@ void Fun4All_FullReconstruction(
   Intt_Clustering();
 
   Tpc_LaserEventIdentifying();
-  TString outfileTpcClusterizer = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusterizer_edgeOff_staticOff_acts_0121.root";
+
+  TString outfileTpcClusterizer = TString::Format("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/%s_clusterizer_%s_%s_%s_%s.root",
+                                                  outputFileName.c_str(),
+                                                  edgeStatus.c_str(),
+                                                  staticStatus.c_str(),
+                                                  seedType.c_str(),
+                                                  dateStr);
   std::string outTpcClusterizerString(outfileTpcClusterizer.Data());
   auto tpcclusterizer = new TpcClusterizer;
   tpcclusterizer->Verbosity(0);
@@ -215,7 +232,12 @@ void Fun4All_FullReconstruction(
   /*
    * Tpc Seeding
    */
-  TString outfileSeed = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_clusters_edgeOff_staticOff_acts_0121.root";
+  TString outfileSeed = TString::Format("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/%s_clusters_%s_%s_%s_%s.root",
+                                        outputFileName.c_str(),
+                                        edgeStatus.c_str(),
+                                        staticStatus.c_str(),
+                                        seedType.c_str(),
+                                        dateStr);
   std::string outstring(outfileSeed.Data());
   auto seeder = new PHCASeeding("PHCASeeding");
   double fieldstrength = std::numeric_limits<double>::quiet_NaN(); // set by isConstantField if constant
@@ -348,7 +370,7 @@ void Fun4All_FullReconstruction(
        * store in dedicated structure for distortion correction
        */
       auto residuals = new PHTpcResiduals;
-      const TString tpc_residoutfile = theOutfile + "_PhTpcResiduals.root";
+      const TString tpc_residoutfile = TString(theOutfile.c_str()) + "_PhTpcResiduals.root";
       residuals->setOutputfile(tpc_residoutfile.Data());
       residuals->setUseMicromegas(G4TRACKING::SC_USE_MICROMEGAS);
 
@@ -371,7 +393,12 @@ void Fun4All_FullReconstruction(
   finder->setOutlierPairCut(0.1);
   se->registerSubsystem(finder);
 
-  TString residoutfile = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/" + outputFileName + "_resid_edgeOff_staticOff_acts_0121.root";
+  TString residoutfile = TString::Format("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/%s_resid_%s_%s_%s_%s.root",
+                                         outputFileName.c_str(),
+                                         edgeStatus.c_str(),
+                                         staticStatus.c_str(),
+                                         seedType.c_str(),
+                                         dateStr);
   std::string residstring(residoutfile.Data());
 
   auto resid = new TrackResiduals("TrackResiduals");
@@ -412,7 +439,7 @@ void Fun4All_FullReconstruction(
   se->End();
   se->PrintTimer();
 
-  ifstream file(outputRecoFile.c_str());
+  std::ifstream file(outputRecoFile.c_str());
 
   if (Enable::QA)
   {
