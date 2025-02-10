@@ -178,7 +178,11 @@ void Fun4All_FullReconstruction(
   Tpc_HitUnpacking();
   Micromegas_HitUnpacking();
 
-  Mvtx_Clustering();
+  MvtxClusterizer* mvtxclusterizer = new MvtxClusterizer("MvtxClusterizer");
+  int verbosity = std::max(Enable::VERBOSITY, Enable::MVTX_VERBOSITY);
+  mvtxclusterizer->Verbosity(verbosity);
+  se->registerSubsystem(mvtxclusterizer);
+  
   Intt_Clustering();
 
   Tpc_LaserEventIdentifying();
@@ -219,6 +223,7 @@ void Fun4All_FullReconstruction(
 
   auto silicon_Seeding = new PHActsSiliconSeeding; // 种子并合并种子
   silicon_Seeding->Verbosity(0);
+  silicon_Seeding->setStrobeRange(-5,5);
   // these get us to about 83% INTT > 1
   silicon_Seeding->setinttRPhiSearchWindow(0.4);
   silicon_Seeding->setinttZSearchWindow(2.0);
@@ -300,11 +305,7 @@ void Fun4All_FullReconstruction(
   // Match the TPC track stubs from the CA seeder to silicon track stubs from PHSiliconTruthTrackSeeding
   auto silicon_match = new PHSiliconTpcTrackMatching;
   silicon_match->Verbosity(0);
-  silicon_match->set_x_search_window(2.);
-  silicon_match->set_y_search_window(2.);
-  silicon_match->set_z_search_window(5.);
-  silicon_match->set_phi_search_window(0.2);
-  silicon_match->set_eta_search_window(0.1);
+  silicon_match->set_use_legacy_windowing(false);
   silicon_match->set_pp_mode(TRACKING::pp_mode);
   se->registerSubsystem(silicon_match);
 
