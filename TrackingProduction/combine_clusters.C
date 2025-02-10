@@ -147,6 +147,7 @@ void combine_clusters()
     float adc;
     float tdriftmax;
     float driftVelocity;
+    int event;
   };
 
   /* std::map<unsigned long long, TrackingInfo> seeding_map;

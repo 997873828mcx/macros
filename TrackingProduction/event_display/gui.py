@@ -69,6 +69,9 @@ class MainWindow(QMainWindow):
         self.color_index = 0
 
         self.loaded_files = {}
+
+        self.cluster_actors = []
+        self.hit_actors = []
         # Initialize fitting step (1: initial fitting, 2: direct fitting)
         self.fitting_step = 1
         self.using_line_fitting = False
@@ -507,6 +510,10 @@ class MainWindow(QMainWindow):
 
         track_layout.addWidget(self.track_toggle_checkbox)
 
+        self.btn_toggle_associated_hits = QPushButton("Toggle Associated Hits")
+        self.btn_toggle_associated_hits.clicked.connect(self.toggle_associated_hits)
+        track_layout.addWidget(self.btn_toggle_associated_hits)
+
         self.toggle_filter_checkbox = QCheckBox("Show Points Outside Tube")
         self.toggle_filter_checkbox.setChecked(True)
         self.toggle_filter_checkbox.stateChanged.connect(self.update_display)
@@ -562,6 +569,9 @@ class MainWindow(QMainWindow):
         self.helix_params_refined = None
         self.line_params_initial = None
         self.line_params_refined = None
+
+        self.associated_hits_hidden = False  # False means show global hits normally.
+        self.selected_cluster_index = None
 
         self.filtered_clusters = None
 
@@ -671,8 +681,8 @@ class MainWindow(QMainWindow):
             # print(
             #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining NMAPS filter: {np.sum(combined_mask)}"
             # )
-        else:
-            print("No 'nmaps' attribute found; skipping NMAPS filter.")
+        # else:
+        # print("No 'nmaps' attribute found; skipping NMAPS filter.")
 
         # --- ADC Filtering ---
         adc_values = data.point_data.get("adc", None)
@@ -815,6 +825,19 @@ class MainWindow(QMainWindow):
 
         filtered_indices = np.where(combined_mask)[0]
         filtered_points = data.extract_points(filtered_indices)
+        if hasattr(data, "hitkeys"):
+            # Verify that hitkeys list matches the number of points
+            if len(data.hitkeys) == data.n_points:
+                filtered_points.hitkeys = [data.hitkeys[i] for i in filtered_indices]
+            else:
+                print(
+                    f"Warning: hitkeys size ({len(data.hitkeys)}) doesn't match number of points ({data.n_points})"
+                )
+                # Could also print first few elements to debug:
+                print(f"First few hitkeys: {data.hitkeys[:5]}")
+                print(f"Number of filtered points: {filtered_points.n_points}")
+                print(f"Sample filtered indices: {filtered_indices[:5]}")
+
         if filtered_points is None or filtered_points.n_points == 0:
             # print(
             #    f"DEBUG {'(fitting)' if for_fitting else ''}: No points passed the filters"
@@ -1253,8 +1276,36 @@ class MainWindow(QMainWindow):
         # Extract the mesh (dataset) from the picker
         mesh = picker.GetDataSet()
 
-        if point_id < 0 or mesh is None:
+        if point_id < 0:
             return
+
+        """if actor in self.cluster_actors:
+            # It's a cluster
+            mesh = picker.GetDataSet()  # The cluster polydata
+
+            self.last_picked_mesh = mesh
+            # point_id is valid for that mesh
+            self.selected_cluster_key = mesh.point_data["cluskey"][point_id]
+
+            info_text = f"Cluster (Index: {point_id})\n"
+            for attr in mesh.point_data.keys():
+                value = mesh.point_data[attr][point_id]
+                info_text += f"{attr}: {value}\n"
+            # etc. for other attributes
+            self.info_panel.setText(info_text)
+
+            # Store if needed for toggling hits
+            self.selected_cluster_index = point_id
+            self.selected_cluster_polydata = mesh
+
+        elif actor in self.hit_actors:
+            mesh = picker.GetDataSet()
+
+            info_text = f"Hit (Index: {point_id})\n"
+            for attr in mesh.point_data.keys():
+                value = mesh.point_data[attr][point_id]
+                info_text += f"{attr}: {value}\n"
+            self.info_panel.setText(info_text)"""
 
         # Ensure 'data_type' exists in the mesh's point data
         if "data_type" not in mesh.point_data:
@@ -1262,6 +1313,11 @@ class MainWindow(QMainWindow):
 
         # Retrieve the data_type for the picked point
         data_type = mesh.point_data["data_type"][point_id]
+
+        if data_type == 0:  # Cluster
+            self.last_picked_mesh = mesh
+            self.selected_cluster_index = point_id
+            self.info_panel.setText(f"Selected Cluster (Point ID: {point_id})")
 
         if data_type not in (0, 1):
             return
@@ -1274,6 +1330,8 @@ class MainWindow(QMainWindow):
             info_text += f"{attr}: {value}\n"
 
         self.info_panel.setText(info_text)
+
+        # self.selected_cluster_index = point_id
 
     def on_point_picked_helix(self, picked_point, picker):
         """
@@ -1359,7 +1417,7 @@ class MainWindow(QMainWindow):
             try:
                 # Use the data_loader module to load data
                 cluster_polydata, hit_polydata = load_data_from_root(filename)
-
+                print("In GUI - Hitkeys verification:")
                 if hasattr(cluster_polydata, "hitkeys"):
                     hitkeys = cluster_polydata.hitkeys
                     print("In GUI - Hitkeys verification:")
@@ -1381,6 +1439,7 @@ class MainWindow(QMainWindow):
                 )
 
             self.add_file_to_combo(filename, cluster_polydata, hit_polydata)
+
         self.update_display()
 
     def add_file_to_combo(self, filename, cluster_data, hit_data):
@@ -1412,6 +1471,8 @@ class MainWindow(QMainWindow):
         camera_position = self.plotter_widget.camera_position
         # Clear the current plotter
         self.plotter_widget.clear()
+        # self.cluster_actors.clear()
+        # self.hit_actors.clear()
 
         self.display_filtered_clusters_info.clear()
         self.display_filtered_hits_info.clear()
@@ -1431,27 +1492,51 @@ class MainWindow(QMainWindow):
                     self.display_filtered_clusters_info.append(
                         (filtered_clusters_display, cluster_color, file_info)
                     )
+                    # cluster_actor = self.plotter_widget.add_mesh(
                     self.plotter_widget.add_mesh(
                         filtered_clusters_display,
                         style="points",
                         point_size=5,
                         color=cluster_color,
                     )
+                    # self.cluster_actors.append(cluster_actor)
 
             # --- Hits ---
             if file_info["hit"] is not None and file_info["hit"].n_points > 0:
                 filtered_hits_display = self._filter_data(file_info["hit"])
 
                 if filtered_hits_display and filtered_hits_display.n_points > 0:
+
+                    if (
+                        self.associated_hits_hidden
+                        and hasattr(self, "last_picked_mesh")
+                        and self.selected_cluster_index is not None
+                    ):
+                        try:
+                            selected_cluster_keys = self.last_picked_mesh.hitkeys[
+                                self.selected_cluster_index
+                            ]
+                            all_hitkeys = filtered_hits_display.point_data["hitkeykey"]
+                            # Create mask for hits that ARE associated with selected cluster
+                            # (note: removed the ~ to invert the logic)
+                            mask = np.isin(all_hitkeys, selected_cluster_keys)
+                            filtered_hits_display = (
+                                filtered_hits_display.extract_points(np.where(mask)[0])
+                            )
+                        except Exception as e:
+                            print(f"Error filtering associated hits: {e}")
+
                     self.display_filtered_hits_info.append(
                         (filtered_hits_display, "blue", file_info)
                     )
+                    # hit_actor = self.plotter_widget.add_mesh(
                     self.plotter_widget.add_mesh(
                         filtered_hits_display,
                         style="points",
                         point_size=5,
                         color="blue",
                     )
+                    # self.hit_actors.append(hit_actor)
 
         for actor in self.track_lines:
             # Re-add the stored actor to the renderer
@@ -2146,4 +2231,228 @@ class MainWindow(QMainWindow):
 
         # Clear any existing selections
         self.selected_points_first.clear()
+        self.update_display()
+
+    def toggle_associated_hits(self):
+        if self.selected_cluster_index is None:
+            QMessageBox.information(
+                self,
+                "Toggle Associated Hits",
+                "No cluster selected. Please click on a cluster first.",
+            )
+            return
+
+        print("\nDEBUG DATA ACCESS:")
+        print(f"Selected cluster index: {self.selected_cluster_index}")
+
+        """for filename, file_info in self.loaded_files.items():
+            cluster_data = file_info["cluster"]
+            if cluster_data is not None:
+                cluskey = cluster_data.point_data["cluskey"][
+                    self.selected_cluster_index
+                ]
+                print(f"Accessing via loaded_files[{filename}]: {cluskey}")"""
+
+        """# Ensure that cluster polydata is available. If not, attempt to get it from loaded_files.
+        if self.cluster_polydata is None:
+            if self.loaded_files:
+                # Here we just choose the first loaded file.
+                self.cluster_polydata = list(self.loaded_files.values())[0]["cluster"]
+            else:
+                QMessageBox.warning(
+                    self, "Toggle Associated Hits", "No cluster data available."
+                )
+                return
+
+        # Similarly, ensure that hit polydata is set.
+        if self.hit_polydata is None:
+            if self.loaded_files:
+                self.hit_polydata = list(self.loaded_files.values())[0]["hit"]
+            else:
+                QMessageBox.warning(
+                    self, "Toggle Associated Hits", "No hit data available."
+                )
+                return"""
+
+        cluster_cluskey = self.last_picked_mesh.point_data["cluskey"][
+            self.selected_cluster_index
+        ]
+        selected_cluster_keys = self.last_picked_mesh.hitkeys[
+            self.selected_cluster_index
+        ]
+        cluster_event = self.last_picked_mesh.point_data["event"][
+            self.selected_cluster_index
+        ]
+
+        print(f"Selected Cluster cluskey: {cluster_cluskey}")
+        print(f"Associated hitkeys: {selected_cluster_keys}")
+        print(f"Number of associated hitkeys: {len(selected_cluster_keys)}")
+        found_match = False
+        original_cluskey = None
+        for filename, file_info in self.loaded_files.items():
+            cluster_data = file_info["cluster"]
+
+            if cluster_data is not None:
+                try:
+                    original_cluskey = cluster_data.point_data["cluskey"][
+                        self.selected_cluster_index
+                    ]
+                    current_cluskey = self.last_picked_mesh.point_data["cluskey"][
+                        self.selected_cluster_index
+                    ]
+                    if original_cluskey == current_cluskey:
+                        found_match = True
+                        print(
+                            f"Verified cluster key matches original data in file: {filename}"
+                        )
+                        break
+                except (IndexError, KeyError):
+                    continue
+
+        if not found_match:
+            print("Warning: Could not verify cluster key against original data")
+
+        for filename, file_info in self.loaded_files.items():
+            hit_data = file_info["hit"]
+            if hit_data is not None:
+                all_hitkeys = hit_data.point_data.get("hitkeykey", None)
+                all_events = hit_data.point_data.get("event", None)
+                if all_hitkeys is not None and all_events is not None:
+                    # Get indices of associated hits
+                    hit_indices = [
+                        i
+                        for i, (key, event) in enumerate(zip(all_hitkeys, all_events))
+                        if key in selected_cluster_keys and event == cluster_event
+                    ]
+
+                    if hit_indices:
+                        # Initialize sums for clustz calculation
+
+                        print(
+                            f"Found {len(hit_indices)} matching hits in file {filename}"
+                        )
+                        t_sum = 0
+                        adc_sum = 0
+
+                        # Display information for each associated hit
+                        info_text = f"Associated Hits Information for event {cluster_event} (Total hits: {len(hit_indices)}):\n"
+                        info_text += f"Cluster key: {cluster_cluskey}\n"
+                        info_text += f"Associated hitkeys: {selected_cluster_keys}\n"
+                        info_text += "-" * 50 + "\n"
+
+                        for idx in hit_indices:
+                            t = hit_data.point_data["t"][idx]
+                            adc = hit_data.point_data["adc"][idx]
+                            tdriftmax = hit_data.point_data["tdriftmax"][idx]
+                            # zdriftlength = hit_data.point_data["zdriftlength"][idx]
+                            drift_velocity = hit_data.point_data["driftVelocity"][idx]
+                            hitkey = all_hitkeys[idx]
+                            event = all_events[idx]
+
+                            info_text += (
+                                f"Hit {idx} (hitkey: {hitkey}, event: {event}):\n"
+                            )
+                            info_text += f"  t: {t:.2f}\n"
+                            info_text += f"  adc: {adc:.2f}\n"
+                            info_text += f"  tdriftmax: {tdriftmax:.2f}\n"
+                            # info_text += f"  zdriftlength: {zdriftlength:.2f}\n"
+                            info_text += f"  driftVelocity: {drift_velocity:.2f}\n"
+                            info_text += "-" * 30 + "\n"
+
+                            # Accumulate for clustz calculation
+                            t_sum += t * adc
+                            adc_sum += adc
+
+                        if adc_sum > 0:
+                            clust = t_sum / adc_sum
+                            # Use values from the first hit for tdriftmax and drift_velocity
+                            first_hit = hit_indices[0]
+                            tdriftmax = hit_data.point_data["tdriftmax"][first_hit]
+                            drift_velocity = hit_data.point_data["driftVelocity"][
+                                first_hit
+                            ]
+
+                            zdriftlength = clust * drift_velocity
+                            clustz = tdriftmax * drift_velocity - zdriftlength
+
+                            info_text += "\nCluster Calculations:\n"
+                            info_text += f"Calculated clustz: {clustz:.2f}\n"
+
+                        self.info_panel.setText(info_text)
+
+        """try:
+            # Retrieve the hit keys for the selected cluster.
+            selected_cluster_keys = self.cluster_polydata.hitkeys[
+                self.selected_cluster_index
+            ]
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Toggle Associated Hits",
+                f"Error retrieving hit keys for selected cluster: {e}",
+            )
+            return
+
+        try:
+            # Assuming the 'cluskey' branch is stored in point_data and is an array.
+            cluster_cluskey = self.cluster_polydata.point_data["cluskey"][
+                self.selected_cluster_index
+            ]
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Toggle Associated Hits",
+                f"Error retrieving cluskey for selected cluster: {e}",
+            )
+            return"""
+
+        # print(f"Selected Cluster cluskey: direct {cluster_cluskey}")
+        # print(f"Associated hitkeys: {selected_cluster_keys}")
+
+        """if hasattr(self, "last_picked_mesh"):
+            mesh_cluskey = self.last_picked_mesh.point_data["cluskey"][
+                self.selected_cluster_index
+            ]
+            print(f"Via last picked mesh: {mesh_cluskey}")"""
+
+        """try:
+            # Retrieve all hit keys from the hit polydata.
+            all_hitkeys = self.hit_polydata.point_data["hitkeykey"]
+        except Exception as e:
+            QMessageBox.warning(
+                self, "Toggle Associated Hits", f"Hit keys not found in hit data: {e}"
+            )
+            return
+
+        # Filter the hits: create a mask that is True for hits NOT in the selected cluster.
+        mask = ~np.isin(all_hitkeys, selected_cluster_keys)
+        associated_indices = np.where(mask)[0]
+
+        if associated_indices.size == 0:
+            QMessageBox.information(
+                self,
+                "Toggle Associated Hits",
+                "No associated hits found for the selected cluster.",
+            )
+            return
+
+        # For a robust solution, use a flag (e.g. self.associated_hits_hidden) and refresh update_display.
+        self.associated_hits_hidden = not getattr(self, "associated_hits_hidden", False)
+        # Update the toggle button text to reflect the state.
+        new_text = (
+            "Show Associated Hits"
+            if self.associated_hits_hidden
+            else "Hide Associated Hits"
+        )
+        self.btn_toggle_associated_hits.setText(new_text)
+        # Call update_display so that when the hits are added, they are filtered accordingly.
+        self.update_display()"""
+
+        self.associated_hits_hidden = not getattr(self, "associated_hits_hidden", False)
+        new_text = (
+            "Show Associated Hits"
+            if self.associated_hits_hidden
+            else "Hide Associated Hits"
+        )
+        self.btn_toggle_associated_hits.setText(new_text)
         self.update_display()
