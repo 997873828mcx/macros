@@ -22,10 +22,17 @@ from qtpy.QtWidgets import (
     QMessageBox,
     QRadioButton,
     QComboBox,
+    QDockWidget,
+    QToolBar,
+    QAction,
+    QStatusBar,
+    QTabWidget,
+    QScrollArea,
 )
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, QSize
+from qtpy.QtGui import QIcon, QStandardItem, QStandardItemModel
 from superqt import QRangeSlider
-from scipy.spatial import cKDTree
+
 from helix_fitting import (
     fit_helix_initial,
     fit_helix_direct,
@@ -3009,34 +3016,38 @@ class MainWindow(QMainWindow):
         """
         try:
             print(f"Visualizing average position at: {position}")
-            
+
             # Create a single point at the average position (instead of a sphere)
             # This will make it look like a regular cluster point
             point = pv.PolyData(position.reshape(1, 3))
-            
+
             # Remove existing actor if it exists
-            if hasattr(self, 'avg_position_actor') and self.avg_position_actor is not None:
+            if (
+                hasattr(self, "avg_position_actor")
+                and self.avg_position_actor is not None
+            ):
                 print("Removing existing average position actor")
                 self.plotter_widget.remove_actor(self.avg_position_actor)
-            
+
             # Add the point with the same style as clusters but in black color
             print("Adding new average position actor")
             self.avg_position_actor = self.plotter_widget.add_mesh(
                 point,
-                style="points",       # Same style as clusters
-                point_size=8,         # Slightly larger than regular clusters (which are 5)
-                color='black',        # Black color as requested
-                render=True,          # Force immediate rendering
-                pickable=False
+                style="points",  # Same style as clusters
+                point_size=8,  # Slightly larger than regular clusters (which are 5)
+                color="black",  # Black color as requested
+                render=True,  # Force immediate rendering
+                pickable=False,
             )
-            
+
             # Explicit render call to ensure everything is displayed
             self.plotter_widget.render()
-            
+
             print("Visualization completed")
             return True
         except Exception as e:
             print(f"Error in visualize_average_position: {e}")
             import traceback
+
             traceback.print_exc()
             return False
