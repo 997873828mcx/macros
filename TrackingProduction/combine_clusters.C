@@ -1,8 +1,7 @@
-
 void combine_clusters()
 {
 
-  std::string input_path = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_52844_0_resid_edgeOff_staticOff_acts_0205.root";
+  std::string input_path = "/sphenix/user/mitrankova/PadPlane_Readout/real_data/one_clusters_seeds_53534_0_resid.root";
   // Open input files
   // TFile *f_resid = new TFile("/sphenix/user/mitrankova/PadPlane_Readout/real_data/new_map_no_corrections_clusters_seeds_52844-0_resid.root", "READ");
   TFile *f_resid = new TFile(input_path.c_str(), "READ");
@@ -33,15 +32,15 @@ void combine_clusters()
     return;
   } */
 
-  TFile *f_clusterizer = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_52844_0_clusterizer_edgeOff_staticOff_acts_0205.root");
+  /* TFile *f_clusterizer = new TFile("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/outputFile_53534_0_clusterizer_edgeOff_staticOff_acts_0225.root");
 
   if (!f_clusterizer || f_clusterizer->IsZombie())
   {
-    std::cerr << "Error opening seed file\n";
+    std::cerr << "Error opening clusterizer file\n";
     f_clusterizer->Close();
     delete f_clusterizer;
     return;
-  }
+  } */
 
   // Get trees from residual file
   TTree *t_residual_clus = (TTree *)f_resid->Get("clustertree");
@@ -91,7 +90,7 @@ void combine_clusters()
   } */
 
   // Get  clusterizertree
-  TTree *t_tpc_cluster = (TTree *)f_clusterizer->Get("tpc_clustertree");
+  /* TTree *t_tpc_cluster = (TTree *)f_clusterizer->Get("tpc_clustertree");
   TTree *t_tpc_hit = (TTree *)f_clusterizer->Get("hitTree");
 
   if (!t_tpc_cluster)
@@ -112,7 +111,7 @@ void combine_clusters()
     delete f_clusterizer;
 
     return;
-  }
+  } */
 
   /* unsigned long long seed_cluskey;
   float seed_x, seed_y, seed_z;
@@ -141,14 +140,16 @@ void combine_clusters()
     int crossing;
     int nmaps;
   };
-  struct ClusterizerHitInfo
+  /* struct ClusterizerHitInfo
   {
     float t;
     float adc;
     float tdriftmax;
     float driftVelocity;
     int event;
-  };
+    float phi;
+    int hitsetkey;
+  }; */
 
   /* std::map<unsigned long long, TrackingInfo> seeding_map;
   for (int i = 0; i < t_seeding->GetEntries(); i++)
@@ -217,16 +218,19 @@ void combine_clusters()
   // Read hittree from residual file
   // Copy hits into a separate tree unchanged
   // --------------------------
-  int m_runnumber, m_segment, m_job, m_event;
+  int m_runnumber, m_segment, m_job;
+  unsigned int m_hitsetkey;
+  int m_event;
   ULong64_t m_bco, m_bcotr;
-  UInt_t m_hitsetkey;
+
   Float_t m_hitgx, m_hitgy, m_hitgz;
   Int_t m_hitlayer, m_sector, m_side, m_staveid, m_chipid;
   Int_t m_strobeid, m_ladderzid, m_ladderphiid, m_timebucket, m_hitpad, m_hittbin;
   Int_t m_col, m_row, m_segtype, m_tileid, m_strip;
   Float_t m_adc_hit, m_zdriftlength;
+  Float_t m_phi;
 
-  Int_t resid_hitkey = -1;
+  unsigned int resid_hitkey = 0;
 
   t_hits->SetBranchAddress("run", &m_runnumber);
   t_hits->SetBranchAddress("segment", &m_segment);
@@ -248,6 +252,7 @@ void combine_clusters()
   t_hits->SetBranchAddress("ladderphi", &m_ladderphiid);
   t_hits->SetBranchAddress("timebucket", &m_timebucket);
   t_hits->SetBranchAddress("pad", &m_hitpad);
+  t_hits->SetBranchAddress("phi", &m_phi);
   t_hits->SetBranchAddress("tbin", &m_hittbin);
   t_hits->SetBranchAddress("col", &m_col);
   t_hits->SetBranchAddress("row", &m_row);
@@ -262,15 +267,17 @@ void combine_clusters()
   // Read clustertree from residual file
   // This has all the cluster info you want to keep
   // --------------------------
-  unsigned long m_scluskey;
+  unsigned long long m_scluskey;
 
   std::vector<short> *clust_crossings = nullptr;
   Float_t m_scluslx, m_scluslz, m_sclusgx, m_sclusgy, m_sclusgz, m_sclusgr;
   Float_t m_sclusphi, m_scluseta, m_adc_clus, m_scluselx, m_scluselz, m_clusmaxadc;
   Int_t m_scluslayer, m_phisize, m_zsize, m_clussector;
+  unsigned int m_residClustHitsetkey;
   std::vector<uint64_t> *m_clus_hitkeys = nullptr;
 
   t_residual_clus->SetBranchAddress("cluskey", &m_scluskey);
+  t_residual_clus->SetBranchAddress("hitsetkey", &m_residClustHitsetkey);
   t_residual_clus->SetBranchAddress("run", &m_runnumber);
   t_residual_clus->SetBranchAddress("segment", &m_segment);
   t_residual_clus->SetBranchAddress("job", &m_job);
@@ -305,33 +312,137 @@ void combine_clusters()
   t_residual_clus->SetBranchAddress("clus_hitkeys", &m_clus_hitkeys);
   // t_residual_clus->SetBranchAddress("clust_crossings", &clust_crossings);
 
-  Float_t c_t = std::numeric_limits<float>::quiet_NaN();
-  Float_t c_adc = std::numeric_limits<float>::quiet_NaN();
+  /* Float_t c_t = std::numeric_limits<float>::quiet_NaN();
+  Float_t tpc_adc = std::numeric_limits<float>::quiet_NaN();
   Float_t c_tdriftmax = std::numeric_limits<float>::quiet_NaN();
   Float_t c_driftVelocity = std::numeric_limits<float>::quiet_NaN();
-  ULong64_t tpc_hitkey = std::numeric_limits<uint64_t>::max();
+  int tpc_hitkey = std::numeric_limits<int>::max();
+  float tpc_phi = std::numeric_limits<float>::quiet_NaN();
+  int tpc_hitsetkey = std::numeric_limits<int>::max();
+  int tpc_event = std::numeric_limits<int>::max();
 
+  t_tpc_hit->SetBranchAddress("event", &tpc_event);
   t_tpc_hit->SetBranchAddress("t", &c_t);
-  t_tpc_hit->SetBranchAddress("adc", &c_adc);
+  t_tpc_hit->SetBranchAddress("adc", &tpc_adc);
   t_tpc_hit->SetBranchAddress("tdriftmax", &c_tdriftmax);
   t_tpc_hit->SetBranchAddress("drift_velocity", &c_driftVelocity);
   t_tpc_hit->SetBranchAddress("hitkey", &tpc_hitkey);
+  t_tpc_hit->SetBranchAddress("phi", &tpc_phi);
+  t_tpc_hit->SetBranchAddress("hitsetkey", &tpc_hitsetkey); */
 
-  std::map<Int_t, ClusterizerHitInfo> clusterizer_hit_map;
+  /* int invalidCountClusterizer = 0;
+  int totalClusterizerHits = t_tpc_hit->GetEntries();
+  for (int i = 0; i < totalClusterizerHits; i++)
+  {
+    t_tpc_hit->GetEntry(i);
+    if (tpc_event == std::numeric_limits<int>::max() ||
+        tpc_hitkey == std::numeric_limits<int>::max() ||
+        tpc_hitsetkey == std::numeric_limits<int>::max())
+    {
+      invalidCountClusterizer++;
+    }
+  }
+  std::cout << "Total clusterizer hit entries: " << totalClusterizerHits << std::endl;
+  std::cout << "Number of clusterizer hit entries with invalid key fields: " << invalidCountClusterizer << std::endl;
+
+  struct HitIdentifier
+  {
+    int event;
+    int hitsetkey;
+    int hitkey;
+
+    bool operator<(const HitIdentifier &other) const
+    {
+      if (event != other.event)
+        return event < other.event;
+      if (hitsetkey != other.hitsetkey)
+        return hitsetkey < other.hitsetkey;
+      return hitkey < other.hitkey;
+    }
+  };
+  std::map<HitIdentifier, ClusterizerHitInfo> clusterizer_hit_map;
   // std::map<uint64_t, ClusterizerHitInfo> clusterizer_hit_map;
+
+  int countTpcHit = 0;
+  int duplicateCount = 0;
+  std::set<HitIdentifier> seenKeys;
 
   for (int i = 0; i < t_tpc_hit->GetEntries(); i++)
   {
     t_tpc_hit->GetEntry(i);
-    ClusterizerHitInfo info = {c_t, c_adc, c_tdriftmax, c_driftVelocity};
-    clusterizer_hit_map[static_cast<uint64_t>(tpc_hitkey)] = info;
+    countTpcHit++;
+
+    HitIdentifier hitId = {tpc_event, tpc_hitsetkey, tpc_hitkey};
+    ClusterizerHitInfo info = {c_t, tpc_adc, c_tdriftmax, c_driftVelocity, tpc_event, tpc_phi, tpc_hitsetkey};
+    if (!seenKeys.insert(hitId).second)
+    {
+      duplicateCount++;
+    }
+    clusterizer_hit_map[hitId] = info;
   }
+  std::cout << "Total entries in t_tpc_hit: " << countTpcHit << std::endl;
+  std::cout << "Number of duplicate keys: " << duplicateCount << std::endl;
+  std::cout << "Unique keys in clusterizer_hit_map: " << clusterizer_hit_map.size() << std::endl; */
+
+  // --- Build a set of HitIdentifier keys from the residual file's hit tree ---
+  /* std::set<HitIdentifier> residualHitSet;
+  for (int i = 0; i < t_hits->GetEntries(); i++)
+  {
+    t_hits->GetEntry(i);
+    // Construct the key from the residual tree branches.
+    HitIdentifier rid = {m_event, static_cast<int>(m_hitsetkey), resid_hitkey};
+    residualHitSet.insert(rid);
+  } */
+
+  /* int countResidualHits = 0;
+  int duplicateResidualCount = 0;
+  std::set<HitIdentifier> seenResidualKeys; */
+
+  /*   for (int i = 0; i < t_hits->GetEntries(); i++)
+    {
+      t_hits->GetEntry(i);
+      countResidualHits++;
+
+      // Construct a HitIdentifier from the residual hit tree.
+      HitIdentifier rid = {m_event, static_cast<int>(m_hitsetkey), resid_hitkey};
+
+      // Attempt to insert it into a set.
+      // If the insertion fails, then this key is a duplicate.
+      if (!seenResidualKeys.insert(rid).second)
+      {
+        duplicateResidualCount++;
+      }
+    } */
+
+  // std::cout << "Total entries in t_hits: " << countResidualHits << std::endl;
+  // std::cout << "Number of duplicate keys in t_hits: " << duplicateResidualCount << std::endl;
+  // std::cout << "Unique keys in residual hit tree: " << seenResidualKeys.size() << std::endl;
+
+  // --- Now, loop over the clusterizer hit map and print out keys that are not found in the residual file ---
+  /* int unmatchedClusterizerHits = 0;
+  for (const auto &entry : clusterizer_hit_map)
+  {
+    // If this clusterizer key is not present in the residual hit set...
+    if (residualHitSet.find(entry.first) == residualHitSet.end())
+    {
+      std::cout << "Clusterizer hit not found in residual file:" << std::endl;
+      std::cout << "  event: " << entry.first.event
+                << ", hitsetkey: " << entry.first.hitsetkey
+                << ", hitkey: " << entry.first.hitkey << std::endl;
+      unmatchedClusterizerHits++;
+    }
+  }
+
+  std::cout << "Total clusterizer hit entries: " << clusterizer_hit_map.size() << std::endl;
+  std::cout << "Number of clusterizer hit entries not found in residual file: "
+            << unmatchedClusterizerHits << std::endl; */
 
   // --------------------------
   // Create output file and trees
   // --------------------------
 
-  std::string output_name = "combined_" + relevant_part + ".root";
+  // std::string output_name = "combined_" + relevant_part + ".root";
+  std::string output_name = "combined_clusters_seeds_53534_0_resid.root";
   TFile *outFile = new TFile(output_name.c_str(), "RECREATE");
 
   // Combined cluster tree
@@ -344,9 +455,11 @@ void combine_clusters()
   int t_crossing = -2000;
   int out_trackid = -1;
   int m_nmaps = -1;
+  unsigned int m_clustHitsetkey = 0;
 
   TTree *t_combined_clusters = new TTree("combined_clusters", "Combined cluster info");
   t_combined_clusters->Branch("cluskey", &m_scluskey, "cluskey/l");
+  t_combined_clusters->Branch("hitsetkey", &m_clustHitsetkey, "hitsetkey/i");
   t_combined_clusters->Branch("run", &m_runnumber, "run/I");
   t_combined_clusters->Branch("segment", &m_segment, "segment/I");
   t_combined_clusters->Branch("job", &m_job, "job/I");
@@ -392,6 +505,8 @@ void combine_clusters()
   // t_combined_clusters->Branch("seed_z", &out_z, "seed_z/F");
 
   // Combined hits tree
+  unsigned int c_hitsetkey;
+  float c_phi;
   TTree *t_combined_hits = new TTree("combined_hits", "Hit-level info");
   t_combined_hits->Branch("runnumber", &m_runnumber, "runnumber/I");
   t_combined_hits->Branch("segment", &m_segment, "segment/I");
@@ -400,8 +515,8 @@ void combine_clusters()
   t_combined_hits->Branch("event", &m_event, "event/I");
   t_combined_hits->Branch("gl1bco", &m_bco, "gl1bco/l");
   t_combined_hits->Branch("trbco", &m_bcotr, "trbco/l");
-  t_combined_hits->Branch("hitsetkey", &m_hitsetkey, "hitsetkey/i");
-  t_combined_hits->Branch("hitkeykey", &resid_hitkey, "hitkeykey/I");
+  t_combined_hits->Branch("hitsetkey", &m_hitsetkey, "hitsetkey/I");
+  t_combined_hits->Branch("hitkeykey", &resid_hitkey, "hitkeykey/i");
   t_combined_hits->Branch("gx", &m_hitgx, "gx/F");
   t_combined_hits->Branch("gy", &m_hitgy, "gy/F");
   t_combined_hits->Branch("gz", &m_hitgz, "gz/F");
@@ -415,6 +530,7 @@ void combine_clusters()
   t_combined_hits->Branch("ladderphi", &m_ladderphiid, "ladderphi/I");
   t_combined_hits->Branch("timebucket", &m_timebucket, "timebucket/I");
   t_combined_hits->Branch("pad", &m_hitpad, "pad/I");
+  t_combined_hits->Branch("phi", &m_phi, "phi/F");
   t_combined_hits->Branch("tbin", &m_hittbin, "tbin/I");
   t_combined_hits->Branch("col", &m_col, "col/I");
   t_combined_hits->Branch("row", &m_row, "row/I");
@@ -423,9 +539,11 @@ void combine_clusters()
   t_combined_hits->Branch("strip", &m_strip, "strip/I");
   t_combined_hits->Branch("adc", &m_adc_hit, "adc/F");
   t_combined_hits->Branch("zdriftlength", &m_zdriftlength, "zdriftlength/F");
-  t_combined_hits->Branch("t", &c_t, "t/F");
-  t_combined_hits->Branch("tdriftmax", &c_tdriftmax, "tdriftmax/F");
-  t_combined_hits->Branch("driftVelocity", &c_driftVelocity, "driftVelocity/F");
+  // t_combined_hits->Branch("t", &c_t, "t/F");
+  // t_combined_hits->Branch("tdriftmax", &c_tdriftmax, "tdriftmax/F");
+  // t_combined_hits->Branch("driftVelocity", &c_driftVelocity, "driftVelocity/F");
+
+  // int identifiedHits = 0;
 
   // Fill combined_clusters
   for (int i = 0; i < t_residual_clus->GetEntries(); i++)
@@ -470,14 +588,15 @@ void combine_clusters()
     // Check if used in track
     out_used_in_track = (clusters_in_tracks.find((unsigned long long)m_scluskey) != clusters_in_tracks.end()) ? 1 : 0;
 
-    if (clust_crossings && !clust_crossings->empty())
+    /* if (clust_crossings && !clust_crossings->empty())
     {
       crossing = static_cast<int>(clust_crossings->at(0));
     }
     else
     {
       crossing = -2000;
-    }
+    } */
+    m_clustHitsetkey = m_residClustHitsetkey;
 
     t_combined_clusters->Fill();
   }
@@ -487,18 +606,30 @@ void combine_clusters()
   {
     t_hits->GetEntry(i);
 
-    c_t = std::numeric_limits<float>::quiet_NaN();
+    /* c_t = std::numeric_limits<float>::quiet_NaN();
     c_tdriftmax = std::numeric_limits<float>::quiet_NaN();
-    c_driftVelocity = std::numeric_limits<float>::quiet_NaN();
+    c_driftVelocity = std::numeric_limits<float>::quiet_NaN(); */
+    // c_phi = std::numeric_limits<float>::quiet_NaN();
+    //  c_hitsetkey = 0;
+    // HitIdentifier hitId = {(m_event), static_cast<int>(m_hitsetkey), static_cast<int>(resid_hitkey)};
 
-    // auto it = clusterizer_hit_map.find(static_cast<uint64_t>(c_hitkey));
-    auto it = clusterizer_hit_map.find(static_cast<ULong64_t>(resid_hitkey));
-    if (it != clusterizer_hit_map.end())
+    // auto it = clusterizer_hit_map.find(hitId);
+    /* if (it != clusterizer_hit_map.end())
     {
       c_t = it->second.t;
       c_tdriftmax = it->second.tdriftmax;
       c_driftVelocity = it->second.driftVelocity;
-    }
+      // c_phi = it->second.phi;
+      // identifiedHits++;
+      // c_hitsetkey = it->second.hitsetkey;
+    } */
+
+    /* if (it == clusterizer_hit_map.end())
+    {
+      std::cout << "No match for hit: "
+                << "event=" << m_event << ", hitsetkey=" << static_cast<int>(m_hitsetkey)
+                << ", hitkey=" << resid_hitkey << std::endl;
+    } */
 
     t_combined_hits->Fill();
   }
@@ -510,8 +641,10 @@ void combine_clusters()
   outFile->Close();
 
   f_resid->Close();
-  f_clusterizer->Close();
-  // f_seed->Close();
+  // f_clusterizer->Close();
+  //  f_seed->Close();
 
   std::cout << "Wrote separate_cluster_and_hits.root with combined_clusters and combined_hits trees." << std::endl;
+  /* std::cout << "Number of hits from residual hittree identified in clusterizer file: "
+            << identifiedHits << std::endl; */
 }

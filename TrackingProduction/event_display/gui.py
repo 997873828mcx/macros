@@ -2,6 +2,7 @@ import sys
 import numpy as np
 import pyvista as pv
 from pyvistaqt import QtInteractor
+from pad_adc_window import PadADCWindow
 from typing import Optional
 from qtpy.QtWidgets import (
     QMainWindow,
@@ -97,6 +98,9 @@ class MainWindow(QMainWindow):
 
         self.histogram_window = HistogramWindow()
         self.module_hist_window = ModuleHistogramWindow()
+        self.pad_adc_window = PadADCWindow()
+
+        self.avg_position_actor = None
 
         # Main container widget
         main_widget = QWidget()
@@ -324,6 +328,10 @@ class MainWindow(QMainWindow):
         self.radio_pick_vertex.toggled.connect(self.on_pick_mode_changed)
         pick_mode_layout.addWidget(self.radio_pick_vertex)
 
+        self.radio_pick_pos = QRadioButton("Pos Reco")
+        self.radio_pick_pos.toggled.connect(self.on_pick_mode_changed)
+        pick_mode_layout.addWidget(self.radio_pick_pos)
+
         top_filter_layout.addWidget(pick_mode_group)
 
         # --- File Selection Dropdown ---
@@ -492,9 +500,21 @@ class MainWindow(QMainWindow):
         self.btn_fit_track.clicked.connect(self.initiate_fit)
         track_layout.addWidget(self.btn_fit_track)
 
+        # self.btn_reconstruct_z = QPushButton("Reco Z")
+        # self.btn_reconstruct_z.clicked.connect(self.reconstruct_position)
+        # track_layout.addWidget(self.btn_reconstruct_z)
+
         self.btn_reset_track = QPushButton("Reset Track")
         self.btn_reset_track.clicked.connect(self.reset_track)
         track_layout.addWidget(self.btn_reset_track)
+
+        btn_output_phi_z = QPushButton("ADC Weighted Phi/Z")
+        btn_output_phi_z.clicked.connect(self.output_adc_averaged_phi_z)
+        track_layout.addWidget(btn_output_phi_z)
+
+        btn_show_adc_dist = QPushButton("Show ADC Distribution")
+        btn_show_adc_dist.clicked.connect(self.show_pad_adc_window)
+        control_layout.addWidget(btn_show_adc_dist)
 
         self.btn_clear_track = QPushButton("Clear Track Lines")
         self.btn_clear_track.clicked.connect(self.clear_track_lines)
@@ -571,6 +591,8 @@ class MainWindow(QMainWindow):
         self.line_params_refined = None
 
         self.associated_hits_hidden = False  # False means show global hits normally.
+        self.hits_override_enabled = False
+        self.previous_hits_state = {"tpc_hits": True, "silicon_hits": True}
         self.selected_cluster_index = None
 
         self.filtered_clusters = None
@@ -725,6 +747,13 @@ class MainWindow(QMainWindow):
         show_silicon_clusters = self.clusters_checkbox_silicon.isChecked()
         show_silicon_hits = self.hits_checkbox_silicon.isChecked()
 
+        if (
+            hasattr(self, "hits_override_enabled")
+            and self.hits_override_enabled
+            and self.associated_hits_hidden
+        ):
+            # When in associated hits mode, force-enable hits display regardless of checkbox
+            show_silicon_hits = True
         if show_silicon_clusters and show_silicon_hits:
             pass  # Show both
         elif show_silicon_clusters:
@@ -769,6 +798,14 @@ class MainWindow(QMainWindow):
         tpc_mask = is_tpc
         show_tpc_clusters = self.clusters_checkbox_tpc.isChecked()
         show_tpc_hits = self.hits_checkbox_tpc.isChecked()
+
+        if (
+            hasattr(self, "hits_override_enabled")
+            and self.hits_override_enabled
+            and self.associated_hits_hidden
+        ):
+            # When in associated hits mode, force-enable hits display regardless of checkbox
+            show_tpc_hits = True
 
         if show_tpc_clusters and show_tpc_hits:
             pass  # Show both
@@ -1242,6 +1279,10 @@ class MainWindow(QMainWindow):
             self.pick_mode = "vertex"
             self.instruction_label.setText("Select 2 points for vertex finding.")
 
+        elif self.radio_pick_pos.isChecked():
+            self.pick_mode = "pos"
+            self.instruction_label.setText("Select hits for position reconstruction.")
+
         # Update the point picking callback based on the mode
         self.update_point_picking()
 
@@ -1255,10 +1296,15 @@ class MainWindow(QMainWindow):
             self.plotter_widget.enable_point_picking(
                 callback=self.on_point_picked_info, show_message=True, use_picker=True
             )
-        elif self.pick_mode in ["helix", "vertex"]:
-            # Enable point picking for helix fitting
+        elif self.pick_mode in ["helix", "vertex", "pos"]:
+            # Enable point picking for helix fitting and position reconstruction
+            if self.pick_mode == "pos":
+                callback = self.on_point_picked_pos
+            else:
+                callback = self.on_point_picked_helix
+
             self.plotter_widget.enable_point_picking(
-                callback=self.on_point_picked_helix, show_message=True, use_picker=True
+                callback=callback, show_message=True, use_picker=True
             )
 
     def on_point_picked_info(self, picked_point, picker):
@@ -1390,6 +1436,53 @@ class MainWindow(QMainWindow):
             )
             QMessageBox.information(self, "Track Fit", msg)
 
+    def on_point_picked_pos(self, picked_point, picker):
+        """
+        Callback function for picking points in position reconstruction mode.
+        """
+        # Extract the point ID from the picker
+        point_id = picker.GetPointId()
+
+        # Extract the mesh (dataset) from the picker
+        mesh = picker.GetDataSet()
+
+        if point_id < 0 or mesh is None:
+            return  # No valid point was picked
+
+        # Get the picked coordinates
+        coordinates = mesh.points[point_id]
+        # self.selected_points_first.append(picked_coordinates)
+
+        hit_info = {
+            "x": coordinates[0],
+            "y": coordinates[1],
+            "z": coordinates[2],
+            "t": mesh.point_data["t"][point_id],
+            "adc": mesh.point_data["adc"][point_id],
+            "tdriftmax": mesh.point_data["tdriftmax"][point_id],
+            "drift_velocity": mesh.point_data["driftVelocity"][point_id],
+            "phi": mesh.point_data["phi"][point_id],
+            "pad": mesh.point_data["pad"][point_id] if "pad" in mesh.point_data else 0,
+            "time": mesh.point_data["tbin"][point_id],
+        }
+        self.selected_points_first.append(hit_info)
+
+        # Update instruction label with current count
+        self.instruction_label.setText(
+            f"Selected {len(self.selected_points_first)} hits for position reconstruction."
+        )
+
+        if self.pad_adc_window.isVisible():
+            self.pad_adc_window.update_distribution(self.selected_points_first)
+
+        # Display point info
+        info_text = f"Selected Hit (Point ID: {point_id})\n"
+        info_text += f"Position: ({coordinates[0]:.2f}, {coordinates[1]:.2f}, {coordinates[2]:.2f})\n"
+        for attr in mesh.point_data.keys():
+            value = mesh.point_data[attr][point_id]
+            info_text += f"{attr}: {value}\n"
+        self.info_panel.setText(info_text)
+
     def on_track_toggle(self, state):
         visible = state == Qt.Checked
         self.set_track_lines_visibility(visible)
@@ -1469,6 +1562,9 @@ class MainWindow(QMainWindow):
 
         # Save current camera position
         camera_position = self.plotter_widget.camera_position
+        saved_avg_position_actor = None
+        if hasattr(self, "avg_position_actor") and self.avg_position_actor is not None:
+            saved_avg_position_actor = self.avg_position_actor
         # Clear the current plotter
         self.plotter_widget.clear()
         # self.cluster_actors.clear()
@@ -1513,28 +1609,77 @@ class MainWindow(QMainWindow):
                         and self.selected_cluster_index is not None
                     ):
                         try:
+                            # Get cluster information
+                            selected_cluster_event = self.last_picked_mesh.point_data[
+                                "event"
+                            ][self.selected_cluster_index]
                             selected_cluster_keys = self.last_picked_mesh.hitkeys[
                                 self.selected_cluster_index
                             ]
+
+                            # Get hitsetkey if available
+                            if "hitsetkey" in self.last_picked_mesh.point_data:
+                                selected_cluster_hitsetkey = (
+                                    self.last_picked_mesh.point_data["hitsetkey"][
+                                        self.selected_cluster_index
+                                    ]
+                                )
+                            else:
+                                selected_cluster_hitsetkey = None
+
+                            # Get hit information
                             all_hitkeys = filtered_hits_display.point_data["hitkeykey"]
-                            # Create mask for hits that ARE associated with selected cluster
-                            # (note: removed the ~ to invert the logic)
-                            mask = np.isin(all_hitkeys, selected_cluster_keys)
+                            all_events = filtered_hits_display.point_data["event"]
+
+                            # Get hitsetkey if available
+                            if "hitsetkey" in filtered_hits_display.point_data:
+                                all_hitsetkeys = filtered_hits_display.point_data[
+                                    "hitsetkey"
+                                ]
+                            else:
+                                all_hitsetkeys = [None] * filtered_hits_display.n_points
+
+                            # Create mask for hits that match our criteria
+                            mask = np.zeros(len(all_hitkeys), dtype=bool)
+                            for i, (hitkey, event, hitsetkey) in enumerate(
+                                zip(all_hitkeys, all_events, all_hitsetkeys)
+                            ):
+                                if (
+                                    hitkey in selected_cluster_keys
+                                    and event == selected_cluster_event
+                                    and (
+                                        selected_cluster_hitsetkey is None
+                                        or hitsetkey == selected_cluster_hitsetkey
+                                    )
+                                ):
+                                    mask[i] = True
+
+                            # Extract only the matching hits
                             filtered_hits_display = (
                                 filtered_hits_display.extract_points(np.where(mask)[0])
                             )
+
+                            # Skip if no matching hits
+                            if filtered_hits_display.n_points == 0:
+                                continue
+
+                            hit_color = "green"
                         except Exception as e:
                             print(f"Error filtering associated hits: {e}")
+                            hit_color = "blue"
+
+                    else:
+                        hit_color = "blue"
 
                     self.display_filtered_hits_info.append(
-                        (filtered_hits_display, "blue", file_info)
+                        (filtered_hits_display, hit_color, file_info)
                     )
                     # hit_actor = self.plotter_widget.add_mesh(
                     self.plotter_widget.add_mesh(
                         filtered_hits_display,
                         style="points",
                         point_size=5,
-                        color="blue",
+                        color=hit_color,
                     )
                     # self.hit_actors.append(hit_actor)
 
@@ -1559,6 +1704,11 @@ class MainWindow(QMainWindow):
                 helix_lines=self.track_lines,
                 projection_type=self.projection_window.projection_combo.currentText(),
             )
+
+        if saved_avg_position_actor is not None:
+            self.plotter_widget.renderer.add_actor(saved_avg_position_actor)
+            self.avg_position_actor = saved_avg_position_actor
+            self.plotter_widget.render()
 
     def create_tpc_cylinders(self):
         """
@@ -1731,6 +1881,10 @@ class MainWindow(QMainWindow):
             else:
                 # Perform regular helix fitting
                 self.do_helix_fitting_flow()
+
+            if self.pick_mode == "pos":
+                self.reconstruct_position()
+                return
 
         except ValueError as e:
             QMessageBox.warning(self, "Fit Error", str(e))
@@ -2140,6 +2294,8 @@ class MainWindow(QMainWindow):
         self.line_params_initial = None
         self.line_params_refined = None
 
+        if hasattr(self, "pad_adc_window"):
+            self.pad_adc_window.clear_data()
         self.selected_points_first.clear()
         self.instruction_label.setText(
             "Instruction: Select 3 points for initial helix fitting."
@@ -2150,6 +2306,9 @@ class MainWindow(QMainWindow):
             "Helix Reset",
             "Helix has been reset. You can select new points and fit again.",
         )
+        if hasattr(self, "avg_position_actor") and self.avg_position_actor is not None:
+            self.plotter_widget.remove_actor(self.avg_position_actor)
+            self.avg_position_actor = None
 
     def split_clusters_by_layer(self, filtered_clusters):
         """
@@ -2213,6 +2372,17 @@ class MainWindow(QMainWindow):
         self.projection_window.activateWindow()
         self.projection_window.show()
 
+    def show_pad_adc_window(self):
+        """Show the pad ADC distribution window."""
+        if not self.pad_adc_window.isVisible():
+            self.pad_adc_window.show()
+        self.pad_adc_window.raise_()
+        self.pad_adc_window.activateWindow()
+
+        # If there are already selected points, update the distribution
+        if self.selected_points_first:
+            self.pad_adc_window.update_distribution(self.selected_points_first)
+
     def toggle_field_mode(self):
         """Toggle between helix and straight line fitting modes."""
         self.using_line_fitting = not self.using_line_fitting
@@ -2253,28 +2423,7 @@ class MainWindow(QMainWindow):
                 ]
                 print(f"Accessing via loaded_files[{filename}]: {cluskey}")"""
 
-        """# Ensure that cluster polydata is available. If not, attempt to get it from loaded_files.
-        if self.cluster_polydata is None:
-            if self.loaded_files:
-                # Here we just choose the first loaded file.
-                self.cluster_polydata = list(self.loaded_files.values())[0]["cluster"]
-            else:
-                QMessageBox.warning(
-                    self, "Toggle Associated Hits", "No cluster data available."
-                )
-                return
-
-        # Similarly, ensure that hit polydata is set.
-        if self.hit_polydata is None:
-            if self.loaded_files:
-                self.hit_polydata = list(self.loaded_files.values())[0]["hit"]
-            else:
-                QMessageBox.warning(
-                    self, "Toggle Associated Hits", "No hit data available."
-                )
-                return"""
-
-        cluster_cluskey = self.last_picked_mesh.point_data["cluskey"][
+        """cluster_cluskey = self.last_picked_mesh.point_data["cluskey"][
             self.selected_cluster_index
         ]
         selected_cluster_keys = self.last_picked_mesh.hitkeys[
@@ -2288,8 +2437,177 @@ class MainWindow(QMainWindow):
         print(f"Associated hitkeys: {selected_cluster_keys}")
         print(f"Number of associated hitkeys: {len(selected_cluster_keys)}")
         found_match = False
-        original_cluskey = None
-        for filename, file_info in self.loaded_files.items():
+        original_cluskey = None"""
+
+        # Toggle the flag
+        self.associated_hits_hidden = not getattr(self, "associated_hits_hidden", False)
+
+        # Update button text
+        button_text = (
+            "Show All Hits" if self.associated_hits_hidden else "Show Associated Hits"
+        )
+        self.btn_toggle_associated_hits.setText(button_text)
+        if self.associated_hits_hidden:
+            # Store current checkbox states for later restoration
+            self.previous_hits_state = {
+                "tpc_hits": self.hits_checkbox_tpc.isChecked(),
+                "silicon_hits": self.hits_checkbox_silicon.isChecked(),
+            }
+
+            # Force-enable hits temporarily (without changing checkbox UI)
+            self.hits_override_enabled = True
+
+            # Collect associated hits for calculation
+            # self.collect_associated_hits_and_calculate_position()
+        else:
+            # Restore to previous state - no need to use overrides
+            self.hits_override_enabled = False
+
+            # Remove the average position marker if it exists
+            if (
+                hasattr(self, "avg_position_actor")
+                and self.avg_position_actor is not None
+            ):
+                self.plotter_widget.remove_actor(self.avg_position_actor)
+                self.avg_position_actor = None
+
+        """if self.associated_hits_hidden:
+            try:
+                # Get cluster information
+                cluster_event = self.last_picked_mesh.point_data["event"][
+                    self.selected_cluster_index
+                ]
+                # Get hitsetkey if available
+                if "hitsetkey" in self.last_picked_mesh.point_data:
+                    cluster_hitsetkey = self.last_picked_mesh.point_data["hitsetkey"][
+                        self.selected_cluster_index
+                    ]
+                else:
+                    cluster_hitsetkey = None
+                cluster_cluskey = self.last_picked_mesh.point_data["cluskey"][
+                    self.selected_cluster_index
+                ]
+                selected_cluster_keys = self.last_picked_mesh.hitkeys[
+                    self.selected_cluster_index
+                ]
+
+                print(f"Selected Cluster cluskey: {cluster_cluskey}")
+                print(f"Selected Cluster event: {cluster_event}")
+                print(f"Selected Cluster hitsetkey: {cluster_hitsetkey}")
+                print(f"Associated hitkeys: {selected_cluster_keys}")
+                print(f"Number of associated hitkeys: {len(selected_cluster_keys)}")
+
+                # Collect hit information
+                hit_info_list = []
+                t_sum = 0
+                adc_sum = 0
+
+                for filename, file_info in self.loaded_files.items():
+                    hit_data = file_info["hit"]
+                    if hit_data is None:
+                        continue
+
+                    all_hitkeys = hit_data.point_data.get("hitkeykey", None)
+                    all_events = hit_data.point_data.get("event", None)
+                    # Get hitsetkey if available
+                    if "hitsetkey" in hit_data.point_data:
+                        all_hitsetkeys = hit_data.point_data["hitsetkey"]
+                    else:
+                        all_hitsetkeys = [None] * hit_data.n_points
+
+                    if all_hitkeys is None or all_events is None:
+                        continue
+
+                    # Find matching hits with all three identifiers
+                    hit_indices = []
+                    for i, (key, event, hitsetkey) in enumerate(
+                        zip(all_hitkeys, all_events, all_hitsetkeys)
+                    ):
+                        if (
+                            key in selected_cluster_keys
+                            and event == cluster_event
+                            and (
+                                cluster_hitsetkey is None
+                                or hitsetkey == cluster_hitsetkey
+                            )
+                        ):
+                            hit_indices.append(i)
+
+                    if not hit_indices:
+                        continue
+
+                    print(f"Found {len(hit_indices)} matching hits in file {filename}")
+
+                    # Collect information for these hits
+                    for idx in hit_indices:
+                        t = hit_data.point_data["t"][idx]
+                        adc = hit_data.point_data["adc"][idx]
+                        tdriftmax = hit_data.point_data.get(
+                            "tdriftmax", [0] * hit_data.n_points
+                        )[idx]
+                        drift_velocity = hit_data.point_data.get(
+                            "driftVelocity", [0] * hit_data.n_points
+                        )[idx]
+                        hitkey = all_hitkeys[idx]
+
+                        hit_info = {
+                            "index": idx,
+                            "hitkey": hitkey,
+                            "t": t,
+                            "adc": adc,
+                            "tdriftmax": tdriftmax,
+                            "drift_velocity": drift_velocity,
+                        }
+                        hit_info_list.append(hit_info)
+
+                        # Accumulate for statistical calculations
+                        t_sum += t * adc
+                        adc_sum += adc
+
+                # Display hit information
+                if hit_info_list:
+                    info_text = f"Associated Hits for Cluster (cluskey: {cluster_cluskey}, event: {cluster_event}):\n"
+                    info_text += f"Total associated hits: {len(hit_info_list)}\n"
+                    info_text += "-" * 50 + "\n"
+
+                    # Show a sample of hits (to avoid overwhelming the display)
+                    max_hits_to_show = min(10, len(hit_info_list))
+                    for i in range(max_hits_to_show):
+                        hit = hit_info_list[i]
+                        info_text += f"Hit {hit['index']} (hitkey: {hit['hitkey']}):\n"
+                        info_text += f"  t: {hit['t']:.2f}\n"
+                        info_text += f"  adc: {hit['adc']:.2f}\n"
+                        info_text += f"  tdriftmax: {hit['tdriftmax']:.2f}\n"
+                        info_text += f"  driftVelocity: {hit['drift_velocity']:.2f}\n"
+                        info_text += "-" * 30 + "\n"
+
+                    if len(hit_info_list) > max_hits_to_show:
+                        info_text += f"... and {len(hit_info_list) - max_hits_to_show} more hits\n"
+
+                    # Calculate cluster z position if possible
+                    if adc_sum > 0:
+                        clust = t_sum / adc_sum
+                        # Use values from the first hit for tdriftmax and drift_velocity
+                        first_hit = hit_info_list[0]
+                        tdriftmax = first_hit["tdriftmax"]
+                        drift_velocity = first_hit["drift_velocity"]
+
+                        zdriftlength = clust * drift_velocity
+                        clustz = tdriftmax * drift_velocity - zdriftlength
+
+                        info_text += "\nCluster Calculations:\n"
+                        info_text += f"ADC-weighted average t: {clust:.2f}\n"
+                        info_text += f"Calculated clustz: {clustz:.2f} cm\n"
+
+                    self.info_panel.setText(info_text)
+                else:
+                    self.info_panel.setText(
+                        "No associated hits found for the selected cluster."
+                    )
+            except Exception as e:
+                print(f"Error displaying hit information: {e}")
+                self.info_panel.setText(f"Error displaying hit information: {e}")"""
+        """for filename, file_info in self.loaded_files.items():
             cluster_data = file_info["cluster"]
 
             if cluster_data is not None:
@@ -2310,9 +2628,9 @@ class MainWindow(QMainWindow):
                     continue
 
         if not found_match:
-            print("Warning: Could not verify cluster key against original data")
+            print("Warning: Could not verify cluster key against original data")"""
 
-        for filename, file_info in self.loaded_files.items():
+        """for filename, file_info in self.loaded_files.items():
             hit_data = file_info["hit"]
             if hit_data is not None:
                 all_hitkeys = hit_data.point_data.get("hitkeykey", None)
@@ -2379,6 +2697,7 @@ class MainWindow(QMainWindow):
                             info_text += f"Calculated clustz: {clustz:.2f}\n"
 
                         self.info_panel.setText(info_text)
+"""
 
         """try:
             # Retrieve the hit keys for the selected cluster.
@@ -2448,11 +2767,276 @@ class MainWindow(QMainWindow):
         # Call update_display so that when the hits are added, they are filtered accordingly.
         self.update_display()"""
 
-        self.associated_hits_hidden = not getattr(self, "associated_hits_hidden", False)
-        new_text = (
+        """new_text = (
             "Show Associated Hits"
             if self.associated_hits_hidden
             else "Hide Associated Hits"
-        )
-        self.btn_toggle_associated_hits.setText(new_text)
+        )"""
+
         self.update_display()
+        if self.associated_hits_hidden:
+            self.collect_associated_hits_and_calculate_position()
+
+    '''def reconstruct_position(self):
+        """Calculate cluster z-position from selected hits."""
+        if not self.selected_points_first:
+            QMessageBox.warning(
+                self,
+                "Position Reconstruction",
+                "Please select hits for position reconstruction first.",
+            )
+            return
+
+        t_sum = 0
+        adc_sum = 0
+
+        # Use the stored hit information directly
+        for hit_info in self.selected_points_first:
+            t_sum += hit_info["t"] * hit_info["adc"]
+            adc_sum += hit_info["adc"]
+
+        if adc_sum > 0:
+            # Use the first hit's drift parameters
+            first_hit = self.selected_points_first[0]
+            clust = t_sum / adc_sum
+            drift_velocity = first_hit["drift_velocity"]
+            tdriftmax = first_hit["tdriftmax"]
+
+            zdriftlength = clust * drift_velocity
+            clustz = tdriftmax * drift_velocity - zdriftlength
+
+            info_text = "Position Reconstruction Results:\n"
+            info_text += f"Number of hits used: {len(self.selected_points_first)}\n"
+            info_text += f"Calculated cluster z: {clustz:.2f} cm\n"
+            info_text += f"Average time: {clust:.2f}\n"
+            info_text += f"Drift velocity: {drift_velocity:.2f}\n"
+            self.info_panel.setText(info_text)
+        else:
+            QMessageBox.warning(
+                self,
+                "Position Reconstruction",
+                "Could not calculate position. Please ensure valid hits are selected.",
+            )
+
+        # Clear selections after reconstruction
+        self.selected_points_first.clear()
+        self.update_display()'''
+
+    def output_adc_averaged_phi_z(self):
+        """Compute and output the ADC-weighted average phi and z position from selected hits."""
+        if not self.selected_points_first:
+            QMessageBox.warning(
+                self,
+                "Output Error",
+                "Please select hits for position reconstruction first.",
+            )
+            return
+
+        phi_sum = 0.0
+        z_sum = 0.0
+        adc_sum = 0.0
+
+        # Calculate weighted sums
+        for hit in self.selected_points_first:
+            adc = hit.get("adc", 0)
+            phi = hit.get("phi", 0)
+            z = hit.get("z", 0)  # Get direct z coordinate
+
+            phi_sum += phi * adc
+            z_sum += z * adc
+            adc_sum += adc
+
+        if adc_sum > 0:
+            avg_phi = phi_sum / adc_sum
+            avg_z = z_sum / adc_sum
+
+            info_text = "ADC-Weighted Position:\n"
+            info_text += f"Phi: {avg_phi:.3f} rad ({np.degrees(avg_phi):.2f}°)\n"
+            info_text += f"Z: {avg_z:.2f} cm"
+            self.info_panel.setText(info_text)
+        else:
+            QMessageBox.warning(
+                self, "Output Error", "Total ADC is zero; cannot compute averages."
+            )
+
+    def collect_associated_hits_and_calculate_position(self):
+        """
+        Collect information about associated hits, calculate and visualize the ADC-weighted average position.
+        """
+        try:
+            # Get cluster information
+            cluster_event = self.last_picked_mesh.point_data["event"][
+                self.selected_cluster_index
+            ]
+            selected_cluster_keys = self.last_picked_mesh.hitkeys[
+                self.selected_cluster_index
+            ]
+
+            # Get hitsetkey if available
+            if "hitsetkey" in self.last_picked_mesh.point_data:
+                cluster_hitsetkey = self.last_picked_mesh.point_data["hitsetkey"][
+                    self.selected_cluster_index
+                ]
+            else:
+                cluster_hitsetkey = None
+
+            # Variables for ADC-weighted calculations
+            x_sum = 0.0
+            y_sum = 0.0
+            z_sum = 0.0
+            phi_sum = 0.0
+            t_sum = 0.0
+            adc_sum = 0.0
+            associated_hit_count = 0
+
+            # Collect hit information from all loaded files
+            for filename, file_info in self.loaded_files.items():
+                hit_data = file_info["hit"]
+                if hit_data is None:
+                    continue
+
+                all_hitkeys = hit_data.point_data.get("hitkeykey", None)
+                all_events = hit_data.point_data.get("event", None)
+
+                # Get hitsetkey if available
+                if "hitsetkey" in hit_data.point_data:
+                    all_hitsetkeys = hit_data.point_data["hitsetkey"]
+                else:
+                    all_hitsetkeys = [None] * hit_data.n_points
+
+                if all_hitkeys is None or all_events is None:
+                    continue
+
+                # Find matching hits
+                associated_hit_indices = []
+                for i, (key, event, hitsetkey) in enumerate(
+                    zip(all_hitkeys, all_events, all_hitsetkeys)
+                ):
+                    if (
+                        key in selected_cluster_keys
+                        and event == cluster_event
+                        and (
+                            cluster_hitsetkey is None or hitsetkey == cluster_hitsetkey
+                        )
+                    ):
+                        associated_hit_indices.append(i)
+
+                # Process the associated hits
+                for idx in associated_hit_indices:
+                    # Get hit position
+                    x = hit_data.points[idx][0]
+                    y = hit_data.points[idx][1]
+                    z = hit_data.points[idx][2]
+
+                    # Get hit properties
+                    adc = hit_data.point_data["adc"][idx]
+                    t = hit_data.point_data.get("t", [0] * hit_data.n_points)[idx]
+                    phi = hit_data.point_data.get("phi", [0] * hit_data.n_points)[idx]
+
+                    # Accumulate weighted values
+                    x_sum += x * adc
+                    y_sum += y * adc
+                    z_sum += z * adc
+                    phi_sum += phi * adc if phi != 0 else 0
+                    t_sum += t * adc if t != 0 else 0
+                    adc_sum += adc
+                    associated_hit_count += 1
+
+            # Calculate ADC-weighted averages if we found associated hits
+            if associated_hit_count > 0 and adc_sum > 0:
+                avg_x = x_sum / adc_sum
+                avg_y = y_sum / adc_sum
+                avg_z = z_sum / adc_sum
+                avg_phi = phi_sum / adc_sum if phi_sum != 0 else 0
+                avg_t = t_sum / adc_sum if t_sum != 0 else 0
+
+                # Display the results in the info panel
+                info_text = f"Associated Hits for Selected Cluster:\n"
+                info_text += f"Total hits: {associated_hit_count}\n"
+                info_text += f"Total ADC: {adc_sum:.1f}\n\n"
+                info_text += f"ADC-Weighted Average Position:\n"
+                info_text += f"X: {avg_x:.2f} cm\n"
+                info_text += f"Y: {avg_y:.2f} cm\n"
+                info_text += f"Z: {avg_z:.2f} cm\n"
+                info_text += f"Phi: {avg_phi:.3f} rad ({np.degrees(avg_phi):.2f}°)\n"
+                info_text += f"T: {avg_t:.2f}\n"
+
+                # Display DCA information if available
+                if hasattr(self, "helix_params_refined") and self.helix_params_refined:
+                    dca_result = find_dca_and_closest_point(
+                        self.helix_params_refined,
+                        self.helix_params_refined.get("ref_theta_direct", 0),
+                    )
+                    if dca_result is not None:
+                        dca_val = dca_result["dca"]
+                        info_text += f"\nDCA to Beam: {dca_val:.3f} cm\n"
+
+                self.info_panel.setText(info_text)
+
+                # Create or update the average position point visualization
+                avg_position = np.array([avg_x, avg_y, avg_z])
+                self.visualize_average_position(avg_position)
+
+                return {
+                    "x": avg_x,
+                    "y": avg_y,
+                    "z": avg_z,
+                    "phi": avg_phi,
+                    "t": avg_t,
+                    "hit_count": associated_hit_count,
+                    "adc_sum": adc_sum,
+                }
+            else:
+                self.info_panel.setText(
+                    "No associated hits found for the selected cluster."
+                )
+                return None
+
+        except Exception as e:
+            print(f"Error calculating average position: {e}")
+            import traceback
+
+            traceback.print_exc()
+            self.info_panel.setText(f"Error calculating average position: {str(e)}")
+            return None
+
+    def visualize_average_position(self, position):
+        """
+        Create a visual marker for the ADC-weighted average position.
+
+        Args:
+            position: Numpy array [x, y, z]
+        """
+        try:
+            print(f"Visualizing average position at: {position}")
+            
+            # Create a single point at the average position (instead of a sphere)
+            # This will make it look like a regular cluster point
+            point = pv.PolyData(position.reshape(1, 3))
+            
+            # Remove existing actor if it exists
+            if hasattr(self, 'avg_position_actor') and self.avg_position_actor is not None:
+                print("Removing existing average position actor")
+                self.plotter_widget.remove_actor(self.avg_position_actor)
+            
+            # Add the point with the same style as clusters but in black color
+            print("Adding new average position actor")
+            self.avg_position_actor = self.plotter_widget.add_mesh(
+                point,
+                style="points",       # Same style as clusters
+                point_size=8,         # Slightly larger than regular clusters (which are 5)
+                color='black',        # Black color as requested
+                render=True,          # Force immediate rendering
+                pickable=False
+            )
+            
+            # Explicit render call to ensure everything is displayed
+            self.plotter_widget.render()
+            
+            print("Visualization completed")
+            return True
+        except Exception as e:
+            print(f"Error in visualize_average_position: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
