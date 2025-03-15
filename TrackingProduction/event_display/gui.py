@@ -28,10 +28,14 @@ from qtpy.QtWidgets import (
     QStatusBar,
     QTabWidget,
     QScrollArea,
+    QGridLayout,
+    QFormLayout,
+    QMenu,
+    QSizePolicy,
 )
 from qtpy.QtCore import Qt, QSize
 from qtpy.QtGui import QIcon, QStandardItem, QStandardItemModel
-from superqt import QRangeSlider
+
 
 from helix_fitting import (
     fit_helix_initial,
@@ -58,7 +62,6 @@ from analysis import (
 from data_loader import load_data_from_root
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PyQt5.QtGui import QStandardItem, QStandardItemModel
 
 
 class MainWindow(QMainWindow):
@@ -106,256 +109,168 @@ class MainWindow(QMainWindow):
         self.histogram_window = HistogramWindow()
         self.module_hist_window = ModuleHistogramWindow()
         self.pad_adc_window = PadADCWindow()
-
+        self.projection_window = None
         self.avg_position_actor = None
 
-        # Main container widget
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
+        self.associated_hits_hidden = False  # False means show global hits normally.
+        self.hits_override_enabled = False
+        self.previous_hits_state = {"tpc_hits": True, "silicon_hits": True}
+        self.selected_cluster_index = None
+        self.selected_points_first = []
+        self.last_picked_mesh = None
+        self.setup_ui()
 
-        # Horizontal layout for the main interface
-        main_layout = QHBoxLayout(main_widget)
-        main_layout.setContentsMargins(5, 5, 5, 5)  # Added margins for aesthetics
+        # Data placeholders
+        self.cluster_data = None
+        self.hit_data = None
+        self.cluster_polydata = None
+        self.hit_polydata = None
 
-        # Use a QSplitter to allow resizing between the 3D view and the sidebar
-        splitter = QSplitter(Qt.Horizontal)
-        main_layout.addWidget(splitter)
+        # self.selected_points_first = []  # Used for point selection
+        self.helix_points = None
+        self.helix_params_initial = None
+        self.helix_params_refined = None
+        self.line_params_initial = None
+        self.line_params_refined = None
 
-        # Left side panel
-        """left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(5, 5, 5, 5)"""
-        left_splitter = QSplitter(Qt.Vertical)
-        left_splitter.setContentsMargins(5, 5, 5, 5)
+        self.filtered_clusters = None
 
-        # === Control Area ===
-        control_area = QWidget()
-        control_layout = QVBoxLayout(control_area)
-        control_layout.setContentsMargins(0, 0, 0, 0)
+        self.plotter_widget.show_axes()
 
-        # --- Data Loading Button ---
-        btn_load = QPushButton("Load ROOT File")
-        btn_load.clicked.connect(self.load_data)
-        control_layout.addWidget(btn_load)
+        self.update_point_picking()
 
-        top_filter_layout = QHBoxLayout()
+    def setup_ui(self):
+        """Set up the redesigned UI with dockable panels and maximized 3D view."""
+        # Central widget - 3D Visualization Area
+        central_widget = QWidget()
+        central_layout = QVBoxLayout(central_widget)
+        central_layout.setContentsMargins(0, 0, 0, 0)
 
-        # --------------------------------------------------------------------
-        # 2) Silicon group
+        # Create 3D visualization widget
+        self.plotter_widget = QtInteractor()
+        central_layout.addWidget(self.plotter_widget)
 
-        silicon_group = QGroupBox("Silicon")
-        silicon_layout = QVBoxLayout()
-        silicon_group.setLayout(silicon_layout)
+        # Add information panel at the bottom
+        self.info_panel = QTextEdit()
+        self.info_panel.setReadOnly(True)
+        self.info_panel.setMaximumHeight(100)
+        central_layout.addWidget(self.info_panel)
 
-        # Create a horizontal layout for the checkboxes
-        checkbox_layout = QHBoxLayout()
+        self.setCentralWidget(central_widget)
 
-        # Left column (Seed and Track)
-        left_column = QVBoxLayout()
-        self.seed_checkbox_silicon = QCheckBox("Seed")
-        self.seed_checkbox_silicon.setChecked(False)
-        self.seed_checkbox_silicon.stateChanged.connect(self.update_display)
-        left_column.addWidget(self.seed_checkbox_silicon)
+        # Create dock widgets for controls
+        self.create_sidebar()  # <-- Change this line from create_dock_widgets() to create_sidebar()
 
-        self.track_checkbox_silicon = QCheckBox("Track")
-        self.track_checkbox_silicon.setChecked(False)
-        self.track_checkbox_silicon.stateChanged.connect(self.update_display)
-        left_column.addWidget(self.track_checkbox_silicon)
+        # Create toolbars
+        self.create_toolbars()
 
-        # Right column (Clusters and Hits)
-        right_column = QVBoxLayout()
-        self.clusters_checkbox_silicon = QCheckBox("Clusters")
-        self.clusters_checkbox_silicon.setChecked(True)
-        self.clusters_checkbox_silicon.stateChanged.connect(self.update_display)
-        right_column.addWidget(self.clusters_checkbox_silicon)
+        # Create status bar
+        self.create_status_bar()
 
-        self.hits_checkbox_silicon = QCheckBox("Hits")
-        self.hits_checkbox_silicon.setChecked(True)
-        self.hits_checkbox_silicon.stateChanged.connect(self.update_display)
-        right_column.addWidget(self.hits_checkbox_silicon)
+        # Initial status message
+        self.instruction_label.setText(
+            "Instruction: Select 3 points for initial track fitting."
+        )
 
-        # Add columns to checkbox layout
-        checkbox_layout.addLayout(left_column)
-        checkbox_layout.addLayout(right_column)
-        silicon_layout.addLayout(checkbox_layout)
+    def create_toolbars(self):
+        """Create main toolbar with commonly used actions."""
+        main_toolbar = QToolBar("Main Toolbar")
+        main_toolbar.setIconSize(QSize(16, 16))
+        self.addToolBar(Qt.TopToolBarArea, main_toolbar)
 
-        # crossing
-        crossing_label_silicon = QLabel("Crossing:")
-        self.crossing_spin_silicon = QSpinBox()
-        self.crossing_spin_silicon.setRange(-2000, 9999)
-        self.crossing_spin_silicon.setValue(-2000)
-        self.crossing_spin_silicon.valueChanged.connect(self.update_display)
-        silicon_layout.addWidget(crossing_label_silicon)
-        silicon_layout.addWidget(self.crossing_spin_silicon)
+        # Left side toolbar elements
+        self.setWindowTitle("Event Display")
+        title_label = QLabel("Event Display")
+        title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        main_toolbar.addWidget(title_label)
 
-        # T-crossing
-        t_crossing_label_silicon = QLabel("T-Crossing:")
-        self.t_crossing_spin_silicon = QSpinBox()
-        self.t_crossing_spin_silicon.setRange(-2000, 99999)
-        self.t_crossing_spin_silicon.setValue(-2000)
-        self.t_crossing_spin_silicon.valueChanged.connect(self.update_display)
-        silicon_layout.addWidget(t_crossing_label_silicon)
-        silicon_layout.addWidget(self.t_crossing_spin_silicon)
+        main_toolbar.addSeparator()
 
-        # track ID
-        track_id_label_silicon = QLabel("Track ID:")
-        self.track_id_spin_silicon = QSpinBox()
-        self.track_id_spin_silicon.setRange(-1, 999999)
-        self.track_id_spin_silicon.setValue(-1)
-        self.track_id_spin_silicon.valueChanged.connect(self.update_display)
-        silicon_layout.addWidget(track_id_label_silicon)
-        silicon_layout.addWidget(self.track_id_spin_silicon)
+        # Load ROOT File button
+        load_button = QPushButton("Load ROOT")
+        load_button.clicked.connect(self.load_data)
+        main_toolbar.addWidget(load_button)
 
-        top_filter_layout.addWidget(silicon_group)
+        # Pick Mode dropdown
+        pick_mode_button = QPushButton("Pick Mode ▾")
+        pick_mode_menu = QMenu(self)
 
-        # --------------------------------------------------------------------
-        # 3) TPC group
+        info_action = QAction("View Point Info", self)
+        info_action.setCheckable(True)
+        info_action.setChecked(True)
+        info_action.triggered.connect(lambda: self.set_pick_mode("info"))
 
-        tpc_group = QGroupBox("TPC")
-        tpc_layout = QVBoxLayout()
-        tpc_group.setLayout(tpc_layout)
+        helix_action = QAction("Pick for Helix Fitting", self)
+        helix_action.setCheckable(True)
+        helix_action.triggered.connect(lambda: self.set_pick_mode("helix"))
 
-        checkbox_layout = QHBoxLayout()
+        vertex_action = QAction("Pick for Vertex Finding", self)
+        vertex_action.setCheckable(True)
+        vertex_action.triggered.connect(lambda: self.set_pick_mode("vertex"))
 
-        left_column = QVBoxLayout()
-        self.seed_checkbox_tpc = QCheckBox("Seed")
-        self.seed_checkbox_tpc.setChecked(False)
-        self.seed_checkbox_tpc.stateChanged.connect(self.update_display)
-        left_column.addWidget(self.seed_checkbox_tpc)
+        pos_action = QAction("Pos Reco", self)
+        pos_action.setCheckable(True)
+        pos_action.triggered.connect(lambda: self.set_pick_mode("pos"))
 
-        self.track_checkbox_tpc = QCheckBox("Track")
-        self.track_checkbox_tpc.setChecked(False)
-        self.track_checkbox_tpc.stateChanged.connect(self.update_display)
-        left_column.addWidget(self.track_checkbox_tpc)
+        self.pick_mode_actions = [info_action, helix_action, vertex_action, pos_action]
 
-        right_column = QVBoxLayout()
+        for action in self.pick_mode_actions:
+            pick_mode_menu.addAction(action)
 
-        self.clusters_checkbox_tpc = QCheckBox("Clusters")
-        self.clusters_checkbox_tpc.setChecked(True)
-        self.clusters_checkbox_tpc.stateChanged.connect(self.update_display)
-        right_column.addWidget(self.clusters_checkbox_tpc)
+        pick_mode_button.setMenu(pick_mode_menu)
+        main_toolbar.addWidget(pick_mode_button)
 
-        self.hits_checkbox_tpc = QCheckBox("Hits")
-        self.hits_checkbox_tpc.setChecked(True)
-        self.hits_checkbox_tpc.stateChanged.connect(self.update_display)
-        right_column.addWidget(self.hits_checkbox_tpc)
+        # Fit Track button
+        fit_track_button = QPushButton("Fit Track")
+        fit_track_button.clicked.connect(self.initiate_fit)
+        main_toolbar.addWidget(fit_track_button)
 
-        checkbox_layout.addLayout(left_column)
-        checkbox_layout.addLayout(right_column)
-        tpc_layout.addLayout(checkbox_layout)
+        # Settings button
+        settings_button = QPushButton("Settings")
+        settings_menu = QMenu(self)
 
-        t_crossing_label_tpc = QLabel("T-Crossing:")
-        self.t_crossing_spin_tpc = QSpinBox()
-        self.t_crossing_spin_tpc.setRange(-2000, 99999)
-        self.t_crossing_spin_tpc.setValue(-2000)
-        self.t_crossing_spin_tpc.valueChanged.connect(self.update_display)
-        tpc_layout.addWidget(t_crossing_label_tpc)
-        tpc_layout.addWidget(self.t_crossing_spin_tpc)
+        self.toggle_field_action = QAction("Field Mode: On", self)
+        self.toggle_field_action.triggered.connect(self.toggle_field_mode)
 
-        track_id_label_tpc = QLabel("Track ID:")
-        self.track_id_spin_tpc = QSpinBox()
-        self.track_id_spin_tpc.setRange(-1, 999999)
-        self.track_id_spin_tpc.setValue(-1)
-        self.track_id_spin_tpc.valueChanged.connect(self.update_display)
-        tpc_layout.addWidget(track_id_label_tpc)
-        tpc_layout.addWidget(self.track_id_spin_tpc)
+        reset_track_action = QAction("Reset Track", self)
+        reset_track_action.triggered.connect(self.reset_track)
 
-        self.side0_checkbox_tpc = QCheckBox("Side 0")
-        self.side0_checkbox_tpc.setChecked(True)
-        self.side0_checkbox_tpc.stateChanged.connect(self.update_display)
-        tpc_layout.addWidget(self.side0_checkbox_tpc)
+        clear_tracks_action = QAction("Clear Track Lines", self)
+        clear_tracks_action.triggered.connect(self.clear_track_lines)
 
-        self.side1_checkbox_tpc = QCheckBox("Side 1")
-        self.side1_checkbox_tpc.setChecked(True)
-        self.side1_checkbox_tpc.stateChanged.connect(self.update_display)
-        tpc_layout.addWidget(self.side1_checkbox_tpc)
+        settings_menu.addAction(self.toggle_field_action)
+        settings_menu.addAction(reset_track_action)
+        settings_menu.addAction(clear_tracks_action)
 
-        top_filter_layout.addWidget(tpc_group)
+        settings_button.setMenu(settings_menu)
+        main_toolbar.addWidget(settings_button)
 
-        # --------------------------------------------------------------------
+        # Add spacer to push event selector to right
+        spacer = QWidget()
+        size_policy = QSizePolicy()
+        size_policy.setHorizontalPolicy(QSizePolicy.Expanding)
+        size_policy.setVerticalPolicy(QSizePolicy.Preferred)
+        spacer.setSizePolicy(size_policy)
+        main_toolbar.addWidget(spacer)
 
-        # --- ADC Threshold Controls ---
-        adc_group = QGroupBox("Thresholds")
-        adc_layout = QVBoxLayout()
-        adc_group.setLayout(adc_layout)
-
-        # Cluster ADC threshold control
-        cluster_adc_layout = QHBoxLayout()
-        cluster_adc_label = QLabel("Cluster ADC ≥")
-        self.cluster_adc_spinbox = QDoubleSpinBox()
-        self.cluster_adc_spinbox.setRange(0, 10000)
-        self.cluster_adc_spinbox.setValue(0)
-        self.cluster_adc_spinbox.setDecimals(0)
-        self.cluster_adc_spinbox.valueChanged.connect(self.update_display)
-        cluster_adc_layout.addWidget(cluster_adc_label)
-        cluster_adc_layout.addWidget(self.cluster_adc_spinbox)
-        adc_layout.addLayout(cluster_adc_layout)
-
-        # Hit ADC threshold control
-        hit_adc_layout = QHBoxLayout()
-        hit_adc_label = QLabel("Hit ADC ≥")
-        self.hit_adc_spinbox = QDoubleSpinBox()
-        self.hit_adc_spinbox.setRange(0, 10000)
-        self.hit_adc_spinbox.setValue(0)
-        self.hit_adc_spinbox.setDecimals(0)
-        self.hit_adc_spinbox.valueChanged.connect(self.update_display)
-        hit_adc_layout.addWidget(hit_adc_label)
-        hit_adc_layout.addWidget(self.hit_adc_spinbox)
-        adc_layout.addLayout(hit_adc_layout)
-
-        nmaps_layout = QHBoxLayout()
-        nmaps_label = QLabel("NMAPS ≥")
-        self.nmaps_spinbox = QSpinBox()
-        self.nmaps_spinbox.setRange(-10, 100)
-        self.nmaps_spinbox.setValue(-1)
-        self.nmaps_spinbox.valueChanged.connect(self.update_display)
-        nmaps_layout.addWidget(nmaps_label)
-        nmaps_layout.addWidget(self.nmaps_spinbox)
-        adc_layout.addLayout(nmaps_layout)
-
-        top_filter_layout.addWidget(adc_group)
-
-        # === Pick Mode Selection Area ===
-        pick_mode_group = QGroupBox("Pick Mode")
-        pick_mode_layout = QVBoxLayout()
-        pick_mode_group.setLayout(pick_mode_layout)
-
-        # Radio Button for Viewing Point Info
-        self.radio_view_info = QRadioButton("View Point Info")
-        self.radio_view_info.setChecked(True)
-        self.radio_view_info.toggled.connect(self.on_pick_mode_changed)
-        pick_mode_layout.addWidget(self.radio_view_info)
-
-        # Radio Button for Picking Points for Helix Fitting
-        self.radio_pick_helix = QRadioButton("Pick for Helix Fitting")
-        self.radio_pick_helix.toggled.connect(self.on_pick_mode_changed)
-        pick_mode_layout.addWidget(self.radio_pick_helix)
-
-        self.radio_pick_vertex = QRadioButton("Pick for Vertex Finding")
-        self.radio_pick_vertex.toggled.connect(self.on_pick_mode_changed)
-        pick_mode_layout.addWidget(self.radio_pick_vertex)
-
-        self.radio_pick_pos = QRadioButton("Pos Reco")
-        self.radio_pick_pos.toggled.connect(self.on_pick_mode_changed)
-        pick_mode_layout.addWidget(self.radio_pick_pos)
-
-        top_filter_layout.addWidget(pick_mode_group)
-
-        # --- File Selection Dropdown ---
-        files_group = QGroupBox("Files")
-        files_layout = QVBoxLayout()
-        files_group.setLayout(files_layout)
+        file_label = QLabel("File:")
+        main_toolbar.addWidget(file_label)
 
         self.file_combo = QComboBox()
-        # Set up a model to allow checkable items in the combo box
+        self.file_combo.setMinimumWidth(120)
         model = QStandardItemModel(self.file_combo)
         self.file_combo.setModel(model)
-
         model.itemChanged.connect(lambda item: self.update_display())
+        main_toolbar.addWidget(self.file_combo)
 
-        files_layout.addWidget(self.file_combo)
+        # Then add a separator
+        main_toolbar.addSeparator()
+        # Event selector on right
+        event_label = QLabel("Event:")
+        main_toolbar.addWidget(event_label)
 
         self.event_combo = QComboBox()
+        self.event_combo.setMinimumWidth(120)
         event_model = QStandardItemModel(self.event_combo)
         self.event_combo.setModel(event_model)
 
@@ -366,247 +281,460 @@ class MainWindow(QMainWindow):
             event_model.appendRow(item)
 
         event_model.itemChanged.connect(lambda i: self.update_display())
+        main_toolbar.addWidget(self.event_combo)
 
-        files_layout.addWidget(self.event_combo)
+    def create_sidebar(self):
+        """Create left sidebar with tabs for all control groups."""
+        # Create dock widget for the sidebar
+        self.sidebar_dock = QDockWidget("Controls", self)
+        self.sidebar_dock.setAllowedAreas(Qt.LeftDockWidgetArea)
+        self.sidebar_dock.setFeatures(QDockWidget.DockWidgetClosable)
+        self.sidebar_dock.setFixedWidth(230)  # Set fixed width for the sidebar
 
-        top_filter_layout.addWidget(files_group)
+        # Create tab widget for the sidebar
+        self.sidebar_tabs = QTabWidget()
+        self.sidebar_tabs.setTabPosition(QTabWidget.West)  # Tabs on the left
 
-        projection_buttons_layout = QVBoxLayout()
-        projection_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        # Create the four tabs with their respective widgets
+        self.create_display_tab()
+        self.create_filters_tab()
+        self.create_analysis_tab()
+        self.create_tracking_tab()
 
-        self.btn_show_projection = QPushButton("Show 2D Projection")
-        self.btn_show_projection.clicked.connect(self.show_projection_window)
-        projection_buttons_layout.addWidget(self.btn_show_projection)
+        # Set the tab widget as the dock widget's content
+        self.sidebar_dock.setWidget(self.sidebar_tabs)
 
-        self.btn_toggle_field = QPushButton("Field On")
-        self.btn_toggle_field.setCheckable(True)
-        self.btn_toggle_field.clicked.connect(self.toggle_field_mode)
-        projection_buttons_layout.addWidget(self.btn_toggle_field)
+        # Add dock widget to left area
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.sidebar_dock)
 
-        top_filter_layout.addLayout(projection_buttons_layout)
+    def create_display_tab(self):
+        """Create the Display tab content."""
+        display_widget = QWidget()
+        display_layout = QVBoxLayout(display_widget)
+        display_layout.setContentsMargins(8, 8, 8, 8)
+        display_layout.setSpacing(8)
 
-        self.projection_window = None
+        # Silicon section
+        silicon_group = QGroupBox("Silicon")
+        silicon_layout = QGridLayout()
 
-        event_info_label = QLabel(
-            "<b>Run:</b> 53217<br>"
-            "<b>ZDC coincidence:</b> Raw: 1,869750<br>"
-            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-            "Live: 1,868219"
-        )
-        event_info_label.setWordWrap(True)
-        top_filter_layout.addWidget(event_info_label)
+        # Clusters and hits checkboxes
+        self.clusters_checkbox_silicon = QCheckBox("Clusters")
+        self.clusters_checkbox_silicon.setChecked(True)
+        self.clusters_checkbox_silicon.stateChanged.connect(self.update_display)
+        silicon_layout.addWidget(self.clusters_checkbox_silicon, 0, 0)
 
-        control_layout.addLayout(top_filter_layout)
+        self.seed_checkbox_silicon = QCheckBox("Seed")
+        self.seed_checkbox_silicon.setChecked(False)
+        self.seed_checkbox_silicon.stateChanged.connect(self.update_display)
+        silicon_layout.addWidget(self.seed_checkbox_silicon, 0, 1)
 
-        # === Range Selection Area ===
-        range_group = QGroupBox("Axis Range Selection")
-        range_layout = QHBoxLayout()
-        range_group.setLayout(range_layout)
+        self.hits_checkbox_silicon = QCheckBox("Hits")
+        self.hits_checkbox_silicon.setChecked(True)
+        self.hits_checkbox_silicon.stateChanged.connect(self.update_display)
+        silicon_layout.addWidget(self.hits_checkbox_silicon, 1, 0)
 
-        slider_width = 200
-        label_width = 30
-        spinbox_width = 50
+        self.track_checkbox_silicon = QCheckBox("Track")
+        self.track_checkbox_silicon.setChecked(False)
+        self.track_checkbox_silicon.stateChanged.connect(self.update_display)
+        silicon_layout.addWidget(self.track_checkbox_silicon, 1, 1)
 
-        overall_ranges = {"X": (-150, 150), "Y": (-150, 150), "Z": (-400, 400)}
+        silicon_group.setLayout(silicon_layout)
+        display_layout.addWidget(silicon_group)
 
-        def create_axis_controls(
-            axis_label, initial_min, initial_max, overall_min, overall_max
-        ):
-            label = QLabel(f"{axis_label}")
-            label.setFixedWidth(label_width)
-            min_spin = QDoubleSpinBox()
-            min_spin.setRange(overall_min, overall_max)
-            min_spin.setDecimals(0)
-            min_spin.setValue(initial_min)
-            min_spin.setFixedWidth(spinbox_width)
+        # TPC section
+        tpc_group = QGroupBox("TPC")
+        tpc_layout = QGridLayout()
 
-            max_spin = QDoubleSpinBox()
-            max_spin.setRange(overall_min, overall_max)
-            max_spin.setDecimals(0)
-            max_spin.setValue(initial_max)
-            max_spin.setFixedWidth(spinbox_width)
+        # Clusters and hits checkboxes
+        self.clusters_checkbox_tpc = QCheckBox("Clusters")
+        self.clusters_checkbox_tpc.setChecked(True)
+        self.clusters_checkbox_tpc.stateChanged.connect(self.update_display)
+        tpc_layout.addWidget(self.clusters_checkbox_tpc, 0, 0)
 
-            slider = QRangeSlider(Qt.Horizontal)
-            slider.setMinimum(overall_min)
-            slider.setMaximum(overall_max)
-            slider.setValue([initial_min, initial_max])
-            slider.setFixedWidth(slider_width)
+        self.seed_checkbox_tpc = QCheckBox("Seed")
+        self.seed_checkbox_tpc.setChecked(False)
+        self.seed_checkbox_tpc.stateChanged.connect(self.update_display)
+        tpc_layout.addWidget(self.seed_checkbox_tpc, 0, 1)
 
-            def on_min_spin_change(value):
-                current_max = slider.value()[1]
-                if value > current_max:
-                    min_spin.blockSignals(True)
-                    min_spin.setValue(current_max)
-                    min_spin.blockSignals(False)
-                    value = current_max
-                slider.setValue([value, current_max])
-                self.update_display()
+        self.hits_checkbox_tpc = QCheckBox("Hits")
+        self.hits_checkbox_tpc.setChecked(True)
+        self.hits_checkbox_tpc.stateChanged.connect(self.update_display)
+        tpc_layout.addWidget(self.hits_checkbox_tpc, 1, 0)
 
-            def on_max_spin_change(value):
-                current_min = slider.value()[0]
-                if value < current_min:
-                    max_spin.blockSignals(True)
-                    max_spin.setValue(current_min)
-                    max_spin.blockSignals(False)
-                    value = current_min
-                slider.setValue([current_min, value])
-                self.update_display()
+        self.track_checkbox_tpc = QCheckBox("Track")
+        self.track_checkbox_tpc.setChecked(False)
+        self.track_checkbox_tpc.stateChanged.connect(self.update_display)
+        tpc_layout.addWidget(self.track_checkbox_tpc, 1, 1)
 
-            min_spin.valueChanged.connect(on_min_spin_change)
-            max_spin.valueChanged.connect(on_max_spin_change)
+        self.side0_checkbox_tpc = QCheckBox("Side 0")
+        self.side0_checkbox_tpc.setChecked(True)
+        self.side0_checkbox_tpc.stateChanged.connect(self.update_display)
+        tpc_layout.addWidget(self.side0_checkbox_tpc, 2, 0)
 
-            def on_slider_change(values):
-                min_val, max_val = values
-                min_spin.blockSignals(True)
-                max_spin.blockSignals(True)
-                min_spin.setValue(min_val)
-                max_spin.setValue(max_val)
-                min_spin.blockSignals(False)
-                max_spin.blockSignals(False)
-                self.update_display()
+        self.side1_checkbox_tpc = QCheckBox("Side 1")
+        self.side1_checkbox_tpc.setChecked(True)
+        self.side1_checkbox_tpc.stateChanged.connect(self.update_display)
+        tpc_layout.addWidget(self.side1_checkbox_tpc, 2, 1)
 
-            slider.valueChanged.connect(on_slider_change)
-            hbox = QHBoxLayout()
-            hbox.addWidget(label)
-            hbox.addWidget(min_spin)
-            hbox.addWidget(max_spin)
-            hbox.addWidget(slider)
-            container = QWidget()
-            container.setLayout(hbox)
+        tpc_group.setLayout(tpc_layout)
+        display_layout.addWidget(tpc_group)
 
-            # Assign the slider to the corresponding instance attribute
-            if axis_label == "X":
-                self.x_range_slider = slider
-            elif axis_label == "Y":
-                self.y_range_slider = slider
-            elif axis_label == "Z":
-                self.z_range_slider = slider
+        # Thresholds
+        threshold_group = QGroupBox("Thresholds")
+        threshold_layout = QFormLayout()
 
-            return container
+        self.cluster_adc_spinbox = QDoubleSpinBox()
+        self.cluster_adc_spinbox.setRange(0, 10000)
+        self.cluster_adc_spinbox.setValue(0)
+        self.cluster_adc_spinbox.setDecimals(0)
+        self.cluster_adc_spinbox.valueChanged.connect(self.update_display)
+        threshold_layout.addRow("Cluster ADC ≥", self.cluster_adc_spinbox)
 
-        x_axis_widget = create_axis_controls(
-            "X", -100, 100, overall_ranges["X"][0], overall_ranges["X"][1]
-        )
-        y_axis_widget = create_axis_controls(
-            "Y", -100, 100, overall_ranges["Y"][0], overall_ranges["Y"][1]
-        )
-        z_axis_widget = create_axis_controls(
-            "Z", -400, 400, overall_ranges["Z"][0], overall_ranges["Z"][1]
-        )
-        range_layout.addWidget(x_axis_widget)
-        range_layout.addWidget(y_axis_widget)
-        range_layout.addWidget(z_axis_widget)
-        control_layout.addWidget(range_group)
+        self.hit_adc_spinbox = QDoubleSpinBox()
+        self.hit_adc_spinbox.setRange(0, 10000)
+        self.hit_adc_spinbox.setValue(0)
+        self.hit_adc_spinbox.setDecimals(0)
+        self.hit_adc_spinbox.valueChanged.connect(self.update_display)
+        threshold_layout.addRow("Hit ADC ≥", self.hit_adc_spinbox)
 
-        # === Track Fitting Controls ===
-        track_group = QGroupBox("Track Fitting")
-        track_layout = QHBoxLayout()
-        track_group.setLayout(track_layout)
+        threshold_group.setLayout(threshold_layout)
+        display_layout.addWidget(threshold_group)
 
-        self.btn_fit_track = QPushButton("Fit Track")
-        self.btn_fit_track.clicked.connect(self.initiate_fit)
-        track_layout.addWidget(self.btn_fit_track)
+        # Axis Range
+        axis_group = QGroupBox("Axis Range")
+        axis_layout = QVBoxLayout()
 
-        # self.btn_reconstruct_z = QPushButton("Reco Z")
-        # self.btn_reconstruct_z.clicked.connect(self.reconstruct_position)
-        # track_layout.addWidget(self.btn_reconstruct_z)
+        # X Range
+        x_layout = QHBoxLayout()  # Change to horizontal layout
+        x_label = QLabel("X:")
+        x_layout.addWidget(x_label)
 
-        self.btn_reset_track = QPushButton("Reset Track")
-        self.btn_reset_track.clicked.connect(self.reset_track)
-        track_layout.addWidget(self.btn_reset_track)
+        # Create two spinboxes instead of a slider
+        self.x_min_spinbox = QSpinBox()
+        self.x_min_spinbox.setRange(-150, 150)
+        self.x_min_spinbox.setValue(-100)
+        self.x_min_spinbox.valueChanged.connect(self.update_display)
+        x_layout.addWidget(self.x_min_spinbox)
 
-        btn_output_phi_z = QPushButton("ADC Weighted Phi/Z")
-        btn_output_phi_z.clicked.connect(self.output_adc_averaged_phi_z)
-        track_layout.addWidget(btn_output_phi_z)
+        x_layout.addWidget(QLabel("to"))  # Add a label between spinboxes
 
-        btn_show_adc_dist = QPushButton("Show ADC Distribution")
-        btn_show_adc_dist.clicked.connect(self.show_pad_adc_window)
-        control_layout.addWidget(btn_show_adc_dist)
+        self.x_max_spinbox = QSpinBox()
+        self.x_max_spinbox.setRange(-150, 150)
+        self.x_max_spinbox.setValue(100)
+        self.x_max_spinbox.valueChanged.connect(self.update_display)
+        x_layout.addWidget(self.x_max_spinbox)
 
-        self.btn_clear_track = QPushButton("Clear Track Lines")
-        self.btn_clear_track.clicked.connect(self.clear_track_lines)
-        track_layout.addWidget(self.btn_clear_track)
+        axis_layout.addLayout(x_layout)
 
-        self.module_based_fitting_checkbox = QCheckBox("Module Fitting")
-        self.module_based_fitting_checkbox.setChecked(False)
-        track_layout.addWidget(self.module_based_fitting_checkbox)
+        y_layout = QHBoxLayout()  # Change to horizontal layout
+        y_label = QLabel("Y:")
+        y_layout.addWidget(y_label)
 
-        self.track_toggle_checkbox = QCheckBox("Show Lines")
-        self.track_toggle_checkbox.setChecked(True)
-        self.track_toggle_checkbox.stateChanged.connect(self.on_track_toggle)
+        # Create two spinboxes instead of a slider
+        self.y_min_spinbox = QSpinBox()
+        self.y_min_spinbox.setRange(-150, 150)
+        self.y_min_spinbox.setValue(-100)
+        self.y_min_spinbox.valueChanged.connect(self.update_display)
+        y_layout.addWidget(self.y_min_spinbox)
 
-        track_layout.addWidget(self.track_toggle_checkbox)
+        y_layout.addWidget(QLabel("to"))  # Add a label between spinboxes
 
-        self.btn_toggle_associated_hits = QPushButton("Toggle Associated Hits")
-        self.btn_toggle_associated_hits.clicked.connect(self.toggle_associated_hits)
-        track_layout.addWidget(self.btn_toggle_associated_hits)
+        self.y_max_spinbox = QSpinBox()
+        self.y_max_spinbox.setRange(-150, 150)
+        self.y_max_spinbox.setValue(100)
+        self.y_max_spinbox.valueChanged.connect(self.update_display)
+        y_layout.addWidget(self.y_max_spinbox)
 
+        axis_layout.addLayout(y_layout)
+
+        z_layout = QHBoxLayout()  # Change to horizontal layout
+        z_label = QLabel("Z:")
+        z_layout.addWidget(z_label)
+
+        # Create two spinboxes instead of a slider
+        self.z_min_spinbox = QSpinBox()
+        self.z_min_spinbox.setRange(-300, 300)
+        self.z_min_spinbox.setValue(-300)
+        self.z_min_spinbox.valueChanged.connect(self.update_display)
+        z_layout.addWidget(self.z_min_spinbox)
+
+        z_layout.addWidget(QLabel("to"))  # Add a label between spinboxes
+
+        self.z_max_spinbox = QSpinBox()
+        self.z_max_spinbox.setRange(-300, 300)
+        self.z_max_spinbox.setValue(300)
+        self.z_max_spinbox.valueChanged.connect(self.update_display)
+        z_layout.addWidget(self.z_max_spinbox)
+
+        axis_layout.addLayout(z_layout)
+
+        axis_group.setLayout(axis_layout)
+        display_layout.addWidget(axis_group)
+
+        # Add stretch to push everything to the top
+        display_layout.addStretch()
+
+        # Add the tab
+        self.sidebar_tabs.addTab(display_widget, "D")
+
+    def create_filters_tab(self):
+        """Create the Filters tab content."""
+        filters_widget = QWidget()
+        filters_layout = QVBoxLayout(filters_widget)
+        filters_layout.setContentsMargins(8, 8, 8, 8)
+        filters_layout.setSpacing(8)
+
+        # Silicon ID filters
+        silicon_group = QGroupBox("Silicon ID Filters")
+        silicon_form = QFormLayout()
+
+        # Crossing
+        self.crossing_spin_silicon = QSpinBox()
+        self.crossing_spin_silicon.setRange(-2000, 9999)
+        self.crossing_spin_silicon.setValue(-2000)
+        self.crossing_spin_silicon.valueChanged.connect(self.update_display)
+        silicon_form.addRow("Crossing:", self.crossing_spin_silicon)
+
+        # T-Crossing
+        self.t_crossing_spin_silicon = QSpinBox()
+        self.t_crossing_spin_silicon.setRange(-2000, 99999)
+        self.t_crossing_spin_silicon.setValue(-2000)
+        self.t_crossing_spin_silicon.valueChanged.connect(self.update_display)
+        silicon_form.addRow("T-Crossing:", self.t_crossing_spin_silicon)
+
+        # Track ID
+        self.track_id_spin_silicon = QSpinBox()
+        self.track_id_spin_silicon.setRange(-1, 999999)
+        self.track_id_spin_silicon.setValue(-1)
+        self.track_id_spin_silicon.valueChanged.connect(self.update_display)
+        silicon_form.addRow("Track ID:", self.track_id_spin_silicon)
+
+        silicon_group.setLayout(silicon_form)
+        filters_layout.addWidget(silicon_group)
+
+        # TPC ID filters
+        tpc_group = QGroupBox("TPC ID Filters")
+        tpc_form = QFormLayout()
+
+        # T-Crossing
+        self.t_crossing_spin_tpc = QSpinBox()
+        self.t_crossing_spin_tpc.setRange(-2000, 99999)
+        self.t_crossing_spin_tpc.setValue(-2000)
+        self.t_crossing_spin_tpc.valueChanged.connect(self.update_display)
+        tpc_form.addRow("T-Crossing:", self.t_crossing_spin_tpc)
+
+        # Track ID
+        self.track_id_spin_tpc = QSpinBox()
+        self.track_id_spin_tpc.setRange(-1, 999999)
+        self.track_id_spin_tpc.setValue(-1)
+        self.track_id_spin_tpc.valueChanged.connect(self.update_display)
+        tpc_form.addRow("Track ID:", self.track_id_spin_tpc)
+
+        tpc_group.setLayout(tpc_form)
+        filters_layout.addWidget(tpc_group)
+
+        # Additional filters
+        other_group = QGroupBox("Other Filters")
+        other_layout = QVBoxLayout()
+
+        self.nmaps_spinbox = QSpinBox()
+        self.nmaps_spinbox.setRange(-10, 100)
+        self.nmaps_spinbox.setValue(-1)
+        self.nmaps_spinbox.valueChanged.connect(self.update_display)
+        nmaps_layout = QFormLayout()
+        nmaps_layout.addRow("NMAPS ≥", self.nmaps_spinbox)
+        other_layout.addLayout(nmaps_layout)
+
+        # Show points outside tube
         self.toggle_filter_checkbox = QCheckBox("Show Points Outside Tube")
         self.toggle_filter_checkbox.setChecked(True)
         self.toggle_filter_checkbox.stateChanged.connect(self.update_display)
-        track_layout.addWidget(self.toggle_filter_checkbox)
+        other_layout.addWidget(self.toggle_filter_checkbox)
 
-        self.instruction_label = QLabel(
-            "Instruction: Select 3 points for initial track fitting."
+        other_group.setLayout(other_layout)
+        filters_layout.addWidget(other_group)
+
+        # Add stretch to push everything to the top
+        filters_layout.addStretch()
+
+        # Add the tab
+        self.sidebar_tabs.addTab(filters_widget, "F")
+
+    def create_analysis_tab(self):
+        """Create the Analysis tab content."""
+        analysis_widget = QWidget()
+        analysis_layout = QVBoxLayout(analysis_widget)
+        analysis_layout.setContentsMargins(8, 8, 8, 8)
+        analysis_layout.setSpacing(8)
+
+        # Associated hits analysis
+        hits_group = QGroupBox("Associated Hits")
+        hits_layout = QVBoxLayout()
+
+        self.btn_toggle_associated_hits = QPushButton("Show Associated Hits")
+        self.btn_toggle_associated_hits.clicked.connect(self.toggle_associated_hits)
+        hits_layout.addWidget(self.btn_toggle_associated_hits)
+
+        self.btn_output_phi_z = QPushButton("ADC Weighted Phi/Z")
+        self.btn_output_phi_z.clicked.connect(self.output_adc_averaged_phi_z)
+        hits_layout.addWidget(self.btn_output_phi_z)
+
+        self.btn_show_adc_dist = QPushButton("Show ADC Distribution")
+        self.btn_show_adc_dist.clicked.connect(self.show_pad_adc_window)
+        hits_layout.addWidget(self.btn_show_adc_dist)
+
+        hits_group.setLayout(hits_layout)
+        analysis_layout.addWidget(hits_group)
+
+        # Projection controls
+        projection_group = QGroupBox("Projection")
+        projection_layout = QVBoxLayout()
+
+        self.btn_show_projection = QPushButton("Show 2D Projection")
+        self.btn_show_projection.clicked.connect(self.show_projection_window)
+        projection_layout.addWidget(self.btn_show_projection)
+
+        projection_group.setLayout(projection_layout)
+        analysis_layout.addWidget(projection_group)
+
+        # Add stretch to push everything to the top
+        analysis_layout.addStretch()
+
+        # Add the tab
+        self.sidebar_tabs.addTab(analysis_widget, "A")
+
+    def create_tracking_tab(self):
+        """Create the Tracking tab content."""
+        tracking_widget = QWidget()
+        tracking_layout = QVBoxLayout(tracking_widget)
+        tracking_layout.setContentsMargins(8, 8, 8, 8)
+        tracking_layout.setSpacing(8)
+
+        # Track fitting group
+        fitting_group = QGroupBox("Track Fitting")
+        fitting_layout = QVBoxLayout()
+
+        # Fitting buttons
+        button_layout = QVBoxLayout()
+
+        self.btn_fit_track = QPushButton("Fit Track")
+        self.btn_fit_track.clicked.connect(self.initiate_fit)
+        button_layout.addWidget(self.btn_fit_track)
+
+        self.btn_reset_track = QPushButton("Reset Track")
+        self.btn_reset_track.clicked.connect(self.reset_track)
+        button_layout.addWidget(self.btn_reset_track)
+
+        self.btn_clear_track = QPushButton("Clear Track Lines")
+        self.btn_clear_track.clicked.connect(self.clear_track_lines)
+        button_layout.addWidget(self.btn_clear_track)
+
+        fitting_layout.addLayout(button_layout)
+
+        # Track options
+        options_layout = QVBoxLayout()
+
+        # Module fitting
+        self.module_based_fitting_checkbox = QCheckBox("Module Fitting")
+        self.module_based_fitting_checkbox.setChecked(False)
+        options_layout.addWidget(self.module_based_fitting_checkbox)
+
+        # Show track lines
+        self.track_toggle_checkbox = QCheckBox("Show Lines")
+        self.track_toggle_checkbox.setChecked(True)
+        self.track_toggle_checkbox.stateChanged.connect(self.on_track_toggle)
+        options_layout.addWidget(self.track_toggle_checkbox)
+
+        fitting_layout.addLayout(options_layout)
+
+        fitting_group.setLayout(fitting_layout)
+        tracking_layout.addWidget(fitting_group)
+
+        # Picking mode group (moved from toolbar to this tab)
+        pick_group = QGroupBox("Pick Mode")
+        pick_layout = QVBoxLayout()
+
+        # Radio buttons for pick modes
+        self.radio_view_info = QRadioButton("View Point Info")
+        self.radio_view_info.setChecked(True)
+        self.radio_view_info.toggled.connect(self.on_pick_mode_changed)
+        pick_layout.addWidget(self.radio_view_info)
+
+        self.radio_pick_helix = QRadioButton("Pick for Helix Fitting")
+        self.radio_pick_helix.toggled.connect(self.on_pick_mode_changed)
+        pick_layout.addWidget(self.radio_pick_helix)
+
+        self.radio_pick_vertex = QRadioButton("Pick for Vertex Finding")
+        self.radio_pick_vertex.toggled.connect(self.on_pick_mode_changed)
+        pick_layout.addWidget(self.radio_pick_vertex)
+
+        self.radio_pick_pos = QRadioButton("Pos Reco")
+        self.radio_pick_pos.toggled.connect(self.on_pick_mode_changed)
+        pick_layout.addWidget(self.radio_pick_pos)
+
+        pick_group.setLayout(pick_layout)
+        tracking_layout.addWidget(pick_group)
+
+        # Add stretch to push everything to the top
+        tracking_layout.addStretch()
+
+        # Add the tab
+        self.sidebar_tabs.addTab(tracking_widget, "T")
+
+    def create_status_bar(self):
+        """Create status bar with run info and instruction label."""
+        status_bar = self.statusBar()
+
+        # Run information
+        run_info = QLabel(
+            "<b>Run:</b> 53217 | <b>ZDC coincidence:</b> Raw: 1,869750 | Live: 1,868219"
         )
-        track_layout.addWidget(self.instruction_label)
+        status_bar.addWidget(run_info)
 
-        control_layout.addWidget(track_group)
+        # Add a spacer
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        status_bar.addWidget(spacer)
 
-        # left_layout.addWidget(control_area)
+        # Instruction label
+        self.instruction_label = QLabel()
+        status_bar.addWidget(self.instruction_label)
 
-        # 3D Visualization Area
-        self.plotter_widget = QtInteractor()
-        # left_layout.addWidget(self.plotter_widget)
+    def set_pick_mode(self, mode):
+        """Set the pick mode from toolbar actions."""
+        self.pick_mode = mode
 
-        left_splitter.addWidget(control_area)
-        left_splitter.addWidget(self.plotter_widget)
+        # Update radio buttons on Tracking tab
+        if mode == "info":
+            self.radio_view_info.setChecked(True)
+        elif mode == "helix":
+            self.radio_pick_helix.setChecked(True)
+        elif mode == "vertex":
+            self.radio_pick_vertex.setChecked(True)
+        elif mode == "pos":
+            self.radio_pick_pos.setChecked(True)
 
-        # line = QFrame()
-        # line.setFrameShape(QFrame.HLine)
-        # line.setFrameShadow(QFrame.Sunken)
-        # left_layout.addWidget(line)
+        # Update instruction label
+        if mode == "info":
+            self.instruction_label.setText(
+                "Instruction: Select 3 points for initial helix fitting."
+            )
+        elif mode == "helix":
+            self.instruction_label.setText(
+                "Instruction: Select 3 points for initial helix fitting."
+            )
+        elif mode == "vertex":
+            self.instruction_label.setText("Select 2 points for vertex finding.")
+        elif mode == "pos":
+            self.instruction_label.setText("Select hits for position reconstruction.")
 
-        # Sidebar for info
-        sidebar = QWidget()
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(5, 5, 5, 5)
-
-        info_label = QLabel("Cluster/Hit Information")
-        sidebar_layout.addWidget(info_label)
-
-        self.info_panel = QTextEdit()
-        self.info_panel.setReadOnly(True)
-        sidebar_layout.addWidget(self.info_panel)
-
-        splitter.addWidget(left_splitter)
-        splitter.addWidget(sidebar)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-
-        # Data placeholders
-        self.cluster_data = None
-        self.hit_data = None
-        self.cluster_polydata = None
-        self.hit_polydata = None
-
-        self.selected_points_first = []  # Used for point selection
-        self.helix_points = None
-        self.helix_params_initial = None
-        self.helix_params_refined = None
-        self.line_params_initial = None
-        self.line_params_refined = None
-
-        self.associated_hits_hidden = False  # False means show global hits normally.
-        self.hits_override_enabled = False
-        self.previous_hits_state = {"tpc_hits": True, "silicon_hits": True}
-        self.selected_cluster_index = None
-
-        self.filtered_clusters = None
-
-        self.plotter_widget.show_axes()
-
+        # Update the point picking callback
         self.update_point_picking()
+
+        # Update toolbar menu actions
+        for action in self.pick_mode_actions:
+            action.setChecked(action.text().lower().find(mode.lower()) >= 0)
 
     def _filter_data(
         self,
@@ -616,24 +744,16 @@ class MainWindow(QMainWindow):
     ) -> Optional[pv.PolyData]:
 
         if data is None or data.n_points == 0:
-            # print(f"DEBUG {'(fitting)' if for_fitting else ''}: No data provided.")
+
             return None
 
         points = data.points
-        # print(
-        #   f"DEBUG {'(fitting)' if for_fitting else ''}: Total points before filtering: {len(points)}"
-        # )
 
         event_numbers = data.point_data.get("event", None)
         if event_numbers is None:
-            # print(
-            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Missing 'event' attribute in data."
-            # )
+
             return None
 
-        # print(
-        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Unique event numbers in data: {np.unique(event_numbers)}"
-        # )
         selected_events = []
         for i in range(self.event_combo.model().rowCount()):
             item = self.event_combo.model().item(i)
@@ -647,30 +767,14 @@ class MainWindow(QMainWindow):
 
                     continue
 
-        # print(
-        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Selected events: {selected_events}"
-        # )
-
-        """if not selected_events:
-            print("No events selected.")
-            return None  # No events selected"""
-
         if not selected_events:
-            print(
-                f"DEBUG {'(fitting)' if for_fitting else ''}: No events selected, returning None"
-            )
+
             return None
         event_mask = np.isin(event_numbers, selected_events)
-        # print(
-        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after event filter: {np.sum(event_mask)}"
-        # )
 
-        x_min, x_max = self.x_range_slider.value()
-        y_min, y_max = self.y_range_slider.value()
-        z_min, z_max = self.z_range_slider.value()
-        # print(
-        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Spatial ranges: X[{x_min}, {x_max}], Y[{y_min}, {y_max}], Z[{z_min}, {z_max}]"
-        # )
+        x_min, x_max = self.x_min_spinbox.value(), self.x_max_spinbox.value()
+        y_min, y_max = self.y_min_spinbox.value(), self.y_max_spinbox.value()
+        z_min, z_max = self.z_min_spinbox.value(), self.z_max_spinbox.value()
 
         spatial_mask = (
             (points[:, 0] >= x_min)
@@ -681,22 +785,7 @@ class MainWindow(QMainWindow):
             & (points[:, 2] <= z_max)
         )
 
-        # print(
-        #    f"DEBUG {'(fitting)' if for_fitting else ''}: X range in data: [{np.min(points[:, 0])}, {np.max(points[:, 0])}]"
-        # )
-        # print(
-        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Y range in data: [{np.min(points[:, 1])}, {np.max(points[:, 1])}]"
-        # )
-        # print(
-        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Z range in data: [{np.min(points[:, 2])}, {np.max(points[:, 2])}]"
-        # )
-
-        # print(f"Points after spatial filter: {np.sum(spatial_mask)}")
-
         combined_mask = spatial_mask & event_mask
-        # print(
-        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining masks: {np.sum(combined_mask)}"
-        # )
 
         nmaps_values = data.point_data.get("nmaps", None)
 
@@ -704,16 +793,7 @@ class MainWindow(QMainWindow):
             nmaps_threshold = self.nmaps_spinbox.value()
             nmaps_mask = nmaps_values >= nmaps_threshold
             combined_mask &= nmaps_mask
-            """print(
-                f"Points after NMAPS filter (>= {nmaps_threshold}): {np.sum(nmaps_mask)}"
-            )"""
-            # print(
-            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining NMAPS filter: {np.sum(combined_mask)}"
-            # )
-        # else:
-        # print("No 'nmaps' attribute found; skipping NMAPS filter.")
 
-        # --- ADC Filtering ---
         adc_values = data.point_data.get("adc", None)
         data_type_array = data.point_data.get("data_type", np.zeros(data.n_points))
 
@@ -728,9 +808,6 @@ class MainWindow(QMainWindow):
 
             adc_mask = adc_values >= adc_threshold
             combined_mask &= adc_mask
-            # print(
-            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining ADC filter: {np.sum(combined_mask)}"
-            # )
 
         else:
             print("No 'adc' attribute found; skipping ADC filter.")
@@ -776,29 +853,18 @@ class MainWindow(QMainWindow):
 
         if crossing_val_sil != -2000:
             silicon_mask &= crossing_data == crossing_val_sil
-            # print(
-            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after crossing_val_sil filter ({crossing_val_sil}): {np.sum(crossing_data == crossing_val_sil)}"
-            # )
+
         if t_cross_val_sil != -2000:
             silicon_mask &= t_crossing_data == t_cross_val_sil
-            # print(
-            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after t_cross_val_sil filter ({t_cross_val_sil}): {np.sum(t_crossing_data == t_cross_val_sil)}"
-            # )
+
         if track_id_val_sil != -1:
             silicon_mask &= track_id_data == track_id_val_sil
-            # print(
-            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_id_val_sil filter ({track_id_val_sil}): {np.sum(track_id_data == track_id_val_sil)}"
-            # )
+
         if self.seed_checkbox_silicon.isChecked():
             silicon_mask &= used_in_seed == 1
-            # print(
-            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after seed_checkbox_silicon filter: {np.sum(used_in_seed == 1)}"
-            # )
+
         if self.track_checkbox_silicon.isChecked():
             silicon_mask &= used_in_track == 1
-            # print(
-            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_checkbox_silicon filter: {np.sum(used_in_track == 1)}"
-            # )
 
         is_tpc = layer_array >= 7
 
@@ -829,14 +895,9 @@ class MainWindow(QMainWindow):
 
         if t_cross_val_tpc != -2000:
             tpc_mask &= t_crossing_data == t_cross_val_tpc
-            # print(
-            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after t_cross_val_tpc filter ({t_cross_val_tpc}): {np.sum(t_crossing_data == t_cross_val_tpc)}"
-            # )
+
         if track_id_val_tpc != -1:
             tpc_mask &= track_id_data == track_id_val_tpc
-            # print(
-            #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after track_id_val_tpc filter ({track_id_val_tpc}): {np.sum(track_id_data == track_id_val_tpc)}"
-            # )
 
         # Sides
         if side_data is not None:
@@ -847,9 +908,7 @@ class MainWindow(QMainWindow):
                 sides_chosen.append(1)
             if sides_chosen:
                 tpc_mask &= np.isin(side_data, sides_chosen)
-                # print(
-                #    f"DEBUG {'(fitting)' if for_fitting else ''}: Points after after sides_chosen filter ({sides_chosen}): {np.sum(np.isin(side_data, sides_chosen))}"
-                # )
+
             else:
                 # If no sides are checked, TPC mask => no points
                 tpc_mask &= False
@@ -877,19 +936,10 @@ class MainWindow(QMainWindow):
                 print(
                     f"Warning: hitkeys size ({len(data.hitkeys)}) doesn't match number of points ({data.n_points})"
                 )
-                # Could also print first few elements to debug:
-                print(f"First few hitkeys: {data.hitkeys[:5]}")
-                print(f"Number of filtered points: {filtered_points.n_points}")
-                print(f"Sample filtered indices: {filtered_indices[:5]}")
 
         if filtered_points is None or filtered_points.n_points == 0:
-            # print(
-            #    f"DEBUG {'(fitting)' if for_fitting else ''}: No points passed the filters"
-            # )
+
             return None
-        # print(
-        #    f"DEBUG {'(fitting)' if for_fitting else ''}: Final point count: {filtered_points.n_points}"
-        # )
 
         if for_fitting:
 
@@ -1010,16 +1060,12 @@ class MainWindow(QMainWindow):
                     event_id = int(event_label.split()[1])
                     selected_events.append(event_id)
                 except (ValueError, IndexError):
-                    # print(f"Invalid event ID format: {event_label}")
+
                     continue
 
         print(
             f"DEBUG {'(fitting)' if for_fitting else ''}: Selected events: {selected_events}"
         )
-
-        """if not selected_events:
-            print("No events selected.")
-            return None  # No events selected"""
 
         if not selected_events:
             print(
@@ -1031,10 +1077,9 @@ class MainWindow(QMainWindow):
             f"DEBUG {'(fitting)' if for_fitting else ''}: Points after event filter: {np.sum(event_mask)}"
         )
 
-        # 1) Spatial ranges from sliders
-        x_min, x_max = self.x_range_slider.value()
-        y_min, y_max = self.y_range_slider.value()
-        z_min, z_max = self.z_range_slider.value()
+        x_min, x_max = self.x_min_spinbox.value(), self.x_max_spinbox.value()
+        y_min, y_max = self.y_min_spinbox.value(), self.y_max_spinbox.value()
+        z_min, z_max = self.z_min_spinbox.value(), self.z_max_spinbox.value()
         print(
             f"DEBUG {'(fitting)' if for_fitting else ''}: Spatial ranges: X[{x_min}, {x_max}], Y[{y_min}, {y_max}], Z[{z_min}, {z_max}]"
         )
@@ -1068,9 +1113,7 @@ class MainWindow(QMainWindow):
             nmaps_threshold = self.nmaps_spinbox.value()
             nmaps_mask = nmaps_values >= nmaps_threshold
             combined_mask &= nmaps_mask
-            """print(
-                f"Points after NMAPS filter (>= {nmaps_threshold}): {np.sum(nmaps_mask)}"
-            )"""
+
             print(
                 f"DEBUG {'(fitting)' if for_fitting else ''}: Points after combining NMAPS filter: {np.sum(combined_mask)}"
             )
@@ -1329,36 +1372,8 @@ class MainWindow(QMainWindow):
         # Extract the mesh (dataset) from the picker
         mesh = picker.GetDataSet()
 
-        if point_id < 0:
+        if point_id < 0 or mesh is None:
             return
-
-        """if actor in self.cluster_actors:
-            # It's a cluster
-            mesh = picker.GetDataSet()  # The cluster polydata
-
-            self.last_picked_mesh = mesh
-            # point_id is valid for that mesh
-            self.selected_cluster_key = mesh.point_data["cluskey"][point_id]
-
-            info_text = f"Cluster (Index: {point_id})\n"
-            for attr in mesh.point_data.keys():
-                value = mesh.point_data[attr][point_id]
-                info_text += f"{attr}: {value}\n"
-            # etc. for other attributes
-            self.info_panel.setText(info_text)
-
-            # Store if needed for toggling hits
-            self.selected_cluster_index = point_id
-            self.selected_cluster_polydata = mesh
-
-        elif actor in self.hit_actors:
-            mesh = picker.GetDataSet()
-
-            info_text = f"Hit (Index: {point_id})\n"
-            for attr in mesh.point_data.keys():
-                value = mesh.point_data[attr][point_id]
-                info_text += f"{attr}: {value}\n"
-            self.info_panel.setText(info_text)"""
 
         # Ensure 'data_type' exists in the mesh's point data
         if "data_type" not in mesh.point_data:
@@ -1383,8 +1398,6 @@ class MainWindow(QMainWindow):
             info_text += f"{attr}: {value}\n"
 
         self.info_panel.setText(info_text)
-
-        # self.selected_cluster_index = point_id
 
     def on_point_picked_helix(self, picked_point, picker):
         """
@@ -1458,7 +1471,6 @@ class MainWindow(QMainWindow):
 
         # Get the picked coordinates
         coordinates = mesh.points[point_id]
-        # self.selected_points_first.append(picked_coordinates)
 
         hit_info = {
             "x": coordinates[0],
@@ -1497,7 +1509,7 @@ class MainWindow(QMainWindow):
     def set_track_lines_visibility(self, visible):
         for actor in self.track_lines:
             # Set the visibility property on the actor.
-            # Using VTK’s method: 1 means visible, 0 means hidden.
+            # Using VTK's method: 1 means visible, 0 means hidden.
             actor.SetVisibility(1 if visible else 0)
         self.plotter_widget.render()
 
@@ -1574,8 +1586,6 @@ class MainWindow(QMainWindow):
             saved_avg_position_actor = self.avg_position_actor
         # Clear the current plotter
         self.plotter_widget.clear()
-        # self.cluster_actors.clear()
-        # self.hit_actors.clear()
 
         self.display_filtered_clusters_info.clear()
         self.display_filtered_hits_info.clear()
@@ -1595,14 +1605,13 @@ class MainWindow(QMainWindow):
                     self.display_filtered_clusters_info.append(
                         (filtered_clusters_display, cluster_color, file_info)
                     )
-                    # cluster_actor = self.plotter_widget.add_mesh(
+
                     self.plotter_widget.add_mesh(
                         filtered_clusters_display,
                         style="points",
                         point_size=5,
                         color=cluster_color,
                     )
-                    # self.cluster_actors.append(cluster_actor)
 
             # --- Hits ---
             if file_info["hit"] is not None and file_info["hit"].n_points > 0:
@@ -1613,6 +1622,7 @@ class MainWindow(QMainWindow):
                     if (
                         self.associated_hits_hidden
                         and hasattr(self, "last_picked_mesh")
+                        and self.last_picked_mesh is not None
                         and self.selected_cluster_index is not None
                     ):
                         try:
@@ -1681,14 +1691,13 @@ class MainWindow(QMainWindow):
                     self.display_filtered_hits_info.append(
                         (filtered_hits_display, hit_color, file_info)
                     )
-                    # hit_actor = self.plotter_widget.add_mesh(
+
                     self.plotter_widget.add_mesh(
                         filtered_hits_display,
                         style="points",
                         point_size=5,
                         color=hit_color,
                     )
-                    # self.hit_actors.append(hit_actor)
 
         for actor in self.track_lines:
             # Re-add the stored actor to the renderer
@@ -1848,11 +1857,8 @@ class MainWindow(QMainWindow):
                         helix_points,
                         color="grey",
                         width=3,
-                        # style="wireframe",
-                        # pickable=False,
                     )
-                    # actor.GetProperty().SetRepresentationToWireframe()
-                    # actor.GetProperty().SetPointSize(0)
+
                     actor.GetProperty().SetRepresentationToWireframe()
                     actor.GetProperty().SetPointSize(0)
                     actor.PickableOff()
@@ -1890,7 +1896,7 @@ class MainWindow(QMainWindow):
                 self.do_helix_fitting_flow()
 
             if self.pick_mode == "pos":
-                self.reconstruct_position()
+                # self.reconstruct_position()
                 return
 
         except ValueError as e:
@@ -2029,10 +2035,6 @@ class MainWindow(QMainWindow):
                 "No clusters passed the filter. Cannot calculate deltas.",
             )
             return
-
-        # Optionally compute residuals, do histograms, etc.
-        # self.track_counter += 1
-        # ...
 
     def do_helix_fitting_flow(self):
 
@@ -2274,9 +2276,6 @@ class MainWindow(QMainWindow):
                 )
                 self.info_panel.setText(info_text)
 
-                # **Plot histograms within the GUI**
-                # self.plot_histograms(delta_rphi, delta_z, track_id)
-
             else:
                 QMessageBox.warning(
                     self,
@@ -2394,24 +2393,29 @@ class MainWindow(QMainWindow):
         """Toggle between helix and straight line fitting modes."""
         self.using_line_fitting = not self.using_line_fitting
 
-        # Update button text
-        if self.using_line_fitting:
-            self.btn_toggle_field.setText("Field Off")
-            self.instruction_label.setText(
-                "Instruction: Select 2 points for initial line fitting."
-            )
+        if (
+            hasattr(self, "toggle_field_action")
+            and self.toggle_field_action is not None
+        ):
+            if self.using_line_fitting:
+                self.toggle_field_action.setText("Field Off")
+                self.instruction_label.setText(
+                    "Instruction: Select 2 points for initial line fitting."
+                )
+            else:
+                self.toggle_field_action.setText("Field On")
+                self.instruction_label.setText(
+                    "Instruction: Select 3 points for initial helix fitting."
+                )
         else:
-            self.btn_toggle_field.setText("Field On")
-            self.instruction_label.setText(
-                "Instruction: Select 3 points for initial helix fitting."
-            )
+            print("Warning: toggle_field_action not found")
 
         # Clear any existing selections
         self.selected_points_first.clear()
         self.update_display()
 
     def toggle_associated_hits(self):
-        if self.selected_cluster_index is None:
+        if self.selected_cluster_index is None or self.last_picked_mesh is None:
             QMessageBox.information(
                 self,
                 "Toggle Associated Hits",
@@ -2871,6 +2875,20 @@ class MainWindow(QMainWindow):
         Collect information about associated hits, calculate and visualize the ADC-weighted average position.
         """
         try:
+
+            if self.last_picked_mesh is None:
+                self.info_panel.setText("Error: No cluster has been selected yet.")
+                return None
+
+            if self.selected_cluster_index is None:
+                self.info_panel.setText("Error: No cluster index is selected.")
+                return None
+
+            if self.selected_cluster_index >= len(self.last_picked_mesh.hitkeys):
+                self.info_panel.setText(
+                    f"Error: Cluster index {self.selected_cluster_index} is out of bounds."
+                )
+                return None
             # Get cluster information
             cluster_event = self.last_picked_mesh.point_data["event"][
                 self.selected_cluster_index
