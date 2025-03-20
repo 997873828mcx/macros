@@ -51,8 +51,8 @@ R__LOAD_LIBRARY(libTrackingDiagnostics.so)
 R__LOAD_LIBRARY(libtrackingqa.so)
 void Fun4All_TrackSeeding(
     const int nEvents = 5,
-    const std::string clusterfilename = "DST_TRKR_CLUSTER_run2pp_ana441_2024p007-00052911-00000.root",
-    const std::string dir = "/sphenix/lustre01/sphnxpro/physics/slurp/tracking/ana441_2024p007/run_00052900_00053000/",
+    const std::string clusterfilename = "DST_TRKR_CLUSTER_run2pp_ana466_2024p012_v001-00053877-00000.root",
+    const std::string dir = "/sphenix/lustre01/sphnxpro/production/run2pp/physics/ana466_2024p012_v001/DST_TRKR_CLUSTER/run_00053800_00053900/dst/",
     const std::string outfilename = "clusters_seeds",
     const bool convertSeeds = false,
     const bool doKFParticle = false)
@@ -76,6 +76,10 @@ void Fun4All_TrackSeeding(
   std::string geofile = CDBInterface::instance()->getUrl("Tracking_Geometry");
 
   TpcReadoutInit(runnumber);
+ // these lines show how to override the drift velocity and time offset values set in TpcReadoutInit
+  // G4TPC::tpc_drift_velocity_reco = 0.0073844; // cm/ns
+  // TpcClusterZCrossingCorrection::_vdrift = G4TPC::tpc_drift_velocity_reco;
+  // G4TPC::tpc_tzero_reco = -5*50;  // ns
   std::cout << " run: " << runnumber
             << " samples: " << TRACKING::reco_tpc_maxtime_sample
             << " pre: " << TRACKING::reco_tpc_time_presample
@@ -102,9 +106,6 @@ void Fun4All_TrackSeeding(
   G4TRACKING::SC_CALIBMODE = false;
   TRACKING::pp_mode = true;
 
-  ACTSGEOM::mvtxMisalignment = 100;
-  ACTSGEOM::inttMisalignment = 100.;
-  ACTSGEOM::tpotMisalignment = 100.;
   TString outfile = outfilename + "_" + runnumber + "-" + segment + ".root";
   std::string theOutfile = outfile.Data();
   auto se = Fun4AllServer::instance();
@@ -116,10 +117,18 @@ void Fun4All_TrackSeeding(
   se->registerInputManager(ingeo);
 
   G4TPC::ENABLE_MODULE_EDGE_CORRECTIONS = true;
-  // to turn on the default static corrections, enable the two lines below
-  //G4TPC::ENABLE_STATIC_CORRECTIONS = true;
-  // G4TPC::DISTORTIONS_USE_PHI_AS_RADIANS = false;
 
+  // to turn on the default static corrections, enable the two lines below
+  G4TPC::ENABLE_STATIC_CORRECTIONS = true;
+  G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
+
+  //to turn on the average corrections, enable the three lines below
+  //note: these are designed to be used only if static corrections are also applied
+  G4TPC::ENABLE_AVERAGE_CORRECTIONS = true;
+  G4TPC::USE_PHI_AS_RAD_AVERAGE_CORRECTIONS = false;
+   // to use a custom file instead of the database file:
+  G4TPC::average_correction_filename = CDBInterface::instance()->getUrl("TPC_LAMINATION_FIT_CORRECTION");
+   
   G4MAGNET::magfield_rescale = 1;
   TrackingInit();
 
@@ -138,22 +147,12 @@ void Fun4All_TrackSeeding(
    * Silicon Seeding
    */
 
-  /*
-  auto silicon_Seeding = new PHActsSiliconSeeding;
-  silicon_Seeding->Verbosity(0);
-  silicon_Seeding->searchInIntt();
-  silicon_Seeding->setinttRPhiSearchWindow(0.4);
-  silicon_Seeding->setinttZSearchWindow(1.6);
-  silicon_Seeding->seedAnalysis(false);
-  se->registerSubsystem(silicon_Seeding);
-  */
-
   auto silicon_Seeding = new PHActsSiliconSeeding;
   silicon_Seeding->Verbosity(0);
   silicon_Seeding->setStrobeRange(-5,5);
   // these get us to about 83% INTT > 1
-  silicon_Seeding->setinttRPhiSearchWindow(0.4);
-  silicon_Seeding->setinttZSearchWindow(2.0);
+  silicon_Seeding->setinttRPhiSearchWindow(0.2);
+  silicon_Seeding->setinttZSearchWindow(1.0);
   silicon_Seeding->seedAnalysis(false);
   se->registerSubsystem(silicon_Seeding);
 
@@ -187,6 +186,7 @@ void Fun4All_TrackSeeding(
   seeder->SetMinClustersPerTrack(3);
   seeder->useFixedClusterError(true);
   seeder->set_pp_mode(true);
+  seeder->reject_zsize1_clusters(true);
   se->registerSubsystem(seeder);
 
   // expand stubs in the TPC using simple kalman filter
@@ -206,6 +206,7 @@ void Fun4All_TrackSeeding(
   cprop->set_max_window(5.);
   cprop->Verbosity(0);
   cprop->set_pp_mode(true);
+  cprop->set_max_seeds(5000);
   se->registerSubsystem(cprop);
 
   // Always apply preliminary distortion corrections to TPC clusters before silicon matching
@@ -224,11 +225,20 @@ void Fun4All_TrackSeeding(
   silicon_match->Verbosity(0);
   silicon_match->set_use_legacy_windowing(false);
   silicon_match->set_pp_mode(TRACKING::pp_mode);
-  se->registerSubsystem(silicon_match);
+  if(G4TPC::ENABLE_AVERAGE_CORRECTIONS)
+    {
+      // reset phi matching window to be centered on zero
+      // it defaults to being centered on -0.1 radians for the case of static corrections only
+      std::array<double,3> arrlo = {-0.15,0,0};
+      std::array<double,3> arrhi = {0.15,0,0};
+      silicon_match->window_dphi.set_QoverpT_range(arrlo, arrhi);
+    }
+    se->registerSubsystem(silicon_match);
 
   // Match TPC track stubs from CA seeder to clusters in the micromegas layers
   auto mm_match = new PHMicromegasTpcTrackMatching;
   mm_match->Verbosity(0);
+  mm_match->set_pp_mode(TRACKING::pp_mode);
   mm_match->set_rphi_search_window_lyr1(3.);
   mm_match->set_rphi_search_window_lyr2(15.0);
   mm_match->set_z_search_window_lyr1(30.0);
@@ -303,14 +313,23 @@ void Fun4All_TrackSeeding(
 
   auto finder = new PHSimpleVertexFinder;
   finder->Verbosity(0);
-  finder->setDcaCut(0.5);
-  finder->setTrackPtCut(-99999.);
+  
+  //new cuts
+  finder->setDcaCut(0.05);
+  finder->setTrackPtCut(0.1);
   finder->setBeamLineCut(1);
-  finder->setTrackQualityCut(1000000000);
+  finder->setTrackQualityCut(300);
   finder->setNmvtxRequired(3);
-  finder->setOutlierPairCut(0.1);
+  finder->setOutlierPairCut(0.10);
+  
   se->registerSubsystem(finder);
 
+  // Propagate track positions to the vertex position
+  auto vtxProp = new PHActsVertexPropagator;
+  vtxProp->Verbosity(0);
+  vtxProp->fieldMap(G4MAGNET::magfield_tracking);
+  se->registerSubsystem(vtxProp);
+  
   //run KFParticle
   if(doKFParticle){
      Global_Reco();
@@ -392,7 +411,7 @@ void Fun4All_TrackSeeding(
   se->run(nEvents);
   se->End();
   se->PrintTimer();
-
+  CDBInterface::instance()->Print();
   if (Enable::QA)
   {
     TString qaname = theOutfile + "_qa.root";

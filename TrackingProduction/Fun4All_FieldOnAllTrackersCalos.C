@@ -143,7 +143,7 @@ void Fun4All_FieldOnAllTrackersCalos(
   G4TPC::ENABLE_MODULE_EDGE_CORRECTIONS = true;
   //to turn on the default static corrections, enable the two lines below
   //G4TPC::ENABLE_STATIC_CORRECTIONS = true;
-  //G4TPC::DISTORTIONS_USE_PHI_AS_RADIANS = false;
+  //G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
   //G4MAGNET::magfield = "0.01";
   G4MAGNET::magfield_tracking = G4MAGNET::magfield;
   G4MAGNET::magfield_rescale = 1;
@@ -266,6 +266,7 @@ void Fun4All_FieldOnAllTrackersCalos(
   // Match TPC track stubs from CA seeder to clusters in the micromegas layers
   auto mm_match = new PHMicromegasTpcTrackMatching;
   mm_match->Verbosity(0);
+  mm_match->set_pp_mode(TRACKING::pp_mode);
   mm_match->set_rphi_search_window_lyr1(3.);
   mm_match->set_rphi_search_window_lyr2(15.0);
   mm_match->set_z_search_window_lyr1(30.0);

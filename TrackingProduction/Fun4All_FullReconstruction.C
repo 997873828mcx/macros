@@ -79,22 +79,54 @@ R__LOAD_LIBRARY(libEventDisplay.so)
 R__LOAD_LIBRARY(libtpcqa.so)
 
 void Fun4All_FullReconstruction(
+<<<<<<< HEAD
     const int nIn = 1,
     const std::string tpcfilename = "DST_STREAMING_EVENT_run2pp_ana441_2024p007-00052844-00000.root",
     const std::string tpcdir = "/sphenix/lustre01/sphnxpro/physics/slurp/streaming/physics/ana441_2024p007/run_00052800_00052900/",
+=======
+    const int nEvents = 10,
+    const std::string filelist = "filelist.list",
+>>>>>>> master
     const std::string outfilename = "clusters_seeds",
     const bool convertSeeds = false,
     const int nEvents = 5)
 {
+<<<<<<< HEAD
 
   std::string inputtpcRawHitFile = tpcdir + tpcfilename;
 
+=======
+>>>>>>> master
   G4TRACKING::convert_seeds_to_svtxtracks = convertSeeds;
   std::cout << "Converting to seeds : " << G4TRACKING::convert_seeds_to_svtxtracks << std::endl;
-  std::pair<int, int>
-      runseg = Fun4AllUtils::GetRunSegment(tpcfilename);
-  int runnumber = runseg.first;
-  int segment = runseg.second;
+
+  auto se = Fun4AllServer::instance();
+  se->Verbosity(2);
+  auto rc = recoConsts::instance();
+  
+  std::ifstream ifs(filelist);
+  std::string filepath;
+  int runnumber = std::numeric_limits<int>::quiet_NaN();
+  int segment = std::numeric_limits<int>::quiet_NaN();
+  int i = 0;
+  while(std::getline(ifs,filepath))
+    {
+      std::cout << "Adding DST with filepath: " << filepath << std::endl; 
+     if(i==0)
+	{
+	   std::pair<int, int> runseg = Fun4AllUtils::GetRunSegment(filepath);
+	   runnumber = runseg.first;
+	   segment = runseg.second;
+	   rc->set_IntFlag("RUNNUMBER", runnumber);
+	   rc->set_uint64Flag("TIMESTAMP", runnumber);
+        
+	}
+      std::string inputname = "InputManager" + std::to_string(i);
+      auto hitsin = new Fun4AllDstInputManager(inputname);
+      hitsin->fileopen(filepath);
+      se->registerInputManager(hitsin);
+      i++;
+    }
 
   std::cout << " run: " << runnumber
             << " samples: " << TRACKING::reco_tpc_maxtime_sample
@@ -116,6 +148,7 @@ void Fun4All_FullReconstruction(
   ACTSGEOM::tpotMisalignment = 100.;
   TString outfile = TString::Format("%s_%d-%d.root", outfilename.c_str(), runnumber, segment);
   std::string theOutfile = outfile.Data();
+<<<<<<< HEAD
 
   std::string outDir = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/myKShortReco/";
   std::string outputFileName = "outputFile_" + std::to_string(runnumber) + "_" + std::to_string(segment);
@@ -130,7 +163,10 @@ void Fun4All_FullReconstruction(
   auto rc = recoConsts::instance();
   rc->set_IntFlag("RUNNUMBER", runnumber);
   rc->set_IntFlag("RUNSEGMENT", segment);
+=======
+>>>>>>> master
 
+ 
   Enable::CDB = true;
   rc->set_StringFlag("CDB_GLOBALTAG", "ProdA_2024");
   rc->set_uint64Flag("TIMESTAMP", runnumber);
@@ -146,9 +182,15 @@ void Fun4All_FullReconstruction(
   // Flag for running the tpc hit unpacker with zero suppression on
   TRACKING::tpc_zero_supp = true;
 
+<<<<<<< HEAD
   // to turn on the default static corrections, enable the two lines below
   // G4TPC::ENABLE_STATIC_CORRECTIONS = true;
   // G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
+=======
+  //to turn on the default static corrections, enable the two lines below
+  G4TPC::ENABLE_STATIC_CORRECTIONS = true;
+  G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
+>>>>>>> master
 
   // to turn on the average corrections derived from simulation, enable the three lines below
   // note: these are designed to be used only if static corrections are also applied
@@ -168,21 +210,34 @@ void Fun4All_FullReconstruction(
   G4MAGNET::magfield_rescale = 1;
   TrackingInit();
 
-  auto hitsin = new Fun4AllDstInputManager("InputManager");
-  hitsin->fileopen(inputtpcRawHitFile);
-  // hitsin->AddFile(inputMbd);
-  se->registerInputManager(hitsin);
 
-  Mvtx_HitUnpacking();
-  Intt_HitUnpacking();
-  Tpc_HitUnpacking();
+  for(int felix=0; felix < 6; felix++)
+    {
+      Mvtx_HitUnpacking(std::to_string(felix));
+    }
+  for(int server = 0; server < 8; server++)
+    {
+      Intt_HitUnpacking(std::to_string(server));
+    }
+  ostringstream ebdcname;
+  for(int ebdc = 0; ebdc < 24; ebdc++)
+    {
+      ebdcname.str("");
+      if(ebdc < 10)
+	{
+	  ebdcname<<"0";
+	}
+      ebdcname<<ebdc;
+      Tpc_HitUnpacking(ebdcname.str());
+    }
+
   Micromegas_HitUnpacking();
 
   MvtxClusterizer* mvtxclusterizer = new MvtxClusterizer("MvtxClusterizer");
   int verbosity = std::max(Enable::VERBOSITY, Enable::MVTX_VERBOSITY);
   mvtxclusterizer->Verbosity(verbosity);
   se->registerSubsystem(mvtxclusterizer);
-  
+
   Intt_Clustering();
 
   Tpc_LaserEventIdentifying();
@@ -312,6 +367,7 @@ void Fun4All_FullReconstruction(
   // Match TPC track stubs from CA seeder to clusters in the micromegas layers
   auto mm_match = new PHMicromegasTpcTrackMatching;
   mm_match->Verbosity(0);
+  mm_match->set_pp_mode(TRACKING::pp_mode);
   mm_match->set_rphi_search_window_lyr1(3.);
   mm_match->set_rphi_search_window_lyr2(15.0);
   mm_match->set_z_search_window_lyr1(30.0);
@@ -439,9 +495,13 @@ void Fun4All_FullReconstruction(
   se->run(nEvents);
   se->End();
   se->PrintTimer();
+<<<<<<< HEAD
 
   std::ifstream file(outputRecoFile.c_str());
 
+=======
+  CDBInterface::instance()->Print();
+>>>>>>> master
   if (Enable::QA)
   {
     TString qaname = outputRecoFile + "_qa.root";

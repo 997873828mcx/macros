@@ -48,14 +48,11 @@ R__LOAD_LIBRARY(libTrackingDiagnostics.so)
 R__LOAD_LIBRARY(libtrackingqa.so)
 void Fun4All_TrackAnalysis(
     const int nEvents = 10,
-    const std::string seedfilename = "DST_TRKR_SEED_run2pp_new_2024p007-00051520-00000.root",
-    const std::string clusterfilename = "DST_TRKR_CLUSTER_run2pp_new_2024p007-00051520-00000.root",
-    const std::string dir = "/sphenix/lustre01/sphnxpro/physics/slurp/tracking/new_2024p007/run_00051500_00051600/",
+    const std::string seedfilename = "/sphenix/lustre01/sphnxpro/production/run2pp/physics/ana468_2024p012_v002/DST_TRKR_SEED/run_00053700_00053800/dst/DST_TRKR_SEED_run2pp_ana468_2024p012_v002-00053743-00000.root",
+    const std::string clusterfilename = "/sphenix/lustre01/sphnxpro/production/run2pp/physics/ana466_2024p012_v001/DST_TRKR_CLUSTER/run_00053700_00053800/dst/DST_TRKR_CLUSTER_run2pp_ana466_2024p012_v001-00053743-00000.root",
     const std::string outfilename = "clusters_seeds",
     const bool convertSeeds = false)
 {
-  std::string inputseedRawHitFile = dir + seedfilename;
-  std::string inputclusterRawHitFile = dir + clusterfilename;
 
   G4TRACKING::convert_seeds_to_svtxtracks = convertSeeds;
   std::cout << "Converting to seeds : " << G4TRACKING::convert_seeds_to_svtxtracks << std::endl;
@@ -77,13 +74,15 @@ void Fun4All_TrackAnalysis(
    */
   G4TRACKING::SC_CALIBMODE = false;
 
-  ACTSGEOM::mvtxMisalignment = 100;
-  ACTSGEOM::inttMisalignment = 100.;
-  ACTSGEOM::tpotMisalignment = 100.;
+  TRACKING::pp_mode = true;
+  
   TString outfile = outfilename + "_" + runnumber + "-" + segment + ".root";
+
   std::string theOutfile = outfile.Data();
+
   auto se = Fun4AllServer::instance();
   se->Verbosity(1);
+
   auto rc = recoConsts::instance();
   rc->set_IntFlag("RUNNUMBER", runnumber);
 
@@ -97,30 +96,69 @@ void Fun4All_TrackAnalysis(
   se->registerInputManager(ingeo);
 
   TpcReadoutInit( runnumber );
+  // these lines show how to override the drift velocity and time offset values set in TpcReadoutInit
+  // G4TPC::tpc_drift_velocity_reco = 0.0073844; // cm/ns
+  // TpcClusterZCrossingCorrection::_vdrift = G4TPC::tpc_drift_velocity_reco;
+  // G4TPC::tpc_tzero_reco = -5*50;  // ns
 
   G4TPC::ENABLE_MODULE_EDGE_CORRECTIONS = true;
 
-  //to turn on the default static corrections, enable the two lines below
-  //G4TPC::ENABLE_STATIC_CORRECTIONS = true;
-  //G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
+  // to turn on the default static corrections, enable the two lines below
+  G4TPC::ENABLE_STATIC_CORRECTIONS = true;
+  G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
 
-  //to turn on the average corrections derived from simulation, enable the three lines below
+  //to turn on the average corrections, enable the three lines below
   //note: these are designed to be used only if static corrections are also applied
-  //G4TPC::ENABLE_AVERAGE_CORRECTIONS = true;
-  //G4TPC::USE_PHI_AS_RAD_AVERAGE_CORRECTIONS = false;
-  //G4TPC::average_correction_filename = std::string(getenv("CALIBRATIONROOT")) + "/distortion_maps/average_minus_static_distortion_inverted_10-new.root";
-
+  G4TPC::ENABLE_AVERAGE_CORRECTIONS = true;
+  G4TPC::USE_PHI_AS_RAD_AVERAGE_CORRECTIONS = false;
+   // to use a custom file instead of the database file:
+  G4TPC::average_correction_filename = CDBInterface::instance()->getUrl("TPC_LAMINATION_FIT_CORRECTION");
   G4MAGNET::magfield_rescale = 1;
   TrackingInit();
 
   auto hitsinseed = new Fun4AllDstInputManager("SeedInputManager");
-  hitsinseed->fileopen(inputseedRawHitFile);
+  hitsinseed->fileopen(seedfilename);
   se->registerInputManager(hitsinseed);
 
   auto hitsinclus = new Fun4AllDstInputManager("ClusterInputManager");
-  hitsinclus->fileopen(inputclusterRawHitFile);
+  hitsinclus->fileopen(clusterfilename);
   se->registerInputManager(hitsinclus);
 
+
+  
+  /*
+   * Track Matching between silicon and TPC
+   */
+  // The normal silicon association methods
+  // Match the TPC track stubs from the CA seeder to silicon track stubs from PHSiliconTruthTrackSeeding
+  auto silicon_match = new PHSiliconTpcTrackMatching;
+  silicon_match->Verbosity(0);
+  silicon_match->set_use_legacy_windowing(false);
+  silicon_match->set_pp_mode(TRACKING::pp_mode);
+  if(G4TPC::ENABLE_AVERAGE_CORRECTIONS)
+    {
+      // reset phi matching window to be centered on zero
+      // it defaults to being centered on -0.1 radians for the case of static corrections only
+      std::array<double,3> arrlo = {-0.15,0,0};
+      std::array<double,3> arrhi = {0.15,0,0};
+      silicon_match->window_dphi.set_QoverpT_range(arrlo, arrhi);
+    }
+  se->registerSubsystem(silicon_match);
+
+  // Match TPC track stubs from CA seeder to clusters in the micromegas layers
+  auto mm_match = new PHMicromegasTpcTrackMatching;
+  mm_match->Verbosity(0);
+  mm_match->set_pp_mode(TRACKING::pp_mode);
+  mm_match->set_rphi_search_window_lyr1(3.);
+  mm_match->set_rphi_search_window_lyr2(15.0);
+  mm_match->set_z_search_window_lyr1(30.0);
+  mm_match->set_z_search_window_lyr2(3.);
+
+  mm_match->set_min_tpc_layer(38);             // layer in TPC to start projection fit
+  mm_match->set_test_windows_printout(false);  // used for tuning search windows only
+  se->registerSubsystem(mm_match);
+
+  
   /*
    * Either converts seeds to tracks with a straight line/helix fit
    * or run the full Acts track kalman filter fit
@@ -180,15 +218,27 @@ void Fun4All_TrackAnalysis(
     }
   }
 
+  
   auto finder = new PHSimpleVertexFinder;
   finder->Verbosity(0);
-  finder->setDcaCut(0.5);
-  finder->setTrackPtCut(-99999.);
+  
+  //new cuts
+  finder->setDcaCut(0.05);
+  finder->setTrackPtCut(0.1);
   finder->setBeamLineCut(1);
-  finder->setTrackQualityCut(1000000000);
+  finder->setTrackQualityCut(300);
   finder->setNmvtxRequired(3);
-  finder->setOutlierPairCut(0.1);
+  finder->setOutlierPairCut(0.10);
+  
   se->registerSubsystem(finder);
+
+  // Propagate track positions to the vertex position
+  auto vtxProp = new PHActsVertexPropagator;
+  vtxProp->Verbosity(0);
+  vtxProp->fieldMap(G4MAGNET::magfield_tracking);
+  se->registerSubsystem(vtxProp);
+
+
 
   TString residoutfile = theOutfile + "_resid.root";
   std::string residstring(residoutfile.Data());
@@ -222,6 +272,9 @@ void Fun4All_TrackAnalysis(
   se->End();
   se->PrintTimer();
 
+  std::cout << "CDB Files used:" << std::endl;
+  CDBInterface::instance()->Print();
+  
   if (Enable::QA)
   {
     TString qaname = theOutfile + "_qa.root";
