@@ -50,14 +50,14 @@ R__LOAD_LIBRARY(libcdbobjects.so)
 R__LOAD_LIBRARY(libTrackingDiagnostics.so)
 R__LOAD_LIBRARY(libtrackingqa.so)
 void Fun4All_TrackSeeding(
-    const int nEvents = 5,
-    const std::string clusterfilename = "DST_TRKR_CLUSTER_run2pp_ana466_2024p012_v001-00053877-00000.root",
+    const int nEvents = 1,
+    const std::string clusterfilename = "DST_TRKR_CLUSTER_run2pp_ana466_2024p012_v001-00053877-00011.root",
     const std::string dir = "/sphenix/lustre01/sphnxpro/production/run2pp/physics/ana466_2024p012_v001/DST_TRKR_CLUSTER/run_00053800_00053900/dst/",
     const std::string outfilename = "clusters_seeds",
     const bool convertSeeds = false,
-    const bool doKFParticle = false)
+    const bool doKFParticle = true)
 {
-  //std::string inputseedRawHitFile = dir + seedfilename;
+  // std::string inputseedRawHitFile = dir + seedfilename;
   std::string inputclusterRawHitFile = dir + clusterfilename;
 
   G4TRACKING::convert_seeds_to_svtxtracks = convertSeeds;
@@ -76,7 +76,7 @@ void Fun4All_TrackSeeding(
   std::string geofile = CDBInterface::instance()->getUrl("Tracking_Geometry");
 
   TpcReadoutInit(runnumber);
- // these lines show how to override the drift velocity and time offset values set in TpcReadoutInit
+  // these lines show how to override the drift velocity and time offset values set in TpcReadoutInit
   // G4TPC::tpc_drift_velocity_reco = 0.0073844; // cm/ns
   // TpcClusterZCrossingCorrection::_vdrift = G4TPC::tpc_drift_velocity_reco;
   // G4TPC::tpc_tzero_reco = -5*50;  // ns
@@ -86,12 +86,13 @@ void Fun4All_TrackSeeding(
             << " vdrift: " << G4TPC::tpc_drift_velocity_reco
             << std::endl;
 
-  string outDir = "myKShortReco/";
+  string outDir = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/myKShortReco/";
   string outputFileName = "outputKFParticle_" + to_string(runnumber) + "_" + to_string(segment) + ".root";
   string outputRecoDir = outDir + "inReconstruction/";
   string outputRecoFile = outputRecoDir + outputFileName;
 
-  if(doKFParticle){
+  if (doKFParticle)
+  {
     string makeMainDirectory = "mkdir -p " + outDir;
     system(makeMainDirectory.c_str());
     string makeDirectory = "mkdir -p " + outputRecoDir;
@@ -106,11 +107,10 @@ void Fun4All_TrackSeeding(
   G4TRACKING::SC_CALIBMODE = false;
   TRACKING::pp_mode = true;
 
-  TString outfile = outfilename + "_" + runnumber + "-" + segment + ".root";
+  TString outfile = outfilename + "_" + runnumber + "-" + segment;
   std::string theOutfile = outfile.Data();
   auto se = Fun4AllServer::instance();
   se->Verbosity(1);
-
 
   Fun4AllRunNodeInputManager *ingeo = new Fun4AllRunNodeInputManager("GeoIn");
   ingeo->AddFile(geofile);
@@ -122,13 +122,22 @@ void Fun4All_TrackSeeding(
   G4TPC::ENABLE_STATIC_CORRECTIONS = true;
   G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
 
-  //to turn on the average corrections, enable the three lines below
-  //note: these are designed to be used only if static corrections are also applied
+  // to turn on the average corrections, enable the three lines below
+  // note: these are designed to be used only if static corrections are also applied
   G4TPC::ENABLE_AVERAGE_CORRECTIONS = true;
   G4TPC::USE_PHI_AS_RAD_AVERAGE_CORRECTIONS = false;
-   // to use a custom file instead of the database file:
+  // to use a custom file instead of the database file:
   G4TPC::average_correction_filename = CDBInterface::instance()->getUrl("TPC_LAMINATION_FIT_CORRECTION");
-   
+
+  std::string edgeStatus = (G4TPC::ENABLE_MODULE_EDGE_CORRECTIONS ? "edgeOn" : "edgeOff");
+  std::string staticStatus = (G4TPC::ENABLE_STATIC_CORRECTIONS ? "staticOn" : "staticOff");
+  std::string seedType = (convertSeeds ? "seeds" : "acts");
+
+  std::time_t now = std::time(nullptr);
+  std::tm tm = *std::localtime(&now);
+  char dateStr[9];
+  std::strftime(dateStr, sizeof(dateStr), "%m%d", &tm);
+
   G4MAGNET::magfield_rescale = 1;
   TrackingInit();
 
@@ -149,7 +158,7 @@ void Fun4All_TrackSeeding(
 
   auto silicon_Seeding = new PHActsSiliconSeeding;
   silicon_Seeding->Verbosity(0);
-  silicon_Seeding->setStrobeRange(-5,5);
+  silicon_Seeding->setStrobeRange(-5, 5);
   // these get us to about 83% INTT > 1
   silicon_Seeding->setinttRPhiSearchWindow(0.2);
   silicon_Seeding->setinttZSearchWindow(1.0);
@@ -179,9 +188,9 @@ void Fun4All_TrackSeeding(
   }
   seeder->Verbosity(0);
   seeder->SetLayerRange(7, 55);
-  seeder->SetSearchWindow(2.,0.05); // z-width and phi-width, default in macro at 1.5 and 0.05
-  seeder->SetClusAdd_delta_window(3.0,0.06); //  (0.5, 0.005) are default; sdzdr_cutoff, d2/dr2(phi)_cutoff
-  //seeder->SetNClustersPerSeedRange(4,60); // default is 6, 6
+  seeder->SetSearchWindow(2., 0.05);           // z-width and phi-width, default in macro at 1.5 and 0.05
+  seeder->SetClusAdd_delta_window(3.0, 0.06);  //  (0.5, 0.005) are default; sdzdr_cutoff, d2/dr2(phi)_cutoff
+  // seeder->SetNClustersPerSeedRange(4,60); // default is 6, 6
   seeder->SetMinHitsPerCluster(0);
   seeder->SetMinClustersPerTrack(3);
   seeder->useFixedClusterError(true);
@@ -225,15 +234,15 @@ void Fun4All_TrackSeeding(
   silicon_match->Verbosity(0);
   silicon_match->set_use_legacy_windowing(false);
   silicon_match->set_pp_mode(TRACKING::pp_mode);
-  if(G4TPC::ENABLE_AVERAGE_CORRECTIONS)
-    {
-      // reset phi matching window to be centered on zero
-      // it defaults to being centered on -0.1 radians for the case of static corrections only
-      std::array<double,3> arrlo = {-0.15,0,0};
-      std::array<double,3> arrhi = {0.15,0,0};
-      silicon_match->window_dphi.set_QoverpT_range(arrlo, arrhi);
-    }
-    se->registerSubsystem(silicon_match);
+  if (G4TPC::ENABLE_AVERAGE_CORRECTIONS)
+  {
+    // reset phi matching window to be centered on zero
+    // it defaults to being centered on -0.1 radians for the case of static corrections only
+    std::array<double, 3> arrlo = {-0.15, 0, 0};
+    std::array<double, 3> arrhi = {0.15, 0, 0};
+    silicon_match->window_dphi.set_QoverpT_range(arrlo, arrhi);
+  }
+  se->registerSubsystem(silicon_match);
 
   // Match TPC track stubs from CA seeder to clusters in the micromegas layers
   auto mm_match = new PHMicromegasTpcTrackMatching;
@@ -293,10 +302,6 @@ void Fun4All_TrackSeeding(
 
     if (G4TRACKING::SC_CALIBMODE)
     {
-      /*
-       * in calibration mode, calculate residuals between TPC and fitted tracks,
-       * store in dedicated structure for distortion correction
-       */
       auto residuals = new PHTpcResiduals;
       const TString tpc_residoutfile = theOutfile + "_PhTpcResiduals.root";
       residuals->setOutputfile(tpc_residoutfile.Data());
@@ -313,15 +318,15 @@ void Fun4All_TrackSeeding(
 
   auto finder = new PHSimpleVertexFinder;
   finder->Verbosity(0);
-  
-  //new cuts
+
+  // new cuts
   finder->setDcaCut(0.05);
   finder->setTrackPtCut(0.1);
   finder->setBeamLineCut(1);
   finder->setTrackQualityCut(300);
   finder->setNmvtxRequired(3);
   finder->setOutlierPairCut(0.10);
-  
+
   se->registerSubsystem(finder);
 
   // Propagate track positions to the vertex position
@@ -329,59 +334,68 @@ void Fun4All_TrackSeeding(
   vtxProp->Verbosity(0);
   vtxProp->fieldMap(G4MAGNET::magfield_tracking);
   se->registerSubsystem(vtxProp);
-  
-  //run KFParticle
-  if(doKFParticle){
-     Global_Reco();
 
-  //KFParticle setup
+  // run KFParticle
+  if (doKFParticle)
+  {
+    Global_Reco();
 
-  KFParticle_sPHENIX *kfparticle = new KFParticle_sPHENIX("myKShortReco");
-  kfparticle->Verbosity(1);
-  kfparticle->setDecayDescriptor("K_S0 -> pi^+ pi^-");
+    // KFParticle setup
 
-  //Basic node selection and configuration
-  kfparticle->magFieldFile("FIELDMAP_TRACKING");
-  kfparticle->getAllPVInfo(false);
-  kfparticle->allowZeroMassTracks(true);
-  kfparticle->useFakePrimaryVertex(false);
-  kfparticle->getDetectorInfo(true);
+    KFParticle_sPHENIX *kfparticle = new KFParticle_sPHENIX("myKShortReco");
+    kfparticle->Verbosity(1);
+    kfparticle->setDecayDescriptor("K_S0 -> pi^+ pi^-");
 
-  kfparticle->constrainToPrimaryVertex(true);
-  kfparticle->setMotherIPchi2(FLT_MAX);
-  kfparticle->setFlightDistancechi2(-1.);
-  kfparticle->setMinDIRA(-1.1);
-  kfparticle->setDecayLengthRange(0., FLT_MAX);
-  kfparticle->setDecayTimeRange(-1*FLT_MAX, FLT_MAX);
+    // Basic node selection and configuration
+    kfparticle->magFieldFile("FIELDMAP_TRACKING");
+    kfparticle->getAllPVInfo(false);
+    kfparticle->allowZeroMassTracks(true);
+    kfparticle->useFakePrimaryVertex(false);
+    kfparticle->getDetectorInfo(true);
 
-  //Track parameters
-  kfparticle->setMinMVTXhits(0);
-  //kfparticle->setMinINTThits(0);
-  kfparticle->setMinTPChits(20);
-  kfparticle->setMinimumTrackPT(-1.);
-  kfparticle->setMaximumTrackPTchi2(FLT_MAX);
-  kfparticle->setMinimumTrackIPchi2(-1.);
-  kfparticle->setMinimumTrackIP(-1.);
-  //kfparticle->setMaximumTrackchi2nDOF(20.);
-  kfparticle->setMaximumTrackchi2nDOF(300.);
+    kfparticle->constrainToPrimaryVertex(true);
+    kfparticle->setMotherIPchi2(FLT_MAX);
+    kfparticle->setFlightDistancechi2(-1.);
+    kfparticle->setMinDIRA(-1.1);
+    kfparticle->setDecayLengthRange(0., FLT_MAX);
+    kfparticle->setDecayTimeRange(-1 * FLT_MAX, FLT_MAX);
 
-  //Vertex parameters
-  kfparticle->setMaximumVertexchi2nDOF(50);
-  kfparticle->setMaximumDaughterDCA(1.);
+    // Track parameters
+    kfparticle->setMinMVTXhits(0);
+    // kfparticle->setMinINTThits(0);
+    kfparticle->setMinTPChits(20);
+    kfparticle->setMinimumTrackPT(-1.);
+    kfparticle->setMaximumTrackPTchi2(FLT_MAX);
+    kfparticle->setMinimumTrackIPchi2(-1.);
+    kfparticle->setMinimumTrackIP(-1.);
+    // kfparticle->setMaximumTrackchi2nDOF(20.);
+    kfparticle->setMaximumTrackchi2nDOF(300.);
 
-  //Parent parameters
-  kfparticle->setMotherPT(0);
-  kfparticle->setMinimumMass(0.200);
-  kfparticle->setMaximumMass(1.000);
-  kfparticle->setMaximumMotherVertexVolume(0.1);
+    // Vertex parameters
+    kfparticle->setMaximumVertexchi2nDOF(50);
+    kfparticle->setMaximumDaughterDCA(1.);
 
-  kfparticle->setOutputName(outputRecoFile);
+    // Parent parameters
+    kfparticle->setMotherPT(0);
+    kfparticle->setMinimumMass(0.200);
+    kfparticle->setMaximumMass(1.000);
+    kfparticle->setMaximumMotherVertexVolume(0.1);
 
-  se->registerSubsystem(kfparticle);
+    kfparticle->setOutputName(outputRecoFile);
+
+    se->registerSubsystem(kfparticle);
   }
 
-  TString residoutfile = theOutfile + "_resid.root";
+  TString residoutfile = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/resid/" + theOutfile + "_resid.root";
   std::string residstring(residoutfile.Data());
+
+  /*   TString residoutfile = TString::Format("/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/output4/%s_resid_%s_%s_%s_%s.root",
+                                           outputFileName.c_str(),
+                                           edgeStatus.c_str(),
+                                           staticStatus.c_str(),
+                                           seedType.c_str(),
+                                           dateStr);
+    std::string residstring(residoutfile.Data()); */
 
   auto resid = new TrackResiduals("TrackResiduals");
   resid->outfileName(residstring);
@@ -419,7 +433,8 @@ void Fun4All_TrackSeeding(
     QAHistManagerDef::saveQARootFile(qaOutputFileName);
   }
 
-  if(doKFParticle){
+  if (doKFParticle)
+  {
     ifstream file(outputRecoFile.c_str());
     if (file.good())
     {

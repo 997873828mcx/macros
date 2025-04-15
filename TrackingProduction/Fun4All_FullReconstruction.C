@@ -20,13 +20,13 @@
 
 #include <ffamodules/CDBInterface.h>
 
+#include <eventdisplay/TrackerEventDisplay.h>
 #include <fun4all/Fun4AllDstInputManager.h>
 #include <fun4all/Fun4AllDstOutputManager.h>
 #include <fun4all/Fun4AllInputManager.h>
 #include <fun4all/Fun4AllOutputManager.h>
 #include <fun4all/Fun4AllRunNodeInputManager.h>
 #include <fun4all/Fun4AllServer.h>
-#include <eventdisplay/TrackerEventDisplay.h>
 
 #include <phool/recoConsts.h>
 
@@ -34,23 +34,23 @@
 
 #include <tpccalib/PHTpcResiduals.h>
 
+#include <tpcqa/TpcRawHitQA.h>
 #include <trackingqa/InttClusterQA.h>
 #include <trackingqa/MicromegasClusterQA.h>
 #include <trackingqa/MvtxClusterQA.h>
 #include <trackingqa/TpcClusterQA.h>
-#include <tpcqa/TpcRawHitQA.h>
 #include <trackingqa/TpcSeedsQA.h>
 
+#include <trackingdiagnostics/KshortReconstruction.h>
 #include <trackingdiagnostics/TrackResiduals.h>
 #include <trackingdiagnostics/TrkrNtuplizer.h>
-#include <trackingdiagnostics/KshortReconstruction.h>
 
-#include <fstream>
-#include <iostream>
 #include <ctime>
+#include <fstream>
 #include <iomanip>
-#include <sstream>
+#include <iostream>
 #include <limits>
+#include <sstream>
 #include <string>
 
 /*#include <float.h>
@@ -79,54 +79,45 @@ R__LOAD_LIBRARY(libEventDisplay.so)
 R__LOAD_LIBRARY(libtpcqa.so)
 
 void Fun4All_FullReconstruction(
-<<<<<<< HEAD
-    const int nIn = 1,
-    const std::string tpcfilename = "DST_STREAMING_EVENT_run2pp_ana441_2024p007-00052844-00000.root",
-    const std::string tpcdir = "/sphenix/lustre01/sphnxpro/physics/slurp/streaming/physics/ana441_2024p007/run_00052800_00052900/",
-=======
+
     const int nEvents = 10,
     const std::string filelist = "filelist.list",
->>>>>>> master
+
     const std::string outfilename = "clusters_seeds",
     const bool convertSeeds = false,
     const int nEvents = 5)
 {
-<<<<<<< HEAD
+  // std::string inputtpcRawHitFile = tpcdir + tpcfilename;
 
-  std::string inputtpcRawHitFile = tpcdir + tpcfilename;
-
-=======
->>>>>>> master
   G4TRACKING::convert_seeds_to_svtxtracks = convertSeeds;
   std::cout << "Converting to seeds : " << G4TRACKING::convert_seeds_to_svtxtracks << std::endl;
 
   auto se = Fun4AllServer::instance();
   se->Verbosity(2);
   auto rc = recoConsts::instance();
-  
+
   std::ifstream ifs(filelist);
   std::string filepath;
   int runnumber = std::numeric_limits<int>::quiet_NaN();
   int segment = std::numeric_limits<int>::quiet_NaN();
   int i = 0;
-  while(std::getline(ifs,filepath))
+  while (std::getline(ifs, filepath))
+  {
+    std::cout << "Adding DST with filepath: " << filepath << std::endl;
+    if (i == 0)
     {
-      std::cout << "Adding DST with filepath: " << filepath << std::endl; 
-     if(i==0)
-	{
-	   std::pair<int, int> runseg = Fun4AllUtils::GetRunSegment(filepath);
-	   runnumber = runseg.first;
-	   segment = runseg.second;
-	   rc->set_IntFlag("RUNNUMBER", runnumber);
-	   rc->set_uint64Flag("TIMESTAMP", runnumber);
-        
-	}
-      std::string inputname = "InputManager" + std::to_string(i);
-      auto hitsin = new Fun4AllDstInputManager(inputname);
-      hitsin->fileopen(filepath);
-      se->registerInputManager(hitsin);
-      i++;
+      std::pair<int, int> runseg = Fun4AllUtils::GetRunSegment(filepath);
+      runnumber = runseg.first;
+      segment = runseg.second;
+      rc->set_IntFlag("RUNNUMBER", runnumber);
+      rc->set_uint64Flag("TIMESTAMP", runnumber);
     }
+    std::string inputname = "InputManager" + std::to_string(i);
+    auto hitsin = new Fun4AllDstInputManager(inputname);
+    hitsin->fileopen(filepath);
+    se->registerInputManager(hitsin);
+    i++;
+  }
 
   std::cout << " run: " << runnumber
             << " samples: " << TRACKING::reco_tpc_maxtime_sample
@@ -166,11 +157,10 @@ void Fun4All_FullReconstruction(
 =======
 >>>>>>> master
 
- 
   Enable::CDB = true;
   rc->set_StringFlag("CDB_GLOBALTAG", "ProdA_2024");
   rc->set_uint64Flag("TIMESTAMP", runnumber);
-  std::string geofile = CDBInterface::instance()->getUrl("Tracking_Geometry"); // 准备载入几何信息
+  std::string geofile = CDBInterface::instance()->getUrl("Tracking_Geometry");  // 准备载入几何信息
 
   Fun4AllRunNodeInputManager *ingeo = new Fun4AllRunNodeInputManager("GeoIn");
   ingeo->AddFile(geofile);
@@ -182,15 +172,9 @@ void Fun4All_FullReconstruction(
   // Flag for running the tpc hit unpacker with zero suppression on
   TRACKING::tpc_zero_supp = true;
 
-<<<<<<< HEAD
   // to turn on the default static corrections, enable the two lines below
   // G4TPC::ENABLE_STATIC_CORRECTIONS = true;
   // G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
-=======
-  //to turn on the default static corrections, enable the two lines below
-  G4TPC::ENABLE_STATIC_CORRECTIONS = true;
-  G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
->>>>>>> master
 
   // to turn on the average corrections derived from simulation, enable the three lines below
   // note: these are designed to be used only if static corrections are also applied
@@ -210,30 +194,29 @@ void Fun4All_FullReconstruction(
   G4MAGNET::magfield_rescale = 1;
   TrackingInit();
 
-
-  for(int felix=0; felix < 6; felix++)
-    {
-      Mvtx_HitUnpacking(std::to_string(felix));
-    }
-  for(int server = 0; server < 8; server++)
-    {
-      Intt_HitUnpacking(std::to_string(server));
-    }
+  for (int felix = 0; felix < 6; felix++)
+  {
+    Mvtx_HitUnpacking(std::to_string(felix));
+  }
+  for (int server = 0; server < 8; server++)
+  {
+    Intt_HitUnpacking(std::to_string(server));
+  }
   ostringstream ebdcname;
-  for(int ebdc = 0; ebdc < 24; ebdc++)
+  for (int ebdc = 0; ebdc < 24; ebdc++)
+  {
+    ebdcname.str("");
+    if (ebdc < 10)
     {
-      ebdcname.str("");
-      if(ebdc < 10)
-	{
-	  ebdcname<<"0";
-	}
-      ebdcname<<ebdc;
-      Tpc_HitUnpacking(ebdcname.str());
+      ebdcname << "0";
     }
+    ebdcname << ebdc;
+    Tpc_HitUnpacking(ebdcname.str());
+  }
 
   Micromegas_HitUnpacking();
 
-  MvtxClusterizer* mvtxclusterizer = new MvtxClusterizer("MvtxClusterizer");
+  MvtxClusterizer *mvtxclusterizer = new MvtxClusterizer("MvtxClusterizer");
   int verbosity = std::max(Enable::VERBOSITY, Enable::MVTX_VERBOSITY);
   mvtxclusterizer->Verbosity(verbosity);
   se->registerSubsystem(mvtxclusterizer);
@@ -276,9 +259,9 @@ void Fun4All_FullReconstruction(
   se->registerSubsystem(silicon_Seeding);
   */
 
-  auto silicon_Seeding = new PHActsSiliconSeeding; // 种子并合并种子
+  auto silicon_Seeding = new PHActsSiliconSeeding;  // 种子并合并种子
   silicon_Seeding->Verbosity(0);
-  silicon_Seeding->setStrobeRange(-5,5);
+  silicon_Seeding->setStrobeRange(-5, 5);
   // these get us to about 83% INTT > 1
   silicon_Seeding->setinttRPhiSearchWindow(0.4);
   silicon_Seeding->setinttZSearchWindow(2.0);
@@ -300,7 +283,7 @@ void Fun4All_FullReconstruction(
                                         dateStr);
   std::string outstring(outfileSeed.Data());
   auto seeder = new PHCASeeding("PHCASeeding");
-  double fieldstrength = std::numeric_limits<double>::quiet_NaN(); // set by isConstantField if constant
+  double fieldstrength = std::numeric_limits<double>::quiet_NaN();  // set by isConstantField if constant
   bool ConstField = isConstantField(G4MAGNET::magfield_tracking, fieldstrength);
   if (ConstField)
   {
@@ -311,12 +294,12 @@ void Fun4All_FullReconstruction(
   {
     seeder->set_field_dir(-1 * G4MAGNET::magfield_rescale);
     seeder->useConstBField(false);
-    seeder->magFieldFile(G4MAGNET::magfield_tracking); // to get charge sign right
+    seeder->magFieldFile(G4MAGNET::magfield_tracking);  // to get charge sign right
   }
   seeder->Verbosity(0);
   seeder->SetLayerRange(7, 55);
-  seeder->SetSearchWindow(2., 0.05);          // z-width and phi-width, default in macro at 1.5 and 0.05
-  seeder->SetClusAdd_delta_window(3.0, 0.06); //  (0.5, 0.005) are default; sdzdr_cutoff, d2/dr2(phi)_cutoff
+  seeder->SetSearchWindow(2., 0.05);           // z-width and phi-width, default in macro at 1.5 and 0.05
+  seeder->SetClusAdd_delta_window(3.0, 0.06);  //  (0.5, 0.005) are default; sdzdr_cutoff, d2/dr2(phi)_cutoff
   // seeder->SetNClustersPerSeedRange(4,60); // default is 6, 6
   seeder->SetMinHitsPerCluster(0);
   seeder->SetMinClustersPerTrack(3);
@@ -373,8 +356,8 @@ void Fun4All_FullReconstruction(
   mm_match->set_z_search_window_lyr1(30.0);
   mm_match->set_z_search_window_lyr2(3.);
 
-  mm_match->set_min_tpc_layer(38);            // layer in TPC to start projection fit
-  mm_match->set_test_windows_printout(false); // used for tuning search windows only
+  mm_match->set_min_tpc_layer(38);             // layer in TPC to start projection fit
+  mm_match->set_test_windows_printout(false);  // used for tuning search windows only
   se->registerSubsystem(mm_match);
 
   /*
@@ -409,7 +392,7 @@ void Fun4All_FullReconstruction(
     actsFit->fitSiliconMMs(G4TRACKING::SC_CALIBMODE);
     actsFit->setUseMicromegas(G4TRACKING::SC_USE_MICROMEGAS);
     actsFit->set_pp_mode(TRACKING::pp_mode);
-    actsFit->set_use_clustermover(true); // default is true for now
+    actsFit->set_use_clustermover(true);  // default is true for now
     actsFit->useActsEvaluator(false);
     actsFit->useOutlierFinder(false);
     actsFit->setFieldMap(G4MAGNET::magfield_tracking);
@@ -495,13 +478,10 @@ void Fun4All_FullReconstruction(
   se->run(nEvents);
   se->End();
   se->PrintTimer();
-<<<<<<< HEAD
 
   std::ifstream file(outputRecoFile.c_str());
 
-=======
   CDBInterface::instance()->Print();
->>>>>>> master
   if (Enable::QA)
   {
     TString qaname = outputRecoFile + "_qa.root";
