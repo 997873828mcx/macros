@@ -69,16 +69,16 @@ void kshort_analysis()
 
   TH1D *h_kshort_mass_PE =
       new TH1D("h_kshort_mass_PE",
-               "K^{0}_{S} mass from 4–vector in tree;"
+               "K^{0}_{S} mass from 4-vector in tree;"
                "M_{4vec}(K^{0}_{S})  [GeV/c^{2}];Counts",
                120, 0.4, 0.6);
   TH2D *h_ArmPod_NoCut = new TH2D("h_ArmPod_NoCut",
                                   "Armenteros-Podolanski (Before Cut);#alpha = (p^{+}_{L} - p^{-}_{L}) / (p^{+}_{L} + p^{-}_{L});p_{T}^{+} (GeV/c)",
-                                  100, -2.0, 2.0, 100, 0.0, 0.5);
+                                  200, -2.0, 2.0, 200, 0.0, 0.5);
 
   TH2D *h_ArmPod_WithCut = new TH2D("h_ArmPod_WithCut",
                                     "Armenteros-Podolanski (After Cut);#alpha = (p^{+}_{L} - p^{-}_{L}) / (p^{+}_{L} + p^{-}_{L});p_{T}^{+} (GeV/c)",
-                                    100, -2.0, 2.0, 100, 0.0, 0.5);
+                                    200, -2.0, 2.0, 200, 0.0, 0.5);
 
   TH1D *h_cosTheta = new TH1D("h_cosTheta", "cos#theta in K_{S}^{0} rest frame; cos#theta; Counts", 100, -1.0, 1.0);
 
@@ -159,7 +159,7 @@ void kshort_analysis()
       continue;
 
     // 2) minimal pT on each track
-    if (t1pT < 0.20 || t2pT < 0.20)
+    if (t1pT < 0.2 || t2pT < 0.2)
       continue;
 
     // 3) opposite charge for pi+ pi-
@@ -280,15 +280,13 @@ void kshort_analysis()
 
     if (alpha < -rAlpha || alpha > rAlpha)
       continue;
-    if (pT2_meas < 0.97 * pT2_exp)
+    if (pT2_meas < 0.95 * pT2_exp)
       continue;
-    if (pT2_meas > 1.03 * pT2_exp)
+    if (pT2_meas > 1.05 * pT2_exp)
       continue;
 
     h_ArmPod_WithCut->Fill(alpha, pT_pos);
-    // if (*kshort_pT < 1.0) continue;
 
-    // if (*kshort_mass < 0.48 || *kshort_mass > 0.515) continue;
     //    ---- Fill histograms ----
     h_kshort_mass->Fill(*kshort_mass);
     h_kshort_dlength->Fill(*kshort_decay_length);
@@ -298,7 +296,7 @@ void kshort_analysis()
     h_track1_pT->Fill(t1pT);
     h_track2_pT->Fill(t2pT);
 
-    // h_ArmPod->Fill(alpha, pT_pos);
+   
   }
 
   TCanvas *c1 = new TCanvas("c1", "Kshort Analysis", 1400, 1000);
@@ -344,22 +342,31 @@ void kshort_analysis()
 
   // Alternative approach: Draw both on same plot with different colors
   TCanvas *c3 = new TCanvas("c3", "Armenteros-Podolanski Overlay", 800, 600);
+  c3->SetLogz(); // Optional: log scale helps see the distribution better
   h_ArmPod_NoCut->Draw("COLZ");
-  h_ArmPod_WithCut->SetMarkerStyle(24); // Open circle marker style (less obtrusive)
+  /* h_ArmPod_WithCut->SetMarkerStyle(24); // Open circle marker style (less obtrusive)
   h_ArmPod_WithCut->SetMarkerColor(kRed);
   h_ArmPod_WithCut->SetMarkerSize(0.5);
   Color_t transparentRed = TColor::GetColorTransparent(kRed, 0.3);
   h_ArmPod_WithCut->SetMarkerColor(transparentRed);
-  h_ArmPod_WithCut->Draw("SAME P");
+  h_ArmPod_WithCut->Draw("SAME P"); */
+  TFile fout("kshort_analysis.root","RECREATE");   
 
-  // Additionally, we can draw the theoretical curve:
-  // For K0s decay, the expectation is an ellipse
-  // double pCM = 0.206;  // From your calculation above
-  /*   TF1* upperCurve = new TF1("upperCurve",
-                              Form("TMath::Sqrt(1-x*x)*%g", pCM), -1.0, 1.0);
-    upperCurve->SetLineColor(kGreen);
-    upperCurve->SetLineWidth(2);
-    upperCurve->Draw("SAME"); */
+  h_kshort_mass        ->Write();
+  h_kshort_dlength     ->Write();
+  h_kshort_dira        ->Write();
+  h_pairDCA            ->Write();
+
+  h_track1_pT          ->Write();
+  h_track2_pT          ->Write();
+  h_kshort_mass_PE     ->Write();
+
+  h_ArmPod_NoCut       ->Write();   // <-- needed by overlay
+  h_ArmPod_WithCut     ->Write();   // <--           "
+
+  fout.Close();                     // flush to disk
+  std::cout << "Saved histograms in  kshort_analysis.root\n";
+
 
   c3->SaveAs("ArmenterosPodolanski_Overlay.pdf");
 }

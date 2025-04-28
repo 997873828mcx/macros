@@ -51,6 +51,14 @@ void Ks0_AP_sim()
   {
     gInv.SetPoint(i, vPt[i], vYield[i]);
     gInv.SetPointError(i, 0., vErr[i]);
+    
+  }
+  if ( gInv.GetN()>0 ) {
+    double x0, y0;
+    gInv.GetPoint(0,x0,y0);
+    if (x0==0. && y0==0.) {
+      gInv.RemovePoint(0);
+    }
   }
   gInv.SetName("gInv");
   gInv.SetTitle("K^{0}_{S} Invariant Yield; p_{T} [GeV/c]; 1/(2#pi p_{T}) d^{2}N/dp_{T}dy");
@@ -77,12 +85,15 @@ void Ks0_AP_sim()
   gInv.Fit(levy, "R0Q");  // R=use range, 0=quiet, Q=quiet fit print
 
   TCanvas* cYield = new TCanvas("cYield","K^{0}_{S} Invariant Yield",800,600);
+  cYield->SetLogy();
 
   // 2) Draw the data points with errors:
   gInv.SetMarkerStyle(20);
   gInv.SetMarkerSize(1.0);
-  gInv.SetLineColor(kBlack);
+  
+  //gInv.SetLineColor(kBlack);
   gInv.Draw("AP");  // A=draw axes, P=draw points with error‐bars
+  gInv.GetYaxis()->SetLimits(1e-7, 1e-1);
 
   // 3) Overlay the fit curve:
   levy->SetLineColor(kBlack);
@@ -111,6 +122,12 @@ void Ks0_AP_sim()
   }
   hPtPdf.Scale( 1.0 / hPtPdf.Integral("width") );   // normalise to 1
 
+  TCanvas* cPdf = new TCanvas("cPdf","K^{0}_{S} p_{T} pdf",800,600);
+cPdf->SetLogy();               // ← log Y for PDF
+hPtPdf.Draw("HIST");
+cPdf->SaveAs("Ks0_pT_pdf.pdf");
+
+
   /* ----------------------------------------------------------------- *
    * 4.  Monte‑Carlo generation                                         *
    * ----------------------------------------------------------------- */
@@ -127,8 +144,14 @@ void Ks0_AP_sim()
   double pCM = TMath::Sqrt((M2 - sumM2) * (M2 - difM2)) / (2. * massKs);
 
   TRandom3 R(0);
-  TH2D hArm("hArm", "Armenteros-Podolanski; #alpha; p_{T}^{+}  [GeV/c]",
-            200, -2, 2, 200, 0, 0.5);//set bin 200?
+  /* TH2D hArm("hArm", "Armenteros-Podolanski; #alpha; p_{T}^{+}  [GeV/c]",
+            200, -2, 2, 200, 0, 0.5);//set bin 200? */
+  TH2D hArm_NoCut    ("hArm_NoCut",
+     "A-P before cuts; #alpha; p_{T}^{+} [GeV/c]",
+    200,-2.0,2.0,200,0.0,0.5);
+    TH2D hArm_WithCut  ("hArm_WithCut",
+    "A-P after  cuts; #alpha; p_{T}^{+} [GeV/c]",
+    200,-2.0,2.0,200,0.0,0.5);
 
   TLorentzVector vKs, vPiPlus, vPiMinus;
 
@@ -177,8 +200,47 @@ void Ks0_AP_sim()
     TVector3 pTplus = vPiPlus.Vect() - pParUnit * pLplus;
     double pTpos = pTplus.Mag();
 
-    hArm.Fill(alpha, pTpos);
+    //hArm.Fill(alpha, pTpos);
+
+    hArm_NoCut.Fill(alpha, pTpos);
+
+    // 1) daughter pT > 0.20 GeV
+    if (vPiPlus.Pt()  < 0.20) continue;
+    if (vPiMinus.Pt() < 0.20) continue;
+
+    // 2) pointing angle (DIRA) > 0.94
+    //    (MC: perfect geometry → DIR A == 1.0, so always passes;
+    
+    double dira = 1.0;
+    if (dira < 0.94) continue;
+
+    // 3) alpha‐ellipse:  |alpha| < rAlpha
+    double ksMag = vKs.P();
+    double ksE   = vKs.E();
+    double Beta  = ksMag/ksE;
+    if (Beta < 1e-9) continue;
+    double rAlpha = (2.*pCM)/(Beta*massKs);
+    if (alpha < -rAlpha || alpha > rAlpha) continue;
+
+    // 4) 10% window on pT² vs expected pT²
+    double cosTheta = (Beta*massKs)/(2.*pCM) * alpha;
+    if (cosTheta*cosTheta > 1.) cosTheta = (cosTheta>0?1.:-1.);
+    double pTexp = pCM * TMath::Sqrt(1.-cosTheta*cosTheta);
+    double pT2me = pTpos*pTpos;
+    double pT2ex = pTexp*pTexp;
+    //if (pT2me < 0.97*pT2ex) continue;
+    //if (pT2me > 1.03*pT2ex) continue;
+    hArm_WithCut.Fill(alpha, pTpos);
   }
+
+  TCanvas* cAP1 = new TCanvas("cAP1","A-P before cuts",800,600);
+cAP1->SetLogz();               // ← log Z for 2D
+hArm_NoCut.Draw("COLZ");
+cAP1->SaveAs("Ks0_AP_before.pdf");
+TCanvas* cAP2 = new TCanvas("cAP2","A-P after cuts",800,600);
+cAP2->SetLogz();
+hArm_WithCut.Draw("COLZ");
+cAP2->SaveAs("Ks0_AP_after.pdf");
 
   /* ----------------------------------------------------------------- *
    * 5.  save everything                                               *
@@ -187,7 +249,10 @@ void Ks0_AP_sim()
   gInv.Write();
   levy->Write();
   hPtPdf.Write();
-  hArm.Write();
+  //hArm.Write();
+
+    hArm_NoCut.Write();
+  hArm_WithCut.Write();
   fout.Close();
 
   std::cout << "Finished.  Results in Ks0_AP_sim.root\n";

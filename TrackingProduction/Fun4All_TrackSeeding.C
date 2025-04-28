@@ -36,12 +36,13 @@
 
 #include <trackingdiagnostics/TrackResiduals.h>
 #include <trackingdiagnostics/TrkrNtuplizer.h>
+#include <trackingdiagnostics/KshortReconstruction.h>
 
-#include <kfparticle_sphenix/KFParticle_sPHENIX.h>
+//#include <kfparticle_sphenix/KFParticle_sPHENIX.h>
 
 #include <stdio.h>
 
-R__LOAD_LIBRARY(libkfparticle_sphenix.so)
+//R__LOAD_LIBRARY(libkfparticle_sphenix.so)
 
 R__LOAD_LIBRARY(libfun4all.so)
 R__LOAD_LIBRARY(libffamodules.so)
@@ -55,7 +56,7 @@ void Fun4All_TrackSeeding(
     const std::string dir = "/sphenix/lustre01/sphnxpro/production/run2pp/physics/ana466_2024p012_v001/DST_TRKR_CLUSTER/run_00053800_00053900/dst/",
     const std::string outfilename = "clusters_seeds",
     const bool convertSeeds = false,
-    const bool doKFParticle = true)
+    const bool doKFParticle = false)
 {
   // std::string inputseedRawHitFile = dir + seedfilename;
   std::string inputclusterRawHitFile = dir + clusterfilename;
@@ -93,10 +94,10 @@ void Fun4All_TrackSeeding(
 
   if (doKFParticle)
   {
-    string makeMainDirectory = "mkdir -p " + outDir;
+    /* string makeMainDirectory = "mkdir -p " + outDir;
     system(makeMainDirectory.c_str());
     string makeDirectory = "mkdir -p " + outputRecoDir;
-    system(makeDirectory.c_str());
+    system(makeDirectory.c_str()); */
   }
 
   // distortion calibration mode
@@ -338,7 +339,7 @@ void Fun4All_TrackSeeding(
   // run KFParticle
   if (doKFParticle)
   {
-    Global_Reco();
+    /* Global_Reco();
 
     // KFParticle setup
 
@@ -383,7 +384,23 @@ void Fun4All_TrackSeeding(
 
     kfparticle->setOutputName(outputRecoFile);
 
-    se->registerSubsystem(kfparticle);
+    se->registerSubsystem(kfparticle); */
+  }
+  else{
+    auto ks0reco = new KshortReconstruction("KshortReconstruction");
+  ks0reco->Verbosity(5);
+
+  ks0reco->setPtCut(0.000000001);
+    /*ks0reco->setApplyInvariantPtCut(false);
+    ks0reco->setApplyQualityCut(false);
+    ks0reco->setApplyDCACut(false);
+    ks0reco->setApplyPairDCACut(false);*/
+    ks0reco->setRequireMVTX(false);
+    ks0reco->setTrackQualityCut(10000000000000000);
+    ks0reco->setPairDCACut(10000000000000);
+    ks0reco->setTrackDCACut(0.0000000000000001);
+    ks0reco->set_output_file(outputRecoFile);
+    se->registerSubsystem(ks0reco);
   }
 
   TString residoutfile = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/resid/" + theOutfile + "_resid.root";
