@@ -1,6 +1,6 @@
 Universe  = vanilla
 Executable = /bin/sh
-Arguments  = /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/run_kshort_reco.sh $(Process) 10
+Arguments  = /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/run_kshort_reco.sh $(Process) 0
 Notify_user = 997873828mcx@gmail.com
 
 # Log file paths
@@ -12,8 +12,8 @@ Log     = /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/log/tmp/ksh
 Initialdir = /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/
 
 # Resource requests (adjust based on your job needs)
-RequestMemory = 5000
-RequestDisk = 5000
+RequestMemory = 20000
+RequestDisk = 20000
 # RequestCpus = 1  # Uncomment if you need multiple CPUs
 
 # Job management
@@ -22,4 +22,4 @@ PeriodicHold = (NumJobStarts>=2 && JobStatus == 1)
 Notification = Error
 
 #Queue 11
-Queue 800
+Queue 2628

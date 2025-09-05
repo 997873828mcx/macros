@@ -6,7 +6,7 @@ void overlay_AP()
   //--------------------------------------------------------------------
   // 1) open both files and fetch the histograms
   //--------------------------------------------------------------------
-  TFile fData("kshort_analysis.root");        // the file you create at the end of kshort_analysis()
+  TFile fData("../kshort_analysis.root");        // the file you create at the end of kshort_analysis()
   TFile fMC  ("Ks0_AP_sim.root");            // written by the generator macro
 
   if (!fData.IsOpen() || !fMC.IsOpen()) {

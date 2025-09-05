@@ -125,8 +125,16 @@ void Fun4All_FullReconstruction(
             << " vdrift: " << G4TPC::tpc_drift_velocity_reco
             << std::endl;
 
+<<<<<<< HEAD
   TRACKING::pp_mode = true;
 
+=======
+ TRACKING::pp_mode = true;
+ 
+  Enable::MVTX_APPLYMISALIGNMENT = true;
+  ACTSGEOM::mvtx_applymisalignment = Enable::MVTX_APPLYMISALIGNMENT;
+  
+>>>>>>> master
   // distortion calibration mode
   /*
    * set to true to enable residuals in the TPC with
@@ -134,10 +142,14 @@ void Fun4All_FullReconstruction(
    */
   G4TRACKING::SC_CALIBMODE = false;
 
+<<<<<<< HEAD
   ACTSGEOM::mvtxMisalignment = 100;
   ACTSGEOM::inttMisalignment = 100.;
   ACTSGEOM::tpotMisalignment = 100.;
   TString outfile = TString::Format("%s_%d-%d.root", outfilename.c_str(), runnumber, segment);
+=======
+  TString outfile = outfilename + "_" + runnumber + "-" + segment + ".root";
+>>>>>>> master
   std::string theOutfile = outfile.Data();
 <<<<<<< HEAD
 
@@ -172,6 +184,7 @@ void Fun4All_FullReconstruction(
   // Flag for running the tpc hit unpacker with zero suppression on
   TRACKING::tpc_zero_supp = true;
 
+<<<<<<< HEAD
   // to turn on the default static corrections, enable the two lines below
   // G4TPC::ENABLE_STATIC_CORRECTIONS = true;
   // G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
@@ -191,6 +204,19 @@ void Fun4All_FullReconstruction(
   char dateStr[9];
   std::strftime(dateStr, sizeof(dateStr), "%m%d", &tm);
 
+=======
+   // to turn on the default static corrections, enable the two lines below
+  G4TPC::ENABLE_STATIC_CORRECTIONS = true;
+  G4TPC::USE_PHI_AS_RAD_STATIC_CORRECTIONS = false;
+
+  //to turn on the average corrections, enable the three lines below
+  //note: these are designed to be used only if static corrections are also applied
+  G4TPC::ENABLE_AVERAGE_CORRECTIONS = true;
+  G4TPC::USE_PHI_AS_RAD_AVERAGE_CORRECTIONS = false;
+   // to use a custom file instead of the database file:
+  G4TPC::average_correction_filename = CDBInterface::instance()->getUrl("TPC_LAMINATION_FIT_CORRECTION");
+  
+>>>>>>> master
   G4MAGNET::magfield_rescale = 1;
   TrackingInit();
 
