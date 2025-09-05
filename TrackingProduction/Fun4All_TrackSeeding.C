@@ -51,7 +51,7 @@ R__LOAD_LIBRARY(libcdbobjects.so)
 R__LOAD_LIBRARY(libTrackingDiagnostics.so)
 R__LOAD_LIBRARY(libtrackingqa.so)
 void Fun4All_TrackSeeding(
-    const int nEvents = 1,
+    const int nEvents = 5,
     const std::string clusterfilename = "DST_TRKR_CLUSTER_run2pp_ana466_2024p012_v001-00053877-00011.root",
     const std::string dir = "/sphenix/lustre01/sphnxpro/production/run2pp/physics/ana466_2024p012_v001/DST_TRKR_CLUSTER/run_00053800_00053900/dst/",
     const std::string outfilename = "clusters_seeds",
@@ -391,17 +391,19 @@ void Fun4All_TrackSeeding(
   }
   else{
     auto ks0reco = new KshortReconstruction("KshortReconstruction");
-  ks0reco->Verbosity(5);
+    ks0reco->Verbosity(5);
 
-  ks0reco->setPtCut(0.000000001);
-    /*ks0reco->setApplyInvariantPtCut(false);
+    ks0reco->setPtCut(0.000000001);
+    ks0reco->setApplyInvariantPtCut(false);
     ks0reco->setApplyQualityCut(false);
     ks0reco->setApplyDCACut(false);
-    ks0reco->setApplyPairDCACut(false);*/
+    ks0reco->setApplyPairDCACut(false);
     ks0reco->setRequireMVTX(false);
-    ks0reco->setTrackQualityCut(10000000000000000);
-    ks0reco->setPairDCACut(10000000000000);
-    ks0reco->setTrackDCACut(0.0000000000000001);
+    ks0reco->setApplyTrackPtCut(false);
+    ks0reco->setApplyChargeCut(false);
+    //ks0reco->setTrackQualityCut(100000);
+    //ks0reco->setPairDCACut(0.3);
+    //ks0reco->setTrackDCACut(0.01);
     ks0reco->set_output_file(outputRecoFile);
     se->registerSubsystem(ks0reco);
   }
