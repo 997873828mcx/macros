@@ -46,7 +46,7 @@ namespace Enable
   int MICROMEGAS_VERBOSITY = 0;
 
   bool TRACKING_TRACK = false;
-  bool TRACKING_EVAL = false;
+  bool TRACKING_EVAL = true;
   bool TRACK_MATCHING = false;
   bool TRACK_MATCHING_TREE = false;
   bool TRACK_MATCHING_TREE_CLUSTERS = false;
@@ -150,10 +150,10 @@ namespace G4TPC
   std::string LaminationQAName = "";
 
   // enable direct laser g4hits generation
-  bool ENABLE_DIRECT_LASER_HITS = false;
+  bool ENABLE_DIRECT_LASER_HITS = true;
 
   // save histograms
-  bool DIRECT_LASER_SAVEHISTOGRAMS = false;
+  bool DIRECT_LASER_SAVEHISTOGRAMS = true;
 
   // do cluster <-> hit association
   bool DO_HIT_ASSOCIATION = true;
@@ -162,7 +162,8 @@ namespace G4TPC
   std::string DIRECT_LASER_ROOTOUTPUT_FILENAME = "TpcSpaceChargeMatrices.root";
   std::string DIRECT_LASER_HISTOGRAMOUTPUT_FILENAME = "TpcDirectLaserReconstruction.root";
 
-  std::string TPC_GAS_MIXTURE = "NeCF4";
+  //std::string TPC_GAS_MIXTURE = "NeCF4";
+  std::string TPC_GAS_MIXTURE = "ArCF4Isobutane";
   // drift velocity is set here for all relevant modules
   //  double tpc_drift_velocity_reco now set in GlobalVariables.C
   double tpc_drift_velocity_sim = 0.007550;  // cm/ns   // this is the ArCF4Isobutane version of the gas

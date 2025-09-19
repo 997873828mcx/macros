@@ -1,0 +1,26 @@
+Universe   = vanilla
+Executable = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/run_laser_sim.sh
+Arguments  = $(Process) 21
+
+# Notifications (optional)
+# Notify_user  = 997873828mcx@gmail.com
+# Notification = Error
+
+# Logs
+Output = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/log/laser_$(Process).out
+Error  = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/log/laser_$(Process).err
+Log    = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/log/tmp/laser_$(Process).log
+
+# Working directory
+Initialdir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/
+
+# Resources
+RequestMemory = 8000
+RequestDisk   = 20000
+# RequestCpus = 1
+
+# Job management
+PeriodicHold = (NumJobStarts>=2 && JobStatus == 1)
+
+# Queue jobs (edit this number as needed)
+Queue 10

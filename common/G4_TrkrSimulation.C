@@ -462,19 +462,36 @@ void TPC_Cells()
   {
     auto directLaser = new PHG4TpcDirectLaser;
 
-    // setup phi and theta steps
-    /* use 5deg steps */
-    static constexpr double deg_to_rad = M_PI / 180.;
-    directLaser->SetPhiStepping(144, 0 * deg_to_rad, 360 * deg_to_rad);
-    directLaser->SetThetaStepping(36, 0 * deg_to_rad, 90 * deg_to_rad);
-    // directLaser->SetArbitraryThetaPhi(50*deg_to_rad, 145*deg_to_rad);
-    directLaser->SetDirectLaserAuto(true);
-    //__Variable stepping: hitting all of the central membrane____________
-    // directLaser->SetDirectLaserPatternfromFile( true );
-    // directLaser->SetFileStepping(13802);
-    //___________________________________________________________________
+    // Configure a narrow phi scan near 12 o'clock using the +z endcap laser index 1
+    // Laser index 1 has m_direction = -1 and m_phi = (pi/2)*1 - 15deg
+    directLaser->SetSingleLaserIndex(1);
 
-    directLaser->set_double_param("drift_velocity", drift_vel);
+    // Use random phi each event within the specified window (no stepping)
+    directLaser->SetDirectLaserAuto(false);
+
+    // Desired global phi window [1.55, 1.57] rad. For this laser, phi_global = m_phi + phi_param
+    static constexpr double deg_to_rad = M_PI / 180.0;
+    const double mphi_laser1 = (M_PI / 2.0) * 1 - 15.0 * deg_to_rad; // ~1.308996939 rad
+    const double phi_global_min = 1.55;
+    //const double phi_global_max = 1.57;
+    const double phi_global_max = 1.564;
+    const double phi_param_min = phi_global_min - mphi_laser1;
+    const double phi_param_max = phi_global_max - mphi_laser1;
+
+    // Configure random phi range in laser parameter space
+    directLaser->SetRandomPhiRange(phi_param_min, phi_param_max);
+
+    // Theta near pi/2 (almost parallel to pad plane); avoid exactly pi/2 to keep dir.z != 0
+    const double epsilon = 1e-3; // rad
+    const double theta_near_perp = (M_PI / 2.0) - epsilon;
+    directLaser->SetThetaStepping(1, theta_near_perp, theta_near_perp);
+
+    // Note: Radial emission (origin azimuth == direction azimuth) requires
+    // a newer PHG4TpcDirectLaser with SetLockOriginToPhi(). If your build
+    // does not provide this API, skip this call.
+     directLaser->SetLockOriginToPhi(true);
+
+    // Note: ElectronDrift consumes drift_velocity; DirectLaser does not.
     se->registerSubsystem(directLaser);
   }
 
@@ -596,19 +613,20 @@ void TPC_Cells()
   edrift->registerPadPlane(padplane);
   se->registerSubsystem(edrift);
 
-  // Tpc digitizer
-  //=========
-  PHG4TpcDigitizer* digitpc = new PHG4TpcDigitizer();
-  digitpc->SetTpcMinLayer(G4MVTX::n_maps_layer + G4INTT::n_intt_layer);
-  double ENC = 670.0;  // standard
-  digitpc->SetENC(ENC);
-  double ADC_threshold = 4.0 * ENC;
-  digitpc->SetADCThreshold(ADC_threshold);  // 4 * ENC seems OK
-  digitpc->Verbosity(verbosity);
-  cout << " Tpc digitizer: Setting ENC to " << ENC << " ADC threshold to " << ADC_threshold
-       << " maps+Intt layers set to " << G4MVTX::n_maps_layer + G4INTT::n_intt_layer << endl;
-  digitpc->set_skip_noise_flag(false);
-  se->registerSubsystem(digitpc);
+  // Tpc digitizer (disabled for laser DNL energy-weighted workflow)
+  // If ADC-weighted DNL or downstream ADC-based processing is needed,
+  // re-enable this block.
+  // PHG4TpcDigitizer* digitpc = new PHG4TpcDigitizer();
+  // digitpc->SetTpcMinLayer(G4MVTX::n_maps_layer + G4INTT::n_intt_layer);
+  // double ENC = 670.0;  // standard
+  // digitpc->SetENC(ENC);
+  // double ADC_threshold = 4.0 * ENC;
+  // digitpc->SetADCThreshold(ADC_threshold);  // 4 * ENC seems OK
+  // digitpc->Verbosity(verbosity);
+  // cout << " Tpc digitizer: Setting ENC to " << ENC << " ADC threshold to " << ADC_threshold
+  //      << " maps+Intt layers set to " << G4MVTX::n_maps_layer + G4INTT::n_intt_layer << endl;
+  // digitpc->set_skip_noise_flag(true);
+  // se->registerSubsystem(digitpc);
 }
 
 void MicromegasInit()
