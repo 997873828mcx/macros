@@ -90,3 +90,7 @@ tmtags
 # valgrind
 *.valgrind
 *.log
+
+
+# output
+*.pdf
