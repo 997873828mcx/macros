@@ -537,7 +537,7 @@ int Fun4All_G4_sPHENIX_LineLaser_sim(
 
   auto dnl = new TpcLaserDNL("TpcLaserDNL");
   // use energy weighting (not ADC)
-  dnl->set_weight_by_adc(false);
+  dnl->set_weight_by_adc(true);
   // loosen selection to accept fractional-electron bins and modest z mismatch
   dnl->set_min_adc(0.0);    // accept all positive energy deposits
   dnl->set_max_dca(1.0e6);    // cm; widen acceptance around laser line

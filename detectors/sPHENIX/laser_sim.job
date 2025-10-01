@@ -23,4 +23,4 @@ RequestDisk   = 20000
 PeriodicHold = (NumJobStarts>=2 && JobStatus == 1)
 
 # Queue jobs (edit this number as needed)
-Queue 10
+Queue 10000

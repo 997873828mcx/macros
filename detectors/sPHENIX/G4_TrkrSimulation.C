@@ -461,6 +461,7 @@ void TPC_Cells()
   if (G4TPC::ENABLE_DIRECT_LASER_HITS)
   {
     auto directLaser = new PHG4TpcDirectLaser;
+    directLaser->Verbosity(1);
 
     // Configure a narrow phi scan near 12 o'clock using the +z endcap laser index 1
     // Laser index 1 has m_direction = -1 and m_phi = (pi/2)*1 - 15deg
@@ -473,13 +474,24 @@ void TPC_Cells()
     static constexpr double deg_to_rad = M_PI / 180.0;
     const double mphi_laser1 = (M_PI / 2.0) * 1 - 15.0 * deg_to_rad; // ~1.308996939 rad
     const double phi_global_min = 1.55;
-    //const double phi_global_max = 1.57;
-    const double phi_global_max = 1.564;
+    const double phi_global_max = 1.56325;
+    //const double phi_global_max = 1.564;
     const double phi_param_min = phi_global_min - mphi_laser1;
     const double phi_param_max = phi_global_max - mphi_laser1;
 
     // Configure random phi range in laser parameter space
     directLaser->SetRandomPhiRange(phi_param_min, phi_param_max);
+
+    // tilt relative to the radial direction at layer 44
+    const int tilt_reference_layer = 44;
+
+    directLaser->set_int_param("tilt_layer", tilt_reference_layer);
+    directLaser->set_double_param("tilt_angle_deg", 5.0);
+    // optional but explicit when you want a fixed value
+    directLaser->set_double_param("tilt_min_deg", 5.0);
+    directLaser->set_double_param("tilt_max_deg", 5.0);
+    directLaser->set_int_param("tilt_steps", 1);
+
 
     // Theta near pi/2 (almost parallel to pad plane); avoid exactly pi/2 to keep dir.z != 0
     const double epsilon = 1e-3; // rad
@@ -614,17 +626,18 @@ void TPC_Cells()
   se->registerSubsystem(edrift);
 
   // Tpc digitizer
-  PHG4TpcDigitizer* digitpc = new PHG4TpcDigitizer();
+  /* PHG4TpcDigitizer* digitpc = new PHG4TpcDigitizer();
   digitpc->SetTpcMinLayer(7);
   double ENC = 670.0;  // standard
   digitpc->SetENC(ENC);
   double ADC_threshold = 4.0 * ENC;
+  //double ADC_threshold = 10000.0 * ENC;
   digitpc->SetADCThreshold(ADC_threshold);  // 4 * ENC seems OK
   digitpc->Verbosity(verbosity);
-  cout << " Tpc digitizer: Setting ENC to " << ENC << " ADC threshold to " << ADC_threshold
+  cout << " Tpc digitizer: Setting ENC teo " << ENC << " ADC threshold to " << ADC_threshold
        << " maps+Intt layers set to " << G4MVTX::n_maps_layer + G4INTT::n_intt_layer << endl;
   digitpc->set_skip_noise_flag(true);
-  se->registerSubsystem(digitpc);
+  se->registerSubsystem(digitpc); */
 }
 
 void MicromegasInit()
