@@ -1,0 +1,8 @@
+numpy
+pyvista
+pyvistaqt
+uproot
+PyQt5
+qtpy
+superqt
+scipy
