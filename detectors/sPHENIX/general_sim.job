@@ -1,0 +1,39 @@
+run_dir    = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+log_dir    = $(run_dir)/log
+
+Universe   = vanilla
+Executable = $(run_dir)/run_general_sim.sh
+
+# Campaign configuration (override via condor_submit VAR=...)
+campaign          = default
+nevents           = 10
+n_jobs            = 10000
+output_base_dir   = output
+
+Arguments  = $(Process) $(nevents)
+
+# Notifications (optional)
+# Notify_user  = 997873828mcx@gmail.com
+# Notification = Error
+
+# Logs
+Output = $(log_dir)/$(campaign)/general_$(Process).out
+Error  = $(log_dir)/$(campaign)/general_$(Process).err
+Log    = $(log_dir)/tmp/$(campaign)/general_$(Process).log
+
+# Working directory
+Initialdir = $(run_dir)
+
+# Per-job environment seen by run_general_sim.sh and Fun4All macro.
+environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed"
+
+# Resources
+RequestMemory = 8000
+RequestDisk   = 20000
+# RequestCpus = 1
+
+# Job management
+PeriodicHold = (NumJobStarts>=2 && JobStatus == 1)
+
+# Queue jobs (edit this number as needed)
+Queue $(n_jobs)

@@ -169,7 +169,7 @@ int Fun4All_G4_sPHENIX(
   // add the settings for other with [1], next with [2]...
   if (Input::SIMPLE)
   {
-    INPUTGENERATOR::SimpleEventGenerator[0]->add_particles("pi-", 5);
+    INPUTGENERATOR::SimpleEventGenerator[0]->add_particles("pi+", 1);
     if (Input::HEPMC || Input::EMBED)
     {
       INPUTGENERATOR::SimpleEventGenerator[0]->set_reuse_existing_vertex(true);
@@ -181,11 +181,11 @@ int Fun4All_G4_sPHENIX(
                                                                                 PHG4SimpleEventGenerator::Gaus,
                                                                                 PHG4SimpleEventGenerator::Gaus);
       INPUTGENERATOR::SimpleEventGenerator[0]->set_vertex_distribution_mean(0., 0., 0.);
-      INPUTGENERATOR::SimpleEventGenerator[0]->set_vertex_distribution_width(0.01, 0.01, 5.);
+      INPUTGENERATOR::SimpleEventGenerator[0]->set_vertex_distribution_width(0.0, 0.0, 0.0);
     }
     INPUTGENERATOR::SimpleEventGenerator[0]->set_eta_range(-1, 1);
     INPUTGENERATOR::SimpleEventGenerator[0]->set_phi_range(-M_PI, M_PI);
-    INPUTGENERATOR::SimpleEventGenerator[0]->set_pt_range(0.1, 20.);
+    INPUTGENERATOR::SimpleEventGenerator[0]->set_pt_range(10., 10.);
   }
   // Upsilons
   // if you run more than one of these Input::UPSILON_NUMBER > 1
@@ -343,6 +343,7 @@ int Fun4All_G4_sPHENIX(
   Enable::GLOBAL_RECO = (Enable::MBDFAKE || Enable::MBDRECO || Enable::TRACKING_TRACK) && true;
   Enable::TRACKING_EVAL = Enable::TRACKING_TRACK && Enable::GLOBAL_RECO && true;
   Enable::TRACKING_QA = Enable::TRACKING_TRACK && Enable::QA && true;
+  Enable::USER = Enable::TRACKING_TRACK && true;
 
   // only do track matching if TRACKINGTRACK is also used
   Enable::TRACK_MATCHING = Enable::TRACKING_TRACK && false;
@@ -444,7 +445,6 @@ int Fun4All_G4_sPHENIX(
   //BlackHoleGeometry::visible = true;
 
   // run user provided code (from local G4_User.C)
-  //Enable::USER = true;
 
   //===============
   // conditions DB flags
@@ -639,7 +639,13 @@ int Fun4All_G4_sPHENIX(
 
 
 
-  if (Enable::USER) UserAnalysisInit();
+  if (Enable::USER)
+  {
+    G4USER::WRITE_RECO_PT_TREE = Enable::TRACKING_TRACK;
+    G4USER::RECO_PT_TREE_OUTPUT = outputroot + "_reco_pt.root";
+    G4USER::TRACK_MAP_NAME = TRACKING::TrackNodeName;
+    UserAnalysisInit();
+  }
 
   // Writes electrons from conversions to a new track map on the node tree
   // the ntuple file is for diagnostics, it is produced only if the flag is set in G4_Tracking.C
