@@ -12,11 +12,11 @@
 
 namespace
 {
-  TF1* fit_gaussian(TH1D* hist,
-                    const char* name,
-                    const double fit_min,
-                    const double fit_max,
-                    const int line_color)
+  TF1* fit_gaussian_reco_vs_tpc_circle(TH1D* hist,
+                                       const char* name,
+                                       const double fit_min,
+                                       const double fit_max,
+                                       const int line_color)
   {
     if (!hist || hist->GetEntries() <= 0) return nullptr;
 
@@ -40,13 +40,13 @@ namespace
 void CompareRecoVsTpcCircleTrackID(
     const char* infile = "output/pionplus_pt10/completed/merged_reco_pt.root",
     const int selected_track_id = -1,
-    const int selected_truth_pid = 211,
+    const int selected_truth_pid = 0,
     const int nbins = 120,
     const double pt_min = 0.0,
     const double pt_max = 20.0,
     const double fill_pt_min = 7.0,
     const double fill_pt_max = 14.0,
-    const bool normalize = true)
+    const bool normalize = false)
 {
   TFile* fin = TFile::Open(infile, "READ");
   if (!fin || fin->IsZombie())
@@ -70,30 +70,42 @@ void CompareRecoVsTpcCircleTrackID(
     fin->Close();
     return;
   }
-  if (!reco_tracks->GetBranch("best_truth_pid") || !reco_tracks->GetBranch("best_truth_match_ok"))
+  const bool has_truth_pid = reco_tracks->GetBranch("best_truth_pid");
+  const bool has_truth_match_ok = reco_tracks->GetBranch("best_truth_match_ok");
+  const bool has_tpc_circle_ok = reco_tracks->GetBranch("tpc_circle_ok");
+  const bool use_truth_selection = (selected_truth_pid != 0);
+
+  if (use_truth_selection && (!has_truth_pid || !has_truth_match_ok))
   {
     std::cerr << "Tree 'reco_tracks' does not contain truth-match branches "
               << "('best_truth_pid' and 'best_truth_match_ok'). "
-              << "You need to rerun with the updated G4_User.C first." << std::endl;
+              << "Either rerun with the updated G4_User.C or call "
+              << "CompareRecoVsTpcCircleTrackID(..., selected_truth_pid = 0, ...)." << std::endl;
     fin->Close();
     return;
   }
 
-  TString selection_label = Form("truth pid = %d", selected_truth_pid);
+  TString selection_label = "all track_id values";
   if (selected_track_id >= 0)
   {
-    selection_label += Form(", track_id = %d", selected_track_id);
+    selection_label = Form("track_id = %d", selected_track_id);
+  }
+  if (use_truth_selection)
+  {
+    selection_label += Form("%struth pid = %d",
+                            selection_label.IsNull() ? "" : ", ",
+                            selected_truth_pid);
   }
 
   auto* h_reco = new TH1D(
       "h_reco_pt_compare",
-      Form("Reco vs TPC circle-fit p_{T} for %s;Reco p_{T} [GeV/c];%s",
+      Form("Reco vs TPC circle-fit p_{T} for %s;p_{T} [GeV/c];%s",
            selection_label.Data(),
            normalize ? "Normalized counts" : "Counts"),
       nbins, pt_min, pt_max);
   auto* h_circle = new TH1D(
       "h_tpc_circle_pt_compare",
-      Form("Reco vs TPC circle-fit p_{T} for %s;Reco p_{T} [GeV/c];%s",
+      Form("Reco vs TPC circle-fit p_{T} for %s;p_{T} [GeV/c];%s",
            selection_label.Data(),
            normalize ? "Normalized counts" : "Counts"),
       nbins, pt_min, pt_max);
@@ -111,15 +123,24 @@ void CompareRecoVsTpcCircleTrackID(
   reco_tracks->SetBranchStatus("pt", 1);
   reco_tracks->SetBranchStatus("pt_tpc_circle", 1);
   reco_tracks->SetBranchStatus("track_id", 1);
-  reco_tracks->SetBranchStatus("best_truth_pid", 1);
-  reco_tracks->SetBranchStatus("best_truth_match_ok", 1);
-  reco_tracks->SetBranchStatus("tpc_circle_ok", 1);
   reco_tracks->SetBranchAddress("pt", &pt);
   reco_tracks->SetBranchAddress("pt_tpc_circle", &pt_tpc_circle);
   reco_tracks->SetBranchAddress("track_id", &track_id);
-  reco_tracks->SetBranchAddress("best_truth_pid", &best_truth_pid);
-  reco_tracks->SetBranchAddress("best_truth_match_ok", &best_truth_match_ok);
-  reco_tracks->SetBranchAddress("tpc_circle_ok", &tpc_circle_ok);
+  if (has_truth_pid)
+  {
+    reco_tracks->SetBranchStatus("best_truth_pid", 1);
+    reco_tracks->SetBranchAddress("best_truth_pid", &best_truth_pid);
+  }
+  if (has_truth_match_ok)
+  {
+    reco_tracks->SetBranchStatus("best_truth_match_ok", 1);
+    reco_tracks->SetBranchAddress("best_truth_match_ok", &best_truth_match_ok);
+  }
+  if (has_tpc_circle_ok)
+  {
+    reco_tracks->SetBranchStatus("tpc_circle_ok", 1);
+    reco_tracks->SetBranchAddress("tpc_circle_ok", &tpc_circle_ok);
+  }
 
   Long64_t nreco = 0;
   Long64_t ncircle = 0;
@@ -132,7 +153,7 @@ void CompareRecoVsTpcCircleTrackID(
       continue;
     }
 
-    if (!best_truth_match_ok || best_truth_pid != selected_truth_pid)
+    if (use_truth_selection && (!best_truth_match_ok || best_truth_pid != selected_truth_pid))
     {
       continue;
     }
@@ -143,7 +164,7 @@ void CompareRecoVsTpcCircleTrackID(
       ++nreco;
     }
 
-    if (tpc_circle_ok && std::isfinite(pt_tpc_circle) &&
+    if ((!has_tpc_circle_ok || tpc_circle_ok) && std::isfinite(pt_tpc_circle) &&
         pt_tpc_circle >= fill_pt_min && pt_tpc_circle <= fill_pt_max)
     {
       h_circle->Fill(pt_tpc_circle);
@@ -167,8 +188,10 @@ void CompareRecoVsTpcCircleTrackID(
   h_circle->SetLineWidth(2);
   h_circle->SetStats(0);
 
-  auto* f_reco = fit_gaussian(h_reco, "f_reco_pt_compare", fill_pt_min, fill_pt_max, kBlue + 1);
-  auto* f_circle = fit_gaussian(h_circle, "f_tpc_circle_pt_compare", fill_pt_min, fill_pt_max, kRed + 1);
+  auto* f_reco = fit_gaussian_reco_vs_tpc_circle(
+      h_reco, "f_reco_pt_compare", fill_pt_min, fill_pt_max, kBlue + 1);
+  auto* f_circle = fit_gaussian_reco_vs_tpc_circle(
+      h_circle, "f_tpc_circle_pt_compare", fill_pt_min, fill_pt_max, kRed + 1);
 
   const double ymax = 1.15 * std::max(h_reco->GetMaximum(), h_circle->GetMaximum());
   h_reco->SetMaximum(ymax > 0.0 ? ymax : 1.0);
@@ -191,10 +214,17 @@ void CompareRecoVsTpcCircleTrackID(
 
   TString outbase = gSystem->BaseName(infile);
   outbase.ReplaceAll(".root", "");
-  outbase += Form("_truthpid%d", selected_truth_pid);
+  if (use_truth_selection)
+  {
+    outbase += Form("_truthpid%d", selected_truth_pid);
+  }
   if (selected_track_id >= 0)
   {
     outbase += Form("_trackid%d", selected_track_id);
+  }
+  else
+  {
+    outbase += "_alltrackids";
   }
   outbase += "_reco_vs_tpc_circle_pt";
 

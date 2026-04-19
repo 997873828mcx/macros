@@ -15,7 +15,7 @@ namespace
 {
   bool fill_reco_hist(TTree* tree,
                       TH1D* hist,
-                      const unsigned int selected_track_id,
+                      const int selected_track_id,
                       const double fill_pt_min,
                       const double fill_pt_max,
                       Long64_t& nfilled)
@@ -36,7 +36,7 @@ namespace
     for (Long64_t i = 0; i < nentries; ++i)
     {
       tree->GetEntry(i);
-      if (track_id != selected_track_id) continue;
+      if (selected_track_id >= 0 && static_cast<int>(track_id) != selected_track_id) continue;
       if (!std::isfinite(pt)) continue;
       if (pt < fill_pt_min || pt > fill_pt_max) continue;
       hist->Fill(pt);
@@ -76,11 +76,11 @@ namespace
     return true;
   }
 
-  TF1* fit_gaussian(TH1D* hist,
-                    const char* name,
-                    const double fit_min,
-                    const double fit_max,
-                    const int line_color)
+  TF1* fit_gaussian_reco_vs_circle(TH1D* hist,
+                                   const char* name,
+                                   const double fit_min,
+                                   const double fit_max,
+                                   const int line_color)
   {
     if (!hist || hist->GetEntries() <= 0) return nullptr;
 
@@ -105,13 +105,13 @@ void CompareRecoVsCircleFitPt(
     const char* reco_file = "output/pionplus_pt10/completed/merged_reco_pt.root",
     const char* circlefit_file = "tpc_dnl_pt_resolution.root",
     const char* circlefit_branch = "pt_after",
-    const unsigned int selected_track_id = 0,
+    const int selected_track_id = -1,
     const int nbins = 120,
     const double pt_min = 0.0,
     const double pt_max = 20.0,
     const double fill_pt_min = 7.0,
     const double fill_pt_max = 14.0,
-    const bool normalize = true)
+    const bool normalize = false)
 {
   TFile* f_reco = TFile::Open(reco_file, "READ");
   if (!f_reco || f_reco->IsZombie())
@@ -146,14 +146,22 @@ void CompareRecoVsCircleFitPt(
     return;
   }
 
+  TString selection_label = "all track_id values";
+  if (selected_track_id >= 0)
+  {
+    selection_label = Form("track_id = %d", selected_track_id);
+  }
+
   auto* h_reco = new TH1D(
       "h_reco_track0_compare",
-      Form("Reco vs circle-fit p_{T};p_{T} [GeV/c];%s",
+      Form("Reco vs circle-fit p_{T} for %s;p_{T} [GeV/c];%s",
+           selection_label.Data(),
            normalize ? "Normalized counts" : "Counts"),
       nbins, pt_min, pt_max);
   auto* h_circle = new TH1D(
       "h_circlefit_compare",
-      Form("Reco vs circle-fit p_{T};p_{T} [GeV/c];%s",
+      Form("Reco vs circle-fit p_{T} for %s;p_{T} [GeV/c];%s",
+           selection_label.Data(),
            normalize ? "Normalized counts" : "Counts"),
       nbins, pt_min, pt_max);
   h_reco->SetDirectory(nullptr);
@@ -193,8 +201,10 @@ void CompareRecoVsCircleFitPt(
   h_circle->SetLineWidth(2);
   h_circle->SetStats(0);
 
-  auto* f_reco_gaus = fit_gaussian(h_reco, "f_reco_gaus_compare", fill_pt_min, fill_pt_max, kBlue + 1);
-  auto* f_circle_gaus = fit_gaussian(h_circle, "f_circle_gaus_compare", fill_pt_min, fill_pt_max, kRed + 1);
+  auto* f_reco_gaus = fit_gaussian_reco_vs_circle(
+      h_reco, "f_reco_gaus_compare", fill_pt_min, fill_pt_max, kBlue + 1);
+  auto* f_circle_gaus = fit_gaussian_reco_vs_circle(
+      h_circle, "f_circle_gaus_compare", fill_pt_min, fill_pt_max, kRed + 1);
 
   const double ymax = 1.15 * std::max(h_reco->GetMaximum(), h_circle->GetMaximum());
   h_reco->SetMaximum(ymax > 0.0 ? ymax : 1.0);
@@ -209,14 +219,18 @@ void CompareRecoVsCircleFitPt(
   auto* leg = new TLegend(0.52, 0.68, 0.89, 0.89);
   leg->SetBorderSize(0);
   leg->SetFillStyle(0);
-  leg->AddEntry(h_reco, Form("sPHENIX reco track_id=%u", selected_track_id), "l");
+  leg->AddEntry(h_reco,
+                selected_track_id >= 0 ? Form("sPHENIX reco track_id=%d", selected_track_id)
+                                       : "sPHENIX reco all track_id values",
+                "l");
   leg->AddEntry(h_circle, Form("Circle fit (%s)", circlefit_branch), "l");
   leg->Draw();
 
   c1->Update();
 
-  TString outbase = TString::Format("compare_reco_trackid%u_vs_circle_%s",
-                                    selected_track_id,
+  TString outbase = TString::Format("compare_reco_%s_vs_circle_%s",
+                                    selected_track_id >= 0 ? Form("trackid%d", selected_track_id)
+                                                           : "alltrackids",
                                     circlefit_branch);
   const TString outdir = gSystem->DirName(circlefit_file);
   TString outprefix = outbase;
@@ -228,6 +242,7 @@ void CompareRecoVsCircleFitPt(
   c1->SaveAs(outprefix + ".png");
   c1->SaveAs(outprefix + ".pdf");
 
+  std::cout << "Selection: " << selection_label.Data() << std::endl;
   std::cout << "Reco entries filled: " << nreco << std::endl;
   std::cout << "Circle-fit entries filled: " << ncircle << std::endl;
   if (f_reco_gaus)
