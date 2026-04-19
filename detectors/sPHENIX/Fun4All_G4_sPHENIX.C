@@ -641,7 +641,18 @@ int Fun4All_G4_sPHENIX(
 
   if (Enable::USER)
   {
+    double circlefit_bfield_tesla = 1.4;
+    double tracking_fieldstrength = std::numeric_limits<double>::quiet_NaN();
+    if (isConstantField(G4MAGNET::magfield_tracking, tracking_fieldstrength) && std::isfinite(tracking_fieldstrength))
+    {
+      circlefit_bfield_tesla = std::abs(tracking_fieldstrength);
+    }
+
     G4USER::WRITE_RECO_PT_TREE = Enable::TRACKING_TRACK;
+    G4USER::WRITE_TPC_CIRCLEFIT = Enable::TRACKING_TRACK;
+    G4USER::TPC_CIRCLEFIT_USE_CLUSTER_MOVER = true;
+    G4USER::TPC_CIRCLEFIT_MIN_CLUSTERS = 8;
+    G4USER::TPC_CIRCLEFIT_BFIELD_TESLA = circlefit_bfield_tesla;
     G4USER::RECO_PT_TREE_OUTPUT = outputroot + "_reco_pt.root";
     G4USER::TRACK_MAP_NAME = TRACKING::TrackNodeName;
     UserAnalysisInit();
