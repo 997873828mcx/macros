@@ -61,6 +61,9 @@ namespace G4USER
   bool TPC_CIRCLEFIT_USE_CLUSTER_MOVER = true;
   int TPC_CIRCLEFIT_MIN_CLUSTERS = 8;
   double TPC_CIRCLEFIT_BFIELD_TESLA = 1.4;
+  int SELECTED_TRUTH_TRACK_ID = 0;
+  int SELECTED_TRUTH_PID = 211;
+  bool REQUIRE_SELECTED_TRUTH_PID = true;
 
   std::string RECO_PT_TREE_OUTPUT = "reco_pt.root";
   std::string TRACK_MAP_NAME = "SvtxTrackMap";
@@ -471,12 +474,38 @@ class RecoPtTreeWriter : public SubsysReco
 
     if (m_write_tpc_circlefit)
     {
+      m_track_tree->Branch("ntpc_seed_clusters", &m_ntpc_seed_clusters, "ntpc_seed_clusters/I");
       m_track_tree->Branch("ntpc_clusters", &m_ntpc_clusters, "ntpc_clusters/I");
       m_track_tree->Branch("ntpc_circle_points", &m_ntpc_circle_points, "ntpc_circle_points/I");
       m_track_tree->Branch("tpc_circle_ok", &m_tpc_circle_ok, "tpc_circle_ok/I");
       m_track_tree->Branch("tpc_circle_radius_cm", &m_tpc_circle_radius_cm, "tpc_circle_radius_cm/F");
       m_track_tree->Branch("tpc_circle_bfield_tesla", &m_tpc_circle_bfield_tesla_branch, "tpc_circle_bfield_tesla/F");
       m_track_tree->Branch("pt_tpc_circle", &m_pt_tpc_circle, "pt_tpc_circle/F");
+    }
+
+    m_selected_track_tree = new TTree("selected_reco_tracks", "One selected reconstructed track per event");
+    m_selected_track_tree->Branch("event", &m_selected_event, "event/I");
+    m_selected_track_tree->Branch("selected_match_ok", &m_selected_match_ok, "selected_match_ok/I");
+    m_selected_track_tree->Branch("reco_track_id", &m_selected_reco_track_id, "reco_track_id/I");
+    m_selected_track_tree->Branch("charge", &m_selected_charge, "charge/I");
+    m_selected_track_tree->Branch("crossing", &m_selected_crossing, "crossing/I");
+    m_selected_track_tree->Branch("nclusters", &m_selected_nclusters, "nclusters/I");
+    m_selected_track_tree->Branch("quality", &m_selected_quality, "quality/F");
+    m_selected_track_tree->Branch("pt", &m_selected_pt, "pt/F");
+    m_selected_track_tree->Branch("eta", &m_selected_eta, "eta/F");
+    m_selected_track_tree->Branch("phi", &m_selected_phi, "phi/F");
+    m_selected_track_tree->Branch("best_truth_track_id", &m_selected_best_truth_track_id, "best_truth_track_id/I");
+    m_selected_track_tree->Branch("best_truth_pid", &m_selected_best_truth_pid, "best_truth_pid/I");
+    m_selected_track_tree->Branch("best_truth_weight", &m_selected_best_truth_weight, "best_truth_weight/F");
+    if (m_write_tpc_circlefit)
+    {
+      m_selected_track_tree->Branch("ntpc_seed_clusters", &m_selected_ntpc_seed_clusters, "ntpc_seed_clusters/I");
+      m_selected_track_tree->Branch("ntpc_clusters", &m_selected_ntpc_clusters, "ntpc_clusters/I");
+      m_selected_track_tree->Branch("ntpc_circle_points", &m_selected_ntpc_circle_points, "ntpc_circle_points/I");
+      m_selected_track_tree->Branch("tpc_circle_ok", &m_selected_tpc_circle_ok, "tpc_circle_ok/I");
+      m_selected_track_tree->Branch("tpc_circle_radius_cm", &m_selected_tpc_circle_radius_cm, "tpc_circle_radius_cm/F");
+      m_selected_track_tree->Branch("tpc_circle_bfield_tesla", &m_selected_tpc_circle_bfield_tesla, "tpc_circle_bfield_tesla/F");
+      m_selected_track_tree->Branch("pt_tpc_circle", &m_selected_pt_tpc_circle, "pt_tpc_circle/F");
     }
 
     m_event_tree = new TTree("event_info", "Per-event reconstructed track counts");
@@ -532,6 +561,8 @@ class RecoPtTreeWriter : public SubsysReco
     update_truth_matching(topNode);
 
     m_event_nreco = 0;
+    reset_selected_track_branches();
+    m_selected_event = m_event;
     if (trackmap)
     {
       for (auto it = trackmap->begin(); it != trackmap->end(); ++it)
@@ -569,12 +600,18 @@ class RecoPtTreeWriter : public SubsysReco
         m_eta = track->get_eta();
         m_phi = track->get_phi();
 
+        consider_selected_track();
         m_track_tree->Fill();
         ++m_event_nreco;
         ++m_total_tracks;
       }
     }
 
+    m_selected_track_tree->Fill();
+    if (m_selected_match_ok)
+    {
+      ++m_total_selected_matches;
+    }
     m_event_tree->Fill();
     ++m_total_events;
     ++m_event;
@@ -594,6 +631,10 @@ class RecoPtTreeWriter : public SubsysReco
     {
       m_track_tree->Write();
     }
+    if (m_selected_track_tree)
+    {
+      m_selected_track_tree->Write();
+    }
     if (m_event_tree)
     {
       m_event_tree->Write();
@@ -602,11 +643,14 @@ class RecoPtTreeWriter : public SubsysReco
 
     std::cout << Name() << ": wrote " << m_total_tracks
               << " reconstructed tracks from " << m_total_events
-              << " events to " << m_outputfile << std::endl;
+              << " events to " << m_outputfile
+              << " with " << m_total_selected_matches
+              << " selected truth-matched tracks" << std::endl;
 
     delete m_outfile;
     m_outfile = nullptr;
     m_track_tree = nullptr;
+    m_selected_track_tree = nullptr;
     m_event_tree = nullptr;
 
     return Fun4AllReturnCodes::EVENT_OK;
@@ -615,6 +659,7 @@ class RecoPtTreeWriter : public SubsysReco
  private:
   void reset_circlefit_branches()
   {
+    m_ntpc_seed_clusters = 0;
     m_ntpc_clusters = 0;
     m_ntpc_circle_points = 0;
     m_tpc_circle_ok = 0;
@@ -629,6 +674,71 @@ class RecoPtTreeWriter : public SubsysReco
     m_best_truth_track_id = std::numeric_limits<int>::min();
     m_best_truth_pid = std::numeric_limits<int>::min();
     m_best_truth_weight = NAN;
+  }
+
+  void reset_selected_track_branches()
+  {
+    m_selected_match_ok = 0;
+    m_selected_reco_track_id = -1;
+    m_selected_charge = 0;
+    m_selected_crossing = 0;
+    m_selected_nclusters = 0;
+    m_selected_quality = NAN;
+    m_selected_pt = NAN;
+    m_selected_eta = NAN;
+    m_selected_phi = NAN;
+    m_selected_best_truth_track_id = std::numeric_limits<int>::min();
+    m_selected_best_truth_pid = std::numeric_limits<int>::min();
+    m_selected_best_truth_weight = NAN;
+    m_selected_ntpc_seed_clusters = 0;
+    m_selected_ntpc_clusters = 0;
+    m_selected_ntpc_circle_points = 0;
+    m_selected_tpc_circle_ok = 0;
+    m_selected_tpc_circle_radius_cm = NAN;
+    m_selected_tpc_circle_bfield_tesla = static_cast<float>(m_circlefit_bfield_tesla);
+    m_selected_pt_tpc_circle = NAN;
+  }
+
+  void consider_selected_track()
+  {
+    if (!m_best_truth_match_ok)
+    {
+      return;
+    }
+    if (m_best_truth_track_id != m_selected_truth_track_id)
+    {
+      return;
+    }
+    if (m_require_selected_truth_pid && m_best_truth_pid != m_selected_truth_pid)
+    {
+      return;
+    }
+    if (m_selected_match_ok && std::isfinite(m_selected_best_truth_weight) &&
+        std::isfinite(m_best_truth_weight) &&
+        m_best_truth_weight <= m_selected_best_truth_weight)
+    {
+      return;
+    }
+
+    m_selected_match_ok = 1;
+    m_selected_reco_track_id = static_cast<int>(m_track_id);
+    m_selected_charge = m_charge;
+    m_selected_crossing = m_crossing;
+    m_selected_nclusters = m_nclusters;
+    m_selected_quality = m_quality;
+    m_selected_pt = m_pt;
+    m_selected_eta = m_eta;
+    m_selected_phi = m_phi;
+    m_selected_best_truth_track_id = m_best_truth_track_id;
+    m_selected_best_truth_pid = m_best_truth_pid;
+    m_selected_best_truth_weight = m_best_truth_weight;
+    m_selected_ntpc_seed_clusters = m_ntpc_seed_clusters;
+    m_selected_ntpc_clusters = m_ntpc_clusters;
+    m_selected_ntpc_circle_points = m_ntpc_circle_points;
+    m_selected_tpc_circle_ok = m_tpc_circle_ok;
+    m_selected_tpc_circle_radius_cm = m_tpc_circle_radius_cm;
+    m_selected_tpc_circle_bfield_tesla = m_tpc_circle_bfield_tesla_branch;
+    m_selected_pt_tpc_circle = m_pt_tpc_circle;
   }
 
   void update_truth_matching(PHCompositeNode* topNode)
@@ -690,6 +800,7 @@ class RecoPtTreeWriter : public SubsysReco
 
     if (auto* tpc_seed = track->get_tpc_seed())
     {
+      m_ntpc_seed_clusters = static_cast<int>(tpc_seed->size_cluster_keys());
       collect_tpc_positions(tpc_seed->begin_cluster_keys(), tpc_seed->end_cluster_keys(), crossing, corrected_positions);
     }
     else
@@ -780,9 +891,13 @@ class RecoPtTreeWriter : public SubsysReco
   bool m_use_cluster_mover{true};
   int m_min_tpc_clusters{8};
   double m_circlefit_bfield_tesla{1.4};
+  int m_selected_truth_track_id{G4USER::SELECTED_TRUTH_TRACK_ID};
+  int m_selected_truth_pid{G4USER::SELECTED_TRUTH_PID};
+  bool m_require_selected_truth_pid{G4USER::REQUIRE_SELECTED_TRUTH_PID};
 
   TFile* m_outfile{nullptr};
   TTree* m_track_tree{nullptr};
+  TTree* m_selected_track_tree{nullptr};
   TTree* m_event_tree{nullptr};
   std::unique_ptr<SvtxEvalStack> m_svtxevalstack;
 
@@ -793,6 +908,7 @@ class RecoPtTreeWriter : public SubsysReco
 
   int m_event{0};
   int m_track_event{0};
+  int m_selected_event{0};
   unsigned int m_track_id{0};
   int m_charge{0};
   int m_crossing{0};
@@ -802,9 +918,21 @@ class RecoPtTreeWriter : public SubsysReco
   int m_best_truth_track_id{std::numeric_limits<int>::min()};
   int m_best_truth_pid{std::numeric_limits<int>::min()};
 
+  int m_ntpc_seed_clusters{0};
   int m_ntpc_clusters{0};
   int m_ntpc_circle_points{0};
   int m_tpc_circle_ok{0};
+  int m_selected_match_ok{0};
+  int m_selected_reco_track_id{-1};
+  int m_selected_charge{0};
+  int m_selected_crossing{0};
+  int m_selected_nclusters{0};
+  int m_selected_best_truth_track_id{std::numeric_limits<int>::min()};
+  int m_selected_best_truth_pid{std::numeric_limits<int>::min()};
+  int m_selected_ntpc_seed_clusters{0};
+  int m_selected_ntpc_clusters{0};
+  int m_selected_ntpc_circle_points{0};
+  int m_selected_tpc_circle_ok{0};
 
   float m_quality{NAN};
   float m_pt{NAN};
@@ -814,9 +942,18 @@ class RecoPtTreeWriter : public SubsysReco
   float m_tpc_circle_bfield_tesla_branch{1.4};
   float m_pt_tpc_circle{NAN};
   float m_best_truth_weight{NAN};
+  float m_selected_quality{NAN};
+  float m_selected_pt{NAN};
+  float m_selected_eta{NAN};
+  float m_selected_phi{NAN};
+  float m_selected_best_truth_weight{NAN};
+  float m_selected_tpc_circle_radius_cm{NAN};
+  float m_selected_tpc_circle_bfield_tesla{1.4};
+  float m_selected_pt_tpc_circle{NAN};
 
   std::size_t m_total_tracks{0};
   std::size_t m_total_events{0};
+  std::size_t m_total_selected_matches{0};
   bool m_warned_missing_track_map{false};
 };
 
