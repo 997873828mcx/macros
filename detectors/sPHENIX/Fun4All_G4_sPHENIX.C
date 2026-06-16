@@ -19,14 +19,6 @@
 #include <G4_Production.C>
 #include <G4_TopoClusterReco.C>
 
-#include <Trkr_RecoInit.C>
-#include <Trkr_Clustering.C>
-#include <Trkr_LaserClustering.C>
-#include <Trkr_Reco.C>
-#include <Trkr_Eval.C>
-#include <Trkr_QA.C>
-
-#include <Trkr_Diagnostics.C>
 #include <G4_User.C>
 #include <QA.C>
 
@@ -39,25 +31,32 @@
 #include <fun4all/Fun4AllOutputManager.h>
 #include <fun4all/Fun4AllServer.h>
 
+#include <g4tpc/PHG4TpcTruthPointBuilder.h>
+#include <g4tpc/PHG4TpcTruthPointTree.h>
+
 #include <phool/PHRandomSeed.h>
 #include <phool/recoConsts.h>
 
 #include <Rtypes.h>  // resolves R__LOAD_LIBRARY for clang-tidy
 #include <TROOT.h>
+#include <TSystem.h>
 
 R__LOAD_LIBRARY(libfun4all.so)
 R__LOAD_LIBRARY(libffamodules.so)
+R__LOAD_LIBRARY(libg4tpc.so)
 
 // For HepMC Hijing
 // try inputFile = /sphenix/sim/sim01/sphnxpro/sHijing_HepMC/sHijing_0-12fm.dat
 
 int Fun4All_G4_sPHENIX(
     const int nEvents = 1,
-    const std::string &inputFile = "https://www.phenix.bnl.gov/WWW/publish/phnxbld/sPHENIX/files/sPHENIX_G4Hits_sHijing_9-11fm_00000_00010.root",
-    const std::string &outputFile = "G4sPHENIX.root",
+    const std::string &inputFile = "/sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/output/pp_minbias_test.hepmc",
+    const std::string &outputFile = "G4sPHENIX_TpcTruthPoints.root",
     const std::string &embed_input_file = "https://www.phenix.bnl.gov/WWW/publish/phnxbld/sPHENIX/files/sPHENIX_G4Hits_sHijing_9-11fm_00000_00010.root",
     const int skip = 0,
-    const std::string &outdir = ".")
+    const std::string &outdir = ".",
+    const bool useBeamVertex = false,
+    const std::string &truthPointDstFile = "")
 {
   Fun4AllServer *se = Fun4AllServer::instance();
   se->Verbosity(0);
@@ -104,12 +103,12 @@ int Fun4All_G4_sPHENIX(
   // if you use a filelist
   //INPUTEMBED::listfile[0] = embed_input_file;
 
-  Input::SIMPLE = true;
+  Input::SIMPLE = false;
   // Input::SIMPLE_NUMBER = 2; // if you need 2 of them
   // Input::SIMPLE_VERBOSITY = 1;
 
   // Enable this is emulating the nominal pp/pA/AA collision vertex distribution
-  // Input::BEAM_CONFIGURATION = Input::AA_COLLISION; // Input::AA_COLLISION (default), Input::pA_COLLISION, Input::pp_COLLISION
+  Input::BEAM_CONFIGURATION = Input::pp_COLLISION; // Input::AA_COLLISION (default), Input::pA_COLLISION, Input::pp_COLLISION
 
   //  Input::PYTHIA6 = true;
 
@@ -132,7 +131,7 @@ int Fun4All_G4_sPHENIX(
   //Input::UPSILON_NUMBER = 3; // if you need 3 of them
   //Input::UPSILON_VERBOSITY = 0;
 
-  //  Input::HEPMC = true;
+  Input::HEPMC = true;
   INPUTHEPMC::filename = inputFile;
   //-----------------
   // Hijing options (symmetrize hijing, add flow, add fermi motion)
@@ -146,6 +145,7 @@ int Fun4All_G4_sPHENIX(
   // Event pile up simulation with collision rate in Hz MB collisions.
   //Input::PILEUPRATE = 50e3; // 50 kHz for AuAu
   //Input::PILEUPRATE = 3e6; // 3MHz for pp
+  Input::PILEUPRATE = 0; // no pileup for this first TPC truth-point test
 
   // Enable this is emulating the nominal pp/pA/AA collision vertex distribution
   // for HepMC records (hijing, pythia8)
@@ -232,8 +232,15 @@ int Fun4All_G4_sPHENIX(
 
   if (Input::HEPMC)
   {
-    //! Nominal collision geometry is selected by Input::BEAM_CONFIGURATION
-    Input::ApplysPHENIXBeamParameter(INPUTMANAGER::HepMCInputManager);
+    if (useBeamVertex)
+    {
+      //! Nominal collision geometry is selected by Input::BEAM_CONFIGURATION
+      Input::ApplysPHENIXBeamParameter(INPUTMANAGER::HepMCInputManager);
+    }
+    else
+    {
+      std::cout << "Fun4All_G4_sPHENIX: keeping HepMC input vertices unchanged" << std::endl;
+    }
 
     // optional overriding beam parameters
     //INPUTMANAGER::HepMCInputManager->set_vertex_distribution_width(100e-4, 100e-4, 8, 0);  //optional collision smear in space, time
@@ -284,10 +291,28 @@ int Fun4All_G4_sPHENIX(
   // Write the DST
   //======================
 
-  //Enable::DSTOUT = true;
+  Enable::DSTOUT = false;
   Enable::DSTOUT_COMPRESS = false;
   DstOut::OutputDir = outdir;
   DstOut::OutputFile = outputFile;
+
+  auto makeOutputPath = [](const std::string &dir, const std::string &file)
+  {
+    if (file.empty() || (!file.empty() && file.front() == '/'))
+    {
+      return file;
+    }
+    if (dir.empty() || dir == ".")
+    {
+      return file;
+    }
+    return dir + "/" + file;
+  };
+  if (!outdir.empty() && outdir != ".")
+  {
+    gSystem->mkdir(outdir.c_str(), true);
+  }
+  const std::string tpcTruthTreeFile = makeOutputPath(outdir, outputFile);
 
   //Option to convert DST to human command readable TTree for quick poke around the outputs
   //  Enable::DSTREADER = true;
@@ -300,7 +325,7 @@ int Fun4All_G4_sPHENIX(
   //======================
 
   // QA, main switch
-  Enable::QA = true;
+  Enable::QA = false;
 
   // Global options (enabled for all enables subsystems - if implemented)
   //  Enable::ABSORBER = true;
@@ -310,38 +335,38 @@ int Fun4All_G4_sPHENIX(
   // Enable::MBD = true;
   // Enable::MBD_SUPPORT = true; // save hist in MBD/BBC support structure
   // Enable::MBDRECO = Enable::MBD && true;
-  Enable::MBDFAKE = true;  // Smeared vtx and t0, use if you don't want real MBD/BBC in simulation
+  Enable::MBDFAKE = false;  // Smeared vtx and t0, use if you don't want real MBD/BBC in simulation
 
   Enable::PIPE = true;
-  Enable::PIPE_ABSORBER = true;
+  Enable::PIPE_ABSORBER = false;
 
   // central tracking
-  Enable::MVTX = true;
-  Enable::MVTX_CELL = Enable::MVTX && true;
-  Enable::MVTX_CLUSTER = Enable::MVTX_CELL && true;
+  Enable::MVTX = false;
+  Enable::MVTX_CELL = false;
+  Enable::MVTX_CLUSTER = false;
   Enable::MVTX_QA = Enable::MVTX_CLUSTER && Enable::QA && true;
 
-  Enable::INTT = true;
+  Enable::INTT = false;
 //  Enable::INTT_ABSORBER = true; // enables layerwise support structure readout
 //  Enable::INTT_SUPPORT = true; // enable global support structure readout
-  Enable::INTT_CELL = Enable::INTT && true;
-  Enable::INTT_CLUSTER = Enable::INTT_CELL && true;
+  Enable::INTT_CELL = false;
+  Enable::INTT_CLUSTER = false;
   Enable::INTT_QA = Enable::INTT_CLUSTER && Enable::QA && true;
 
   Enable::TPC = true;
-  Enable::TPC_ABSORBER = true;
-  Enable::TPC_CELL = Enable::TPC && true;
-  Enable::TPC_CLUSTER = Enable::TPC_CELL && true;
+  Enable::TPC_ABSORBER = false;
+  Enable::TPC_CELL = false;
+  Enable::TPC_CLUSTER = false;
   Enable::TPC_QA = Enable::TPC_CLUSTER && Enable::QA && true;
 
-  Enable::MICROMEGAS = true;
-  Enable::MICROMEGAS_CELL = Enable::MICROMEGAS && true;
-  Enable::MICROMEGAS_CLUSTER = Enable::MICROMEGAS_CELL && true;
+  Enable::MICROMEGAS = false;
+  Enable::MICROMEGAS_CELL = false;
+  Enable::MICROMEGAS_CLUSTER = false;
   Enable::MICROMEGAS_QA = Enable::MICROMEGAS_CLUSTER && Enable::QA && true;
 
-  Enable::TRACKING_TRACK = (Enable::MICROMEGAS_CLUSTER && Enable::TPC_CLUSTER && Enable::INTT_CLUSTER && Enable::MVTX_CLUSTER) && true;
-  Enable::GLOBAL_RECO = (Enable::MBDFAKE || Enable::MBDRECO || Enable::TRACKING_TRACK) && true;
-  Enable::TRACKING_EVAL = Enable::TRACKING_TRACK && Enable::GLOBAL_RECO && true;
+  Enable::TRACKING_TRACK = false;
+  Enable::GLOBAL_RECO = false;
+  Enable::TRACKING_EVAL = false;
   Enable::TRACKING_QA = Enable::TRACKING_TRACK && Enable::QA && true;
 
   // only do track matching if TRACKINGTRACK is also used
@@ -369,44 +394,44 @@ int Fun4All_G4_sPHENIX(
   //  into the tracking, cannot run together with CEMC
   //  Enable::CEMCALBEDO = true;
 
-  Enable::CEMC = true;
-  Enable::CEMC_ABSORBER = true;
-  Enable::CEMC_CELL = Enable::CEMC && true;
-  Enable::CEMC_TOWER = Enable::CEMC_CELL && true;
-  Enable::CEMC_CLUSTER = Enable::CEMC_TOWER && true;
-  Enable::CEMC_EVAL = Enable::CEMC_G4Hit && Enable::CEMC_CLUSTER && true;
+  Enable::CEMC = false;
+  Enable::CEMC_ABSORBER = false;
+  Enable::CEMC_CELL = false;
+  Enable::CEMC_TOWER = false;
+  Enable::CEMC_CLUSTER = false;
+  Enable::CEMC_EVAL = false;
   Enable::CEMC_QA = Enable::CEMC_CLUSTER && Enable::QA && true;
 
-  Enable::HCALIN = true;
-  Enable::HCALIN_ABSORBER = true;
-  Enable::HCALIN_CELL = Enable::HCALIN && true;
-  Enable::HCALIN_TOWER = Enable::HCALIN_CELL && true;
-  Enable::HCALIN_CLUSTER = Enable::HCALIN_TOWER && true;
-  Enable::HCALIN_EVAL = Enable::HCALIN_G4Hit && Enable::HCALIN_CLUSTER && true;
+  Enable::HCALIN = false;
+  Enable::HCALIN_ABSORBER = false;
+  Enable::HCALIN_CELL = false;
+  Enable::HCALIN_TOWER = false;
+  Enable::HCALIN_CLUSTER = false;
+  Enable::HCALIN_EVAL = false;
   Enable::HCALIN_QA = Enable::HCALIN_CLUSTER && Enable::QA && true;
 
   Enable::MAGNET = true;
-  Enable::MAGNET_ABSORBER = true;
+  Enable::MAGNET_ABSORBER = false;
 
-  Enable::HCALOUT = true;
-  Enable::HCALOUT_ABSORBER = true;
-  Enable::HCALOUT_CELL = Enable::HCALOUT && true;
-  Enable::HCALOUT_TOWER = Enable::HCALOUT_CELL && true;
-  Enable::HCALOUT_CLUSTER = Enable::HCALOUT_TOWER && true;
-  Enable::HCALOUT_EVAL = Enable::HCALOUT_G4Hit && Enable::HCALOUT_CLUSTER && true;
+  Enable::HCALOUT = false;
+  Enable::HCALOUT_ABSORBER = false;
+  Enable::HCALOUT_CELL = false;
+  Enable::HCALOUT_TOWER = false;
+  Enable::HCALOUT_CLUSTER = false;
+  Enable::HCALOUT_EVAL = false;
   Enable::HCALOUT_QA = Enable::HCALOUT_CLUSTER && Enable::QA && true;
 
-  Enable::EPD = true;
-  Enable::EPD_TILE = Enable::EPD && true;
+  Enable::EPD = false;
+  Enable::EPD_TILE = false;
 
-  Enable::BEAMLINE = true;
+  Enable::BEAMLINE = false;
   //  Enable::BEAMLINE_ABSORBER = true;  // makes the beam line magnets sensitive volumes
   //  Enable::BEAMLINE_BLACKHOLE = true; // turns the beamline magnets into black holes
-  Enable::ZDC = true;
+  Enable::ZDC = false;
   //  Enable::ZDC_ABSORBER = true;
   //  Enable::ZDC_SUPPORT = true;
-  Enable::ZDC_TOWER = Enable::ZDC && true;
-  Enable::ZDC_EVAL = Enable::ZDC_TOWER && true;
+  Enable::ZDC_TOWER = false;
+  Enable::ZDC_EVAL = false;
 
   //! forward flux return plug door. Out of acceptance and off by default.
   //Enable::PLUGDOOR = true;
@@ -421,8 +446,8 @@ int Fun4All_G4_sPHENIX(
 
   Enable::CALOTRIGGER = Enable::CEMC_TOWER && Enable::HCALIN_TOWER && Enable::HCALOUT_TOWER && false;
 
-  Enable::JETS = (Enable::GLOBAL_RECO || Enable::GLOBAL_FASTSIM) && true;
-  Enable::JETS_EVAL = Enable::JETS && true;
+  Enable::JETS = false;
+  Enable::JETS_EVAL = false;
   Enable::JETS_QA = Enable::JETS && Enable::QA && true;
 
   // HI Jet Reco for p+Au / Au+Au collisions (default is false for
@@ -435,7 +460,7 @@ int Fun4All_G4_sPHENIX(
   // particle flow jet reconstruction - needs topoClusters!
   Enable::PARTICLEFLOW = Enable::TOPOCLUSTER && true;
   // centrality reconstruction
-  Enable::CENTRALITY = true;
+  Enable::CENTRALITY = false;
 
   // new settings using Enable namespace in GlobalVariables.C
   Enable::BLACKHOLE = true;
@@ -478,6 +503,10 @@ int Fun4All_G4_sPHENIX(
 
   // Initialize the selected subsystems
   G4Init();
+  // Keep the standard sPHENIX tracking layer numbering even though this
+  // truth-point job does not build the MVTX/INTT detector volumes.
+  G4MVTX::n_maps_layer = 3;
+  G4INTT::n_intt_layer = 4;
 
   //---------------------
   // GEANT4 Detector description
@@ -493,16 +522,23 @@ int Fun4All_G4_sPHENIX(
 
   if ((Enable::MBD && Enable::MBDRECO) || Enable::MBDFAKE) Mbd_Reco();
 
-  if (Enable::MVTX_CELL) Mvtx_Cells();
-  if (Enable::INTT_CELL) Intt_Cells();
-  if (Enable::TPC_CELL) TPC_Cells();
-  if (Enable::MICROMEGAS_CELL) Micromegas_Cells();
-
   if (Enable::CEMC_CELL) CEMC_Cells();
 
   if (Enable::HCALIN_CELL) HCALInner_Cells();
 
   if (Enable::HCALOUT_CELL) HCALOuter_Cells();
+
+  auto *tpcTruthPoints = new PHG4TpcTruthPointBuilder();
+  tpcTruthPoints->set_output_node("G4HIT_TPC_TRUECLUSTER");
+  // Keep every crossing for low-pT loopers that revisit the same layer.
+  tpcTruthPoints->set_max_intersections_per_track_layer(0);
+  tpcTruthPoints->Verbosity(1);
+  se->registerSubsystem(tpcTruthPoints);
+
+  auto *tpcTruthTree = new PHG4TpcTruthPointTree("PHG4TpcTruthPointTree", tpcTruthTreeFile);
+  tpcTruthTree->set_truth_point_node("G4HIT_TPC_TRUECLUSTER");
+  tpcTruthTree->Verbosity(1);
+  se->registerSubsystem(tpcTruthTree);
 
   //-----------------------------
   // CEMC towering and clustering
@@ -530,43 +566,9 @@ int Fun4All_G4_sPHENIX(
   // if enabled, do topoClustering early, upstream of any possible jet reconstruction
   if (Enable::TOPOCLUSTER) TopoClusterReco();
 
-  //--------------
-  // SVTX tracking
-  //--------------
-  if(Enable::TRACKING_TRACK)
-    {
-      TrackingInit();
-    }
-  if (Enable::MVTX_CLUSTER) Mvtx_Clustering();
-  if (Enable::INTT_CLUSTER) Intt_Clustering();
-  if (Enable::TPC_CLUSTER)
-    {
-      if(G4TPC::ENABLE_DIRECT_LASER_HITS || G4TPC::ENABLE_CENTRAL_MEMBRANE_HITS)
-	{
-	  TPC_LaserClustering();
-	}
-      else
-	{
-	  TPC_Clustering();
-	}
-    }
-  if (Enable::MICROMEGAS_CLUSTER) Micromegas_Clustering();
-
-  if (Enable::TRACKING_TRACK)
-  {
-    Tracking_Reco();
-  }
-
-
-
-  if(Enable::TRACKING_DIAGNOSTICS)
-    {
-      const std::string kshortFile = "./kshort_" + outputFile;
-      const std::string residualsFile = "./residuals_" + outputFile;
-
-      G4KshortReconstruction(kshortFile);
-      seedResiduals(residualsFile);
-    }
+  // This stripped-down macro writes ideal TPC truth points directly from
+  // G4HIT_TPC, so it intentionally skips cellization, clustering, and track
+  // reconstruction.
 
 
   //-----------------
@@ -625,8 +627,6 @@ int Fun4All_G4_sPHENIX(
     outputroot.erase(pos, remove_this.length());
   }
 
-  if (Enable::TRACKING_EVAL) Tracking_Eval(outputroot + "_g4svtx_eval.root");
-
   if (Enable::CEMC_EVAL) CEMC_Eval(outputroot + "_g4cemc_eval.root");
 
   if (Enable::HCALIN_EVAL) HCALInner_Eval(outputroot + "_g4hcalin_eval.root");
@@ -640,11 +640,6 @@ int Fun4All_G4_sPHENIX(
 
 
   if (Enable::USER) UserAnalysisInit();
-
-  // Writes electrons from conversions to a new track map on the node tree
-  // the ntuple file is for diagnostics, it is produced only if the flag is set in G4_Tracking.C
-  if(G4TRACKING::filter_conversion_electrons) Filter_Conversion_Electrons(outputroot + "_secvert_ntuple.root");
-
 
   //======================
   // Run KFParticle on evt
@@ -662,15 +657,7 @@ int Fun4All_G4_sPHENIX(
 
   if (Enable::JETS_QA) Jet_QA();
 
-  if (Enable::MVTX_QA) Mvtx_QA();
-  if (Enable::INTT_QA) Intt_QA();
-  if (Enable::TPC_QA) TPC_QA();
-  if (Enable::MICROMEGAS_QA) Micromegas_QA();
-  if (Enable::TRACKING_QA) Tracking_QA();
-
   if (Enable::TRACKING_QA && Enable::CEMC_QA && Enable::HCALIN_QA && Enable::HCALOUT_QA) QA_G4CaloTracking();
-
-  if (Enable::TRACK_MATCHING) Track_Matching(outputroot + "_g4trackmatching.root");
 
   //--------------
   // Set up Input Managers
@@ -693,6 +680,15 @@ int Fun4All_G4_sPHENIX(
       DstCompress(out);
     }
     se->registerOutputManager(out);
+  }
+
+  if (!truthPointDstFile.empty())
+  {
+    auto *truthPointOut = new Fun4AllDstOutputManager("TPC_TRUTH_POINT_DST", truthPointDstFile);
+    truthPointOut->AddNode("EventHeader");
+    truthPointOut->AddNode("G4TruthInfo");
+    truthPointOut->AddNode("G4HIT_TPC_TRUECLUSTER");
+    se->registerOutputManager(truthPointOut);
   }
   //-----------------
   // Event processing

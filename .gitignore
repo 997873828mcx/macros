@@ -90,3 +90,45 @@ tmtags
 # valgrind
 *.valgrind
 *.log
+
+# Local analysis/editor noise
+.idea/
+__pycache__/
+*.py[cod]
+*_ACLiC_dict_rdict.pcm
+*.pcm
+/tatus
+
+# Generated campaign/runtime directories
+log/
+logs/
+output/
+outputs/
+runs/
+completed/
+failed/
+tmp/
+temp/
+
+# TrackingProduction scratch outputs
+TrackingProduction/.idea/
+TrackingProduction/__pycache__/
+TrackingProduction/analysis/
+TrackingProduction/event_display/
+TrackingProduction/log/
+TrackingProduction/working_copy/
+TrackingProduction/run3auau/*.list
+TrackingProduction/*.list
+TrackingProduction/*.txt
+TrackingProduction/*.pdf
+TrackingProduction/*.png
+
+# sPHENIX detector macro scratch outputs
+detectors/sPHENIX/log/
+detectors/sPHENIX/output/
+detectors/sPHENIX/runs/
+detectors/sPHENIX/driftStepQA_zero_plots/
+detectors/sPHENIX/*.err
+detectors/sPHENIX/*.txt
+detectors/sPHENIX/*.pdf
+detectors/sPHENIX/*.png

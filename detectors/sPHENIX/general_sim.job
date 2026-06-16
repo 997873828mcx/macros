@@ -1,0 +1,46 @@
+run_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+log_dir = $(run_dir)/log
+
+Universe = vanilla
+Executable = $(run_dir)/run_general_sim.sh
+
+# Campaign configuration. submit_general_campaign.sh overrides these with
+# condor_submit -append.
+campaign = pythia_truthpoints_test
+input_hepmc = $(run_dir)/output/pp_minbias_test.hepmc
+input_filelist =
+events_per_input_file = 1000
+total_events = 100
+events_per_job = 10
+n_jobs = 10
+output_base_dir = output
+use_beam_vertex = false
+
+Arguments = $(Process) $(events_per_job) $(total_events)
+
+# Notifications (optional)
+# Notify_user  = 997873828mcx@gmail.com
+# Notification = Error
+
+# Logs
+Output = $(log_dir)/$(campaign)/general_$(Process).out
+Error  = $(log_dir)/$(campaign)/general_$(Process).err
+Log    = $(log_dir)/tmp/$(campaign)/general_$(Process).log
+
+# Working directory
+Initialdir = $(run_dir)
+
+# Per-job environment seen by run_general_sim.sh and Fun4All macro
+# Use space-separated assignments (HTCondor parses this reliably as separate vars).
+environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed HEPMC_INPUT=$(input_hepmc) HEPMC_FILELIST=$(input_filelist) HEPMC_EVENTS_PER_FILE=$(events_per_input_file) USE_BEAM_VERTEX=$(use_beam_vertex)"
+
+# Resources
+RequestMemory = 8000
+RequestDisk   = 200000
+# RequestCpus = 1
+
+# Job management
+PeriodicHold = (NumJobStarts>=2 && JobStatus == 1)
+
+# Queue jobs (edit this number as needed)
+Queue $(n_jobs)
