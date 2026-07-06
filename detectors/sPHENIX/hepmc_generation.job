@@ -1,0 +1,32 @@
+run_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+log_dir = $(run_dir)/log
+
+Universe = vanilla
+Executable = $(run_dir)/run_hepmc_generation.sh
+
+# submit_hepmc_generation_campaign.sh overrides these with condor_submit -append.
+campaign = pp_minbias_hepmc_100k
+total_events = 100000
+events_per_job = 1000
+n_jobs = 100
+seed_base = 100000
+output_base_dir = output
+pythia_config =
+
+Arguments = $(Process) $(events_per_job) $(total_events) $(seed_base)
+
+Output = $(log_dir)/$(campaign)/hepmc_$(Process).out
+Error  = $(log_dir)/$(campaign)/hepmc_$(Process).err
+Log    = $(log_dir)/tmp/$(campaign)/hepmc_$(Process).log
+
+Initialdir = $(run_dir)
+
+environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed PYTHIA_CONFIG=$(pythia_config)"
+
+RequestMemory = 2000
+RequestDisk = 500000
+# RequestCpus = 1
+
+PeriodicHold = (NumJobStarts>=2 && JobStatus == 1)
+
+Queue $(n_jobs)

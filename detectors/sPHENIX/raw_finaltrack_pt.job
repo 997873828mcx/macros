@@ -1,0 +1,36 @@
+run_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+log_dir = $(run_dir)/log
+
+Universe = vanilla
+Executable = $(run_dir)/run_raw_finaltrack_pt.sh
+
+# submit_raw_finaltrack_pt_campaign.sh overrides these with condor_submit -append.
+campaign = raw_finaltrack_pt_test
+input_dst_filelist = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/output_dst_79513_files.list
+files_per_job = 10
+events_per_input_file = 500
+total_files = 0
+n_jobs = 1
+output_base_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/output
+input_path_base = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+node_name = FINALTRACKS
+pt_min = 0
+pt_max = 10
+pt_bins = 250
+
+Arguments = $(Process) $(files_per_job) $(events_per_input_file) $(total_files)
+
+Output = $(log_dir)/$(campaign)/rawpt_$(Process).out
+Error  = $(log_dir)/$(campaign)/rawpt_$(Process).err
+Log    = $(log_dir)/tmp/$(campaign)/rawpt_$(Process).log
+
+Initialdir = $(run_dir)
+
+environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed INPUT_DST_FILELIST=$(input_dst_filelist) INPUT_DST_PATH_BASE=$(input_path_base) RAW_FINALTRACK_NODE=$(node_name) RAW_FINALTRACK_PT_MIN=$(pt_min) RAW_FINALTRACK_PT_MAX=$(pt_max) RAW_FINALTRACK_PT_BINS=$(pt_bins)"
+
+RequestMemory = 4000
+RequestDisk   = 200000
+
+PeriodicHold = (NumJobStarts>=2 && JobStatus == 1)
+
+Queue $(n_jobs)

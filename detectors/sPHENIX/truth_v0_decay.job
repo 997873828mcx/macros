@@ -1,0 +1,31 @@
+run_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+log_dir = $(run_dir)/log
+
+Universe = vanilla
+Executable = $(run_dir)/run_truth_v0_decay.sh
+
+campaign = truth_v0_decays_test
+input_dst_filelist = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/output/pp_minbias_truthdst_100k_zero_vtx/dst_files.list
+files_per_job = 100
+events_per_input_file = 10
+total_files = 10000
+n_jobs = 100
+output_base_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/output
+input_path_base = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+
+Arguments = $(Process) $(files_per_job) $(events_per_input_file) $(total_files)
+
+Output = $(log_dir)/$(campaign)/truthv0_$(Process).out
+Error  = $(log_dir)/$(campaign)/truthv0_$(Process).err
+Log    = $(log_dir)/tmp/$(campaign)/truthv0_$(Process).log
+
+Initialdir = $(run_dir)
+
+environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed INPUT_DST_FILELIST=$(input_dst_filelist) INPUT_DST_PATH_BASE=$(input_path_base)"
+
+RequestMemory = 3000
+RequestDisk   = 100000
+
+PeriodicHold = (NumJobStarts>=2 && JobStatus == 1)
+
+Queue $(n_jobs)

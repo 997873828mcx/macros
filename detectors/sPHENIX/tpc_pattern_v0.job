@@ -1,0 +1,39 @@
+run_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+log_dir = $(run_dir)/log
+
+Universe = vanilla
+Executable = $(run_dir)/run_tpc_pattern_v0.sh
+
+# submit_tpc_pattern_v0_campaign.sh overrides these with condor_submit -append.
+campaign = tpc_pattern_v0_test
+input_dst_filelist = /sphenix/user/dcxchenxi/develope/TPC_pattern_reco_Analyse/macro/good_dst_files.list
+files_per_job = 1
+events_per_input_file = 500
+total_files = 183
+n_jobs = 183
+output_base_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/output
+input_path_base = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+pre_track_pt_min = 0.05
+pre_track_dca_xy_min = -1.0
+pre_pair_dca_max = 10.0
+pre_lproj_min = -1.0
+pre_cos_theta_min = -2.0
+use_final_track_helix = false
+point_order = auto
+
+Arguments = $(Process) $(files_per_job) $(events_per_input_file) $(total_files)
+
+Output = $(log_dir)/$(campaign)/pattern_v0_$(Process).out
+Error  = $(log_dir)/$(campaign)/pattern_v0_$(Process).err
+Log    = $(log_dir)/tmp/$(campaign)/pattern_v0_$(Process).log
+
+Initialdir = $(run_dir)
+
+environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed INPUT_DST_FILELIST=$(input_dst_filelist) INPUT_DST_PATH_BASE=$(input_path_base) V0_PRE_TRACK_PT_MIN=$(pre_track_pt_min) V0_PRE_TRACK_DCA_XY_MIN=$(pre_track_dca_xy_min) V0_PRE_PAIR_DCA_MAX=$(pre_pair_dca_max) V0_PRE_LPROJ_MIN=$(pre_lproj_min) V0_PRE_COS_THETA_MIN=$(pre_cos_theta_min) V0_USE_FINAL_TRACK_HELIX=$(use_final_track_helix) V0_POINT_ORDER=$(point_order)"
+
+RequestMemory = 4000
+RequestDisk   = 200000
+
+PeriodicHold = (NumJobStarts>=2 && JobStatus == 1)
+
+Queue $(n_jobs)

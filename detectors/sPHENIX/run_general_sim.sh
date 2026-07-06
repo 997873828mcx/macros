@@ -5,7 +5,7 @@ set -eo pipefail
 export USER="$(id -u -n)"
 export LOGNAME=${USER}
 export HOME=/sphenix/u/${LOGNAME}
-source /opt/sphenix/core/bin/sphenix_setup.sh new
+source /opt/sphenix/core/bin/sphenix_setup.sh -n new.15
 source /opt/sphenix/core/bin/setup_local.sh /sphenix/user/dcxchenxi/install/
 set -u
 
@@ -88,6 +88,7 @@ if [[ "${use_beam_vertex}" != "true" && "${use_beam_vertex}" != "false" ]]; then
 fi
 
 outroot="${job_outdir}/tpc_truthpoints_${padded_id}_gskip${global_skip}_nev${nevents}.root"
+outdst="${job_outdir}/tpc_truthpoints_dst_${padded_id}_gskip${global_skip}_nev${nevents}.root"
 
 # If set, completed outputs are moved here at the end of a successful job.
 # Set to empty string to disable moving.
@@ -103,15 +104,18 @@ echo "  global_skip=${global_skip}"
 echo "  nevents=${nevents}"
 echo "  total_events=${total_events}"
 echo "  use_beam_vertex=${use_beam_vertex}"
-echo "  out=${outroot}"
+echo "  flat_tree_out=${outroot}"
+echo "  truth_dst_out=${outdst}"
 
 # Run the stripped-down HepMC -> Geant4 -> TPC truth-point macro.
-root.exe -l -b -q "Fun4All_G4_sPHENIX.C(${nevents}, \"${hepmc_input}\", \"${outroot}\", \"\", ${skip}, \".\", ${use_beam_vertex})"
+# The last argument writes a DST containing EventHeader, G4TruthInfo, and
+# G4HIT_TPC_TRUECLUSTER for second-stage Fun4All V0 processing.
+root.exe -l -b -q "Fun4All_G4_sPHENIX.C(${nevents}, \"${hepmc_input}\", \"${outroot}\", \"\", ${skip}, \".\", ${use_beam_vertex}, \"${outdst}\")"
 
 if [[ -n "${completed_dir}" ]]; then
   mkdir -p "${completed_dir}"
   moved=0
-  for f in "${outroot}"; do
+  for f in "${outroot}" "${outdst}"; do
     if [[ -f "${f}" ]]; then
       base="$(basename "${f}")"
       dst="${completed_dir}/${base}"
@@ -134,4 +138,4 @@ if [[ -n "${completed_dir}" ]]; then
   echo "Moved ${moved} completed files to ${completed_dir}"
 fi
 
-echo "Done: out=${outroot}"
+echo "Done: flat_tree_out=${outroot} truth_dst_out=${outdst}"

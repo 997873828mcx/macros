@@ -1,0 +1,72 @@
+run_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+log_dir = $(run_dir)/log
+
+Universe = vanilla
+Executable = $(run_dir)/run_truth_ap.sh
+
+# submit_truth_ap_jobs.sh overrides these with condor_submit -append.
+campaign = pp_minbias_ap_allpairs_precut
+input_root_list = $(run_dir)/output/pp_minbias_truth_100k_zero_vtx/root_files.list
+files_per_job = 10
+n_files = 10000
+n_jobs = 1000
+output_base_dir = output
+
+ap_script = /sphenix/user/dcxchenxi/develope/macros/TrackingProduction/make_truth_ap.py
+use_truth_primary_vertex = true
+fit_helix = true
+fit_kalman = false
+theta_extension = 2.0
+coarse_steps = 64
+pca_search = upstream
+point_order = path
+downstream_margin = 0.2
+kalman_max_upstream_cm = 80.0
+kalman_downstream_margin_cm = 5.0
+fit_first_points = 8
+pca_candidates = 32
+prefer_positive_pointing = false
+same_parent_only = false
+parent_pids = none
+write_chunk_size = 50000
+progress_every = 0
+
+kalman_measurement_preset = custom
+kalman_meas_sigma_xy = 0.03
+kalman_meas_sigma_z = 0.05
+kalman_process_sigma_pos = 1.0e-4
+kalman_process_sigma_phi = 1.0e-5
+kalman_process_sigma_qop = 1.0e-6
+kalman_process_sigma_tanl = 1.0e-6
+kalman_material_x0_per_cm = 0.0
+kalman_ms_scale = 1.0
+kalman_energy_loss_gev_per_cm = 0.0
+kalman_energy_loss_sigma_fraction = 0.0
+
+# Cheap all-combinatorial preselection, applied before helix-helix PCA.
+pre_track_pt_min = 0.2
+pre_track_dca_xy_min = 0.03
+pre_track_dca_z_min = none
+pre_track_dca_xy_max = none
+pre_track_dca_z_max = none
+pre_pair_dca_max = 5.0
+pre_lproj_min = 0.2
+pre_cos_theta_min = none
+
+Arguments = $(Process) $(files_per_job) $(n_files)
+
+Output = $(log_dir)/$(campaign)/truth_ap_$(Process).out
+Error  = $(log_dir)/$(campaign)/truth_ap_$(Process).err
+Log    = $(log_dir)/tmp/$(campaign)/truth_ap_$(Process).log
+
+Initialdir = $(run_dir)
+
+environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed AP_INPUT_LIST=$(input_root_list) AP_SCRIPT=$(ap_script) USE_TRUTH_PRIMARY_VERTEX=$(use_truth_primary_vertex) FIT_HELIX=$(fit_helix) FIT_KALMAN=$(fit_kalman) THETA_EXTENSION=$(theta_extension) COARSE_STEPS=$(coarse_steps) PCA_SEARCH=$(pca_search) POINT_ORDER=$(point_order) DOWNSTREAM_MARGIN=$(downstream_margin) KALMAN_MAX_UPSTREAM_CM=$(kalman_max_upstream_cm) KALMAN_DOWNSTREAM_MARGIN_CM=$(kalman_downstream_margin_cm) FIT_FIRST_POINTS=$(fit_first_points) PCA_CANDIDATES=$(pca_candidates) PREFER_POSITIVE_POINTING=$(prefer_positive_pointing) AP_SAME_PARENT_ONLY=$(same_parent_only) AP_PARENT_PIDS=$(parent_pids) WRITE_CHUNK_SIZE=$(write_chunk_size) PROGRESS_EVERY=$(progress_every) KALMAN_MEASUREMENT_PRESET=$(kalman_measurement_preset) KALMAN_MEAS_SIGMA_XY=$(kalman_meas_sigma_xy) KALMAN_MEAS_SIGMA_Z=$(kalman_meas_sigma_z) KALMAN_PROCESS_SIGMA_POS=$(kalman_process_sigma_pos) KALMAN_PROCESS_SIGMA_PHI=$(kalman_process_sigma_phi) KALMAN_PROCESS_SIGMA_QOP=$(kalman_process_sigma_qop) KALMAN_PROCESS_SIGMA_TANL=$(kalman_process_sigma_tanl) KALMAN_MATERIAL_X0_PER_CM=$(kalman_material_x0_per_cm) KALMAN_MS_SCALE=$(kalman_ms_scale) KALMAN_ENERGY_LOSS_GEV_PER_CM=$(kalman_energy_loss_gev_per_cm) KALMAN_ENERGY_LOSS_SIGMA_FRACTION=$(kalman_energy_loss_sigma_fraction) AP_PRE_TRACK_PT_MIN=$(pre_track_pt_min) AP_PRE_TRACK_DCA_XY_MIN=$(pre_track_dca_xy_min) AP_PRE_TRACK_DCA_Z_MIN=$(pre_track_dca_z_min) AP_PRE_TRACK_DCA_XY_MAX=$(pre_track_dca_xy_max) AP_PRE_TRACK_DCA_Z_MAX=$(pre_track_dca_z_max) AP_PRE_PAIR_DCA_MAX=$(pre_pair_dca_max) AP_PRE_LPROJ_MIN=$(pre_lproj_min) AP_PRE_COS_THETA_MIN=$(pre_cos_theta_min)"
+
+RequestMemory = 4000
+RequestDisk = 500000
+# RequestCpus = 1
+
+PeriodicHold = (NumJobStarts>=2 && JobStatus == 1)
+
+Queue $(n_jobs)
