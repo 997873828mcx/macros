@@ -20,6 +20,12 @@ pre_lproj_min = -1.0
 pre_cos_theta_min = -2.0
 use_final_track_helix = false
 point_order = auto
+fit_method = helix
+kalman_sigma_rphi_cm = 0.03
+kalman_sigma_r_cm = 0.03
+kalman_sigma_z_cm = 0.05
+write_same_sign_pairs = false
+write_cluster_residual_tree = false
 
 Arguments = $(Process) $(files_per_job) $(events_per_input_file) $(total_files)
 
@@ -29,7 +35,7 @@ Log    = $(log_dir)/tmp/$(campaign)/pattern_v0_$(Process).log
 
 Initialdir = $(run_dir)
 
-environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed INPUT_DST_FILELIST=$(input_dst_filelist) INPUT_DST_PATH_BASE=$(input_path_base) V0_PRE_TRACK_PT_MIN=$(pre_track_pt_min) V0_PRE_TRACK_DCA_XY_MIN=$(pre_track_dca_xy_min) V0_PRE_PAIR_DCA_MAX=$(pre_pair_dca_max) V0_PRE_LPROJ_MIN=$(pre_lproj_min) V0_PRE_COS_THETA_MIN=$(pre_cos_theta_min) V0_USE_FINAL_TRACK_HELIX=$(use_final_track_helix) V0_POINT_ORDER=$(point_order)"
+environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed INPUT_DST_FILELIST=$(input_dst_filelist) INPUT_DST_PATH_BASE=$(input_path_base) V0_PRE_TRACK_PT_MIN=$(pre_track_pt_min) V0_PRE_TRACK_DCA_XY_MIN=$(pre_track_dca_xy_min) V0_PRE_PAIR_DCA_MAX=$(pre_pair_dca_max) V0_PRE_LPROJ_MIN=$(pre_lproj_min) V0_PRE_COS_THETA_MIN=$(pre_cos_theta_min) V0_USE_FINAL_TRACK_HELIX=$(use_final_track_helix) V0_POINT_ORDER=$(point_order) V0_FIT_METHOD=$(fit_method) V0_KALMAN_SIGMA_RPHI_CM=$(kalman_sigma_rphi_cm) V0_KALMAN_SIGMA_R_CM=$(kalman_sigma_r_cm) V0_KALMAN_SIGMA_Z_CM=$(kalman_sigma_z_cm) V0_WRITE_SAME_SIGN_PAIRS=$(write_same_sign_pairs) V0_WRITE_CLUSTER_RESIDUAL_TREE=$(write_cluster_residual_tree)"
 
 RequestMemory = 4000
 RequestDisk   = 200000

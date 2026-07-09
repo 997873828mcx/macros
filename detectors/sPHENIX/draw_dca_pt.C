@@ -17,7 +17,8 @@ void draw_dca_pt(
     const double rdca_y_max = 30.0,
     const double qoverpt_x_min = -20.0,
     const double qoverpt_x_max = 20.0,
-    const char *extra_cut = "")
+    const char *extra_cut = "",
+    const char *rdca_mode = "auto")
 {
   TFile *file = TFile::Open(infile, "READ");
   if (!file || file->IsZombie())
@@ -84,15 +85,34 @@ void draw_dca_pt(
       300, rdca_y_min, rdca_y_max);
 
   const double kappa = 0.003 * bfield_t;
+  const std::string rdca_mode_string = rdca_mode ? rdca_mode : "auto";
   const bool has_helix_branches =
       tree->GetBranch("helix_cx") &&
       tree->GetBranch("helix_cy") &&
       tree->GetBranch("helix_radius");
-  const std::string rdca_expr = has_helix_branches
-      ? "sqrt(helix_cx*helix_cx + helix_cy*helix_cy) - helix_radius"
-      : "sqrt((x + py/(" + std::to_string(kappa) + "*charge))*(x + py/(" + std::to_string(kappa) + "*charge))"
-        " + (y - px/(" + std::to_string(kappa) + "*charge))*(y - px/(" + std::to_string(kappa) + "*charge)))"
-        " - pt/" + std::to_string(kappa);
+  const bool has_kalman_branches =
+      tree->GetBranch("kalman_cx") &&
+      tree->GetBranch("kalman_cy") &&
+      tree->GetBranch("kalman_radius");
+  const std::string state_rdca_expr =
+      "sqrt((x + py/(" + std::to_string(kappa) + "*charge))*(x + py/(" + std::to_string(kappa) + "*charge))"
+      " + (y - px/(" + std::to_string(kappa) + "*charge))*(y - px/(" + std::to_string(kappa) + "*charge)))"
+      " - pt/" + std::to_string(kappa);
+  std::string rdca_expr = state_rdca_expr;
+  if (rdca_mode_string == "kalman")
+  {
+    if (!has_kalman_branches)
+    {
+      std::cerr << "[draw_dca_pt] requested rdca_mode=kalman but Kalman circle branches are missing" << std::endl;
+      file->Close();
+      return;
+    }
+    rdca_expr = "sqrt(kalman_cx*kalman_cx + kalman_cy*kalman_cy) - kalman_radius";
+  }
+  else if (rdca_mode_string == "helix" || (rdca_mode_string == "auto" && has_helix_branches))
+  {
+    rdca_expr = "sqrt(helix_cx*helix_cx + helix_cy*helix_cy) - helix_radius";
+  }
 
   tree->Draw((rdca_expr + ":pt>>h_rdca_vs_pt").c_str(),
              with_extra_cut("pt > 0 && charge != 0").c_str(), "colz");

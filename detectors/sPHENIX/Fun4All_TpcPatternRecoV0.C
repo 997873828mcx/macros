@@ -22,7 +22,13 @@ int Fun4All_TpcPatternRecoV0(
     const double preLprojMin = -1.0,
     const double preCosThetaMin = -2.0,
     const bool useFinalTrackHelix = false,
-    const std::string &pointOrder = "auto")
+    const std::string &pointOrder = "auto",
+    const std::string &fitMethod = "helix",
+    const double kalmanSigmaRphiCm = 0.03,
+    const double kalmanSigmaRCm = 0.03,
+    const double kalmanSigmaZCm = 0.05,
+    const bool writeSameSignPairs = false,
+    const bool writeClusterResidualTree = false)
 {
   const std::string pattern_reco_libdir = "/sphenix/user/mitrankova/F4A/TPC_pattern_reco/install/lib";
   gSystem->AddDynamicPath(pattern_reco_libdir.c_str());
@@ -58,6 +64,12 @@ int Fun4All_TpcPatternRecoV0(
     gSystem->Exit(1);
     return 1;
   }
+  if (!v0->set_track_fit_method(fitMethod))
+  {
+    gSystem->Exit(1);
+    return 1;
+  }
+  v0->set_kalman_measurement_sigmas(kalmanSigmaRphiCm, kalmanSigmaRCm, kalmanSigmaZCm);
   v0->set_fit_first_points(0);
   v0->set_theta_extension(2.0);
   v0->set_coarse_steps(64);
@@ -71,6 +83,8 @@ int Fun4All_TpcPatternRecoV0(
   v0->set_pre_pair_dca_max(prePairDcaMax);
   v0->set_pre_lproj_min(preLprojMin);
   v0->set_pre_cos_theta_min(preCosThetaMin);
+  v0->set_write_same_sign_pairs(writeSameSignPairs);
+  v0->set_write_cluster_residual_tree(writeClusterResidualTree);
   v0->Verbosity(1);
   se->registerSubsystem(v0);
 

@@ -25,6 +25,12 @@ pre_lproj_min=${V0_PRE_LPROJ_MIN:--1.0}
 pre_cos_theta_min=${V0_PRE_COS_THETA_MIN:--2.0}
 use_final_track_helix=${V0_USE_FINAL_TRACK_HELIX:-false}
 point_order=${V0_POINT_ORDER:-auto}
+fit_method=${V0_FIT_METHOD:-helix}
+kalman_sigma_rphi_cm=${V0_KALMAN_SIGMA_RPHI_CM:-0.03}
+kalman_sigma_r_cm=${V0_KALMAN_SIGMA_R_CM:-0.03}
+kalman_sigma_z_cm=${V0_KALMAN_SIGMA_Z_CM:-0.05}
+write_same_sign_pairs=${V0_WRITE_SAME_SIGN_PAIRS:-false}
+write_cluster_residual_tree=${V0_WRITE_CLUSTER_RESIDUAL_TREE:-false}
 
 campaign_tag="${campaign_tag%%;*}"
 
@@ -32,7 +38,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
 export ROOT_INCLUDE_PATH=/sphenix/user/dcxchenxi/install/include:${ROOT_INCLUDE_PATH:-}
-export LD_LIBRARY_PATH=/sphenix/user/mitrankova/F4A/TPC_pattern_reco/install/lib:/sphenix/user/dcxchenxi/develope/coresoftware/simulation/g4simulation/g4tpc/build/.libs:${LD_LIBRARY_PATH:-}
+export LD_LIBRARY_PATH=/sphenix/user/mitrankova/F4A/TPC_pattern_reco/install/lib:/sphenix/user/dcxchenxi/develope/coresoftware/simulation/g4simulation/g4tpc/.libs:/sphenix/user/dcxchenxi/install/lib:${LD_LIBRARY_PATH:-}
 
 if [[ "${files_per_job}" -le 0 ]]; then
   echo "Error: files_per_job must be positive, got ${files_per_job}" >&2
@@ -109,8 +115,12 @@ echo "  out=${outroot}"
 echo "  preselection: pt>${pre_track_pt_min}, dca_xy_min=${pre_track_dca_xy_min}, pairDCA<${pre_pair_dca_max}, Lproj>${pre_lproj_min}, cosTheta>${pre_cos_theta_min}"
 echo "  use_final_track_helix=${use_final_track_helix}"
 echo "  point_order=${point_order}"
+echo "  fit_method=${fit_method}"
+echo "  kalman measurement sigmas: rphi=${kalman_sigma_rphi_cm} cm, r=${kalman_sigma_r_cm} cm, z=${kalman_sigma_z_cm} cm"
+echo "  write_same_sign_pairs=${write_same_sign_pairs}"
+echo "  write_cluster_residual_tree=${write_cluster_residual_tree}"
 
-root.exe -l -b -q "Fun4All_TpcPatternRecoV0.C(${nevents}, \"${chunk_list}\", \"${outroot}\", ${pre_track_pt_min}, ${pre_track_dca_xy_min}, ${pre_pair_dca_max}, ${pre_lproj_min}, ${pre_cos_theta_min}, ${use_final_track_helix}, \"${point_order}\")"
+root.exe -l -b -q "Fun4All_TpcPatternRecoV0.C(${nevents}, \"${chunk_list}\", \"${outroot}\", ${pre_track_pt_min}, ${pre_track_dca_xy_min}, ${pre_pair_dca_max}, ${pre_lproj_min}, ${pre_cos_theta_min}, ${use_final_track_helix}, \"${point_order}\", \"${fit_method}\", ${kalman_sigma_rphi_cm}, ${kalman_sigma_r_cm}, ${kalman_sigma_z_cm}, ${write_same_sign_pairs}, ${write_cluster_residual_tree})"
 
 if [[ -f "${outroot}" ]]; then
   base="$(basename "${outroot}")"
