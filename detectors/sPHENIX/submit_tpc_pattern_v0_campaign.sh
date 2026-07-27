@@ -45,7 +45,17 @@ if [[ "${total_files}" -le 0 ]]; then
   exit 2
 fi
 
-n_jobs=$(((total_files + files_per_job - 1) / files_per_job))
+event_chunk_manifest="${V0_EVENT_CHUNK_MANIFEST:-none}"
+if [[ "${event_chunk_manifest}" != "none" && "${event_chunk_manifest}" != "NONE" ]]; then
+  if [[ ! -f "${event_chunk_manifest}" ]]; then
+    echo "Error: event chunk manifest not found: ${event_chunk_manifest}" >&2
+    exit 2
+  fi
+  n_jobs=$(grep -cv '^[[:space:]]*$' "${event_chunk_manifest}")
+else
+  event_chunk_manifest="none"
+  n_jobs=$(((total_files + files_per_job - 1) / files_per_job))
+fi
 output_base_dir="/sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/output"
 input_path_base="$(dirname "${output_base_dir}")"
 pre_track_pt_min="${V0_PRE_TRACK_PT_MIN:-0.05}"
@@ -53,6 +63,14 @@ pre_track_dca_xy_min="${V0_PRE_TRACK_DCA_XY_MIN:--1.0}"
 pre_pair_dca_max="${V0_PRE_PAIR_DCA_MAX:-10.0}"
 pre_lproj_min="${V0_PRE_LPROJ_MIN:--1.0}"
 pre_cos_theta_min="${V0_PRE_COS_THETA_MIN:--2.0}"
+pre_track_quality_max="${V0_PRE_TRACK_QUALITY_MAX:--1.0}"
+pre_track_npoints_min="${V0_PRE_TRACK_NPOINTS_MIN:-0}"
+pair_pca_z_max="${V0_PAIR_PCA_Z_MAX:--1.0}"
+pair_pca_dz_max="${V0_PAIR_PCA_DZ_MAX:--1.0}"
+pair_decay_radius_min="${V0_PAIR_DECAY_RADIUS_MIN:--1.0}"
+pair_alpha_abs_max="${V0_PAIR_ALPHA_ABS_MAX:--1.0}"
+pair_dca_max="${V0_PAIR_DCA_MAX:--1.0}"
+pair_dira_min="${V0_PAIR_DIRA_MIN:--2.0}"
 use_final_track_helix="${V0_USE_FINAL_TRACK_HELIX:-false}"
 point_order="${V0_POINT_ORDER:-auto}"
 fit_method="${V0_FIT_METHOD:-helix}"
@@ -61,6 +79,34 @@ kalman_sigma_r_cm="${V0_KALMAN_SIGMA_R_CM:-0.03}"
 kalman_sigma_z_cm="${V0_KALMAN_SIGMA_Z_CM:-0.05}"
 write_same_sign_pairs="${V0_WRITE_SAME_SIGN_PAIRS:-false}"
 write_cluster_residual_tree="${V0_WRITE_CLUSTER_RESIDUAL_TREE:-false}"
+write_kalman_innovation_diagnostics="${V0_WRITE_KALMAN_INNOVATION_DIAGNOSTICS:-false}"
+use_kalman_field_map="${V0_USE_KALMAN_FIELD_MAP:-true}"
+kalman_field_map="${V0_KALMAN_FIELD_MAP:-none}"
+kalman_uniform_propagator="${V0_KALMAN_UNIFORM_PROPAGATOR:-rk}"
+kalman_rk_max_step_cm="${V0_KALMAN_RK_MAX_STEP_CM:-5.0}"
+kalman_rk_step_tolerance="${V0_KALMAN_RK_STEP_TOLERANCE:-1.0e-4}"
+kalman_rk_max_step_trials="${V0_KALMAN_RK_MAX_STEP_TRIALS:-12}"
+kalman_rk_max_total_steps="${V0_KALMAN_RK_MAX_TOTAL_STEPS:-2000}"
+kalman_fast_field_jacobian="${V0_KALMAN_FAST_FIELD_JACOBIAN:-true}"
+kalman_fast_field_pca="${V0_KALMAN_FAST_FIELD_PCA:-true}"
+kalman_field_pca_refine_iterations="${V0_KALMAN_FIELD_PCA_REFINE_ITERATIONS:-6}"
+coarse_steps="${V0_COARSE_STEPS:-64}"
+pca_candidates="${V0_PCA_CANDIDATES:-32}"
+final_track_helix_max_upstream_cm="${V0_FINAL_TRACK_HELIX_MAX_UPSTREAM_CM:-80.0}"
+final_track_helix_downstream_margin_cm="${V0_FINAL_TRACK_HELIX_DOWNSTREAM_MARGIN_CM:-5.0}"
+print_timing="${V0_PRINT_TIMING:-false}"
+primary_vertex_x="${V0_PRIMARY_VERTEX_X:-0.0}"
+primary_vertex_y="${V0_PRIMARY_VERTEX_Y:-0.0}"
+primary_vertex_z="${V0_PRIMARY_VERTEX_Z:-0.0}"
+
+case "${kalman_uniform_propagator}" in
+  analytic|ANALYTIC|rk|RK)
+    ;;
+  *)
+    echo "Error: V0_KALMAN_UNIFORM_PROPAGATOR must be 'analytic' or 'rk', got '${kalman_uniform_propagator}'" >&2
+    exit 2
+    ;;
+esac
 
 mkdir -p "log/${campaign}" "log/tmp/${campaign}"
 mkdir -p "${output_base_dir}/${campaign}" "${output_base_dir}/${campaign}/completed"
@@ -72,15 +118,30 @@ echo "  dst_filelist=${dst_filelist}"
 echo "  total_files=${total_files}"
 echo "  files/job=${files_per_job}"
 echo "  events/input file=${events_per_input_file}"
+echo "  event_chunk_manifest=${event_chunk_manifest}"
 echo "  n_jobs=${n_jobs}"
 echo "  output=${output_base_dir}/${campaign}/completed"
 echo "  preselection: pt>${pre_track_pt_min}, dca_xy_min=${pre_track_dca_xy_min}, pairDCA<${pre_pair_dca_max}, Lproj>${pre_lproj_min}, cosTheta>${pre_cos_theta_min}"
+echo "  track selection: quality<${pre_track_quality_max}, npoints>=${pre_track_npoints_min}"
+echo "  exact pair selection: |pca_z|<${pair_pca_z_max}, |pca1_z-pca2_z|<${pair_pca_dz_max}, decay_radius>${pair_decay_radius_min}, |alpha|<${pair_alpha_abs_max}, pairDCA<${pair_dca_max}, DIRA>${pair_dira_min}"
 echo "  use_final_track_helix=${use_final_track_helix}"
 echo "  point_order=${point_order}"
 echo "  fit_method=${fit_method}"
 echo "  kalman measurement sigmas: rphi=${kalman_sigma_rphi_cm} cm, r=${kalman_sigma_r_cm} cm, z=${kalman_sigma_z_cm} cm"
+echo "  use_kalman_field_map=${use_kalman_field_map}"
+echo "  kalman_field_map=${kalman_field_map}"
+echo "  kalman_uniform_propagator=${kalman_uniform_propagator}"
+echo "  kalman RK: max_step=${kalman_rk_max_step_cm} cm, tolerance=${kalman_rk_step_tolerance}, max_trials=${kalman_rk_max_step_trials}, max_total_steps=${kalman_rk_max_total_steps}"
+echo "  kalman_fast_field_jacobian=${kalman_fast_field_jacobian}"
+echo "  kalman_fast_field_pca=${kalman_fast_field_pca}"
+echo "  kalman_field_pca_refine_iterations=${kalman_field_pca_refine_iterations}"
+echo "  PCA search: coarse_steps=${coarse_steps}, candidates=${pca_candidates}"
+echo "  FinalTrack helix search: measurement-anchored, upstream=${final_track_helix_max_upstream_cm} cm, downstream_margin=${final_track_helix_downstream_margin_cm} cm, span<1 turn"
+echo "  print_timing=${print_timing}"
+echo "  fixed primary vertex=(${primary_vertex_x}, ${primary_vertex_y}, ${primary_vertex_z}) cm"
 echo "  write_same_sign_pairs=${write_same_sign_pairs}"
 echo "  write_cluster_residual_tree=${write_cluster_residual_tree}"
+echo "  write_kalman_innovation_diagnostics=${write_kalman_innovation_diagnostics}"
 
 condor_submit \
   -append "campaign = ${campaign}" \
@@ -96,12 +157,40 @@ condor_submit \
   -append "pre_pair_dca_max = ${pre_pair_dca_max}" \
   -append "pre_lproj_min = ${pre_lproj_min}" \
   -append "pre_cos_theta_min = ${pre_cos_theta_min}" \
+  -append "pre_track_quality_max = ${pre_track_quality_max}" \
+  -append "pre_track_npoints_min = ${pre_track_npoints_min}" \
+  -append "pair_pca_z_max = ${pair_pca_z_max}" \
+  -append "pair_pca_dz_max = ${pair_pca_dz_max}" \
+  -append "pair_decay_radius_min = ${pair_decay_radius_min}" \
+  -append "pair_alpha_abs_max = ${pair_alpha_abs_max}" \
+  -append "pair_dca_max = ${pair_dca_max}" \
+  -append "pair_dira_min = ${pair_dira_min}" \
   -append "use_final_track_helix = ${use_final_track_helix}" \
   -append "point_order = ${point_order}" \
   -append "fit_method = ${fit_method}" \
   -append "kalman_sigma_rphi_cm = ${kalman_sigma_rphi_cm}" \
   -append "kalman_sigma_r_cm = ${kalman_sigma_r_cm}" \
   -append "kalman_sigma_z_cm = ${kalman_sigma_z_cm}" \
+  -append "use_kalman_field_map = ${use_kalman_field_map}" \
+  -append "kalman_field_map = ${kalman_field_map}" \
+  -append "kalman_uniform_propagator = ${kalman_uniform_propagator}" \
+  -append "kalman_rk_max_step_cm = ${kalman_rk_max_step_cm}" \
+  -append "kalman_rk_step_tolerance = ${kalman_rk_step_tolerance}" \
+  -append "kalman_rk_max_step_trials = ${kalman_rk_max_step_trials}" \
+  -append "kalman_rk_max_total_steps = ${kalman_rk_max_total_steps}" \
+  -append "kalman_fast_field_jacobian = ${kalman_fast_field_jacobian}" \
+  -append "kalman_fast_field_pca = ${kalman_fast_field_pca}" \
+  -append "kalman_field_pca_refine_iterations = ${kalman_field_pca_refine_iterations}" \
+  -append "coarse_steps = ${coarse_steps}" \
+  -append "pca_candidates = ${pca_candidates}" \
+  -append "final_track_helix_max_upstream_cm = ${final_track_helix_max_upstream_cm}" \
+  -append "final_track_helix_downstream_margin_cm = ${final_track_helix_downstream_margin_cm}" \
+  -append "print_timing = ${print_timing}" \
+  -append "primary_vertex_x = ${primary_vertex_x}" \
+  -append "primary_vertex_y = ${primary_vertex_y}" \
+  -append "primary_vertex_z = ${primary_vertex_z}" \
+  -append "event_chunk_manifest = ${event_chunk_manifest}" \
   -append "write_same_sign_pairs = ${write_same_sign_pairs}" \
   -append "write_cluster_residual_tree = ${write_cluster_residual_tree}" \
+  -append "write_kalman_innovation_diagnostics = ${write_kalman_innovation_diagnostics}" \
   tpc_pattern_v0.job
