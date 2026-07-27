@@ -1,0 +1,26 @@
+run_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+log_dir = $(run_dir)/log
+
+Universe = vanilla
+Executable = $(run_dir)/run_fixed_pion_hitset_event.sh
+Arguments = $(sample) $(Step)
+
+Output = $(log_dir)/fixed_pion_hitset_events/$(sample)_event$(Step)_$(Cluster)_$(Process).out
+Error  = $(log_dir)/fixed_pion_hitset_events/$(sample)_event$(Step)_$(Cluster)_$(Process).err
+Log    = $(log_dir)/tmp/fixed_pion_hitset_events_$(Cluster)_$(Process).log
+
+Initialdir = $(run_dir)
+
+RequestCpus   = 1
+RequestMemory = 8000
+RequestDisk   = 2000000
+
+PeriodicHold = (NumJobStarts >= 2 && JobStatus == 1)
+
+# Ten one-event jobs for each of the four fixed kinematic samples.
+Queue 10 sample in (
+  eta_p0p5_phi_0,
+  eta_p0p5_phi_pi4,
+  eta_m0p5_phi_0,
+  eta_m0p5_phi_pi4
+)

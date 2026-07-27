@@ -41,6 +41,12 @@
 #include <TROOT.h>
 #include <TSystem.h>
 
+#include <cmath>
+#include <cstdlib>
+#include <limits>
+#include <stdexcept>
+#include <string>
+
 R__LOAD_LIBRARY(libfun4all.so)
 R__LOAD_LIBRARY(libffamodules.so)
 R__LOAD_LIBRARY(libg4tpc.so)
@@ -56,8 +62,22 @@ int Fun4All_G4_sPHENIX(
     const int skip = 0,
     const std::string &outdir = ".",
     const bool useBeamVertex = false,
-    const std::string &truthPointDstFile = "")
+    const std::string &truthPointDstFile = "",
+    const std::string &trkrHitSetDstFile = "",
+    const bool useSimplePion = false,
+    const int simplePionPdgId = 211,
+    const double simplePionPt = 0.3,
+    const double simplePionEta = 0.0,
+    const double simplePionPhi = 0.0,
+    const double simpleVertexZ = 0.0)
 {
+  if (useSimplePion &&
+      ((simplePionPdgId != 211 && simplePionPdgId != -211) || simplePionPt <= 0.0))
+  {
+    std::cout << "Fun4All_G4_sPHENIX: invalid fixed-pion configuration" << std::endl;
+    return 1;
+  }
+
   Fun4AllServer *se = Fun4AllServer::instance();
   se->Verbosity(0);
 
@@ -67,6 +87,25 @@ int Fun4All_G4_sPHENIX(
   
   // just if we set some flags somewhere in this macro
   recoConsts *rc = recoConsts::instance();
+  if (const char *seed_text = gSystem->Getenv("SIM_G4_RANDOM_SEED"))
+  {
+    try
+    {
+      const long seed = std::stol(seed_text);
+      if (seed <= 0 || seed > std::numeric_limits<int>::max())
+      {
+        throw std::out_of_range("seed outside positive int range");
+      }
+      rc->set_IntFlag("RANDOMSEED", static_cast<int>(seed));
+      std::cout << "Fun4All_G4_sPHENIX: fixed G4 RANDOMSEED=" << seed << std::endl;
+    }
+    catch (const std::exception &error)
+    {
+      std::cout << "Fun4All_G4_sPHENIX: invalid SIM_G4_RANDOM_SEED='"
+                << seed_text << "': " << error.what() << std::endl;
+      return 1;
+    }
+  }
   // By default every random number generator uses
   // PHRandomSeed() which reads /dev/urandom to get its seed
   // if the RANDOMSEED flag is set its value is taken as seed
@@ -103,7 +142,7 @@ int Fun4All_G4_sPHENIX(
   // if you use a filelist
   //INPUTEMBED::listfile[0] = embed_input_file;
 
-  Input::SIMPLE = false;
+  Input::SIMPLE = useSimplePion;
   // Input::SIMPLE_NUMBER = 2; // if you need 2 of them
   // Input::SIMPLE_VERBOSITY = 1;
 
@@ -131,8 +170,11 @@ int Fun4All_G4_sPHENIX(
   //Input::UPSILON_NUMBER = 3; // if you need 3 of them
   //Input::UPSILON_VERBOSITY = 0;
 
-  Input::HEPMC = true;
-  INPUTHEPMC::filename = inputFile;
+  Input::HEPMC = !useSimplePion;
+  if (Input::HEPMC)
+  {
+    INPUTHEPMC::filename = inputFile;
+  }
   //-----------------
   // Hijing options (symmetrize hijing, add flow, add fermi motion)
   //-----------------
@@ -169,7 +211,7 @@ int Fun4All_G4_sPHENIX(
   // add the settings for other with [1], next with [2]...
   if (Input::SIMPLE)
   {
-    INPUTGENERATOR::SimpleEventGenerator[0]->add_particles("pi-", 5);
+    INPUTGENERATOR::SimpleEventGenerator[0]->add_particles(simplePionPdgId, 1);
     if (Input::HEPMC || Input::EMBED)
     {
       INPUTGENERATOR::SimpleEventGenerator[0]->set_reuse_existing_vertex(true);
@@ -177,15 +219,20 @@ int Fun4All_G4_sPHENIX(
     }
     else
     {
-      INPUTGENERATOR::SimpleEventGenerator[0]->set_vertex_distribution_function(PHG4SimpleEventGenerator::Gaus,
-                                                                                PHG4SimpleEventGenerator::Gaus,
-                                                                                PHG4SimpleEventGenerator::Gaus);
-      INPUTGENERATOR::SimpleEventGenerator[0]->set_vertex_distribution_mean(0., 0., 0.);
-      INPUTGENERATOR::SimpleEventGenerator[0]->set_vertex_distribution_width(0.01, 0.01, 5.);
+      INPUTGENERATOR::SimpleEventGenerator[0]->set_vertex_distribution_function(PHG4SimpleEventGenerator::Uniform,
+                                                                                PHG4SimpleEventGenerator::Uniform,
+                                                                                PHG4SimpleEventGenerator::Uniform);
+      INPUTGENERATOR::SimpleEventGenerator[0]->set_vertex_distribution_mean(0., 0., simpleVertexZ);
+      INPUTGENERATOR::SimpleEventGenerator[0]->set_vertex_distribution_width(0., 0., 0.);
     }
-    INPUTGENERATOR::SimpleEventGenerator[0]->set_eta_range(-1, 1);
-    INPUTGENERATOR::SimpleEventGenerator[0]->set_phi_range(-M_PI, M_PI);
-    INPUTGENERATOR::SimpleEventGenerator[0]->set_pt_range(0.1, 20.);
+    INPUTGENERATOR::SimpleEventGenerator[0]->set_eta_range(simplePionEta, simplePionEta);
+    INPUTGENERATOR::SimpleEventGenerator[0]->set_phi_range(simplePionPhi, simplePionPhi);
+    INPUTGENERATOR::SimpleEventGenerator[0]->set_pt_range(simplePionPt, simplePionPt);
+    std::cout << "Fun4All_G4_sPHENIX: fixed Simple pion pdg=" << simplePionPdgId
+              << " pt=" << simplePionPt
+              << " eta=" << simplePionEta
+              << " phi=" << simplePionPhi
+              << " vertex=(0,0," << simpleVertexZ << ")" << std::endl;
   }
   // Upsilons
   // if you run more than one of these Input::UPSILON_NUMBER > 1
@@ -341,12 +388,14 @@ int Fun4All_G4_sPHENIX(
   Enable::PIPE_ABSORBER = false;
 
   // central tracking
-  Enable::MVTX = false;
+  // ActsGeometry expects the complete tracking geometry. Build all tracker
+  // volumes for TPC hitset jobs, but digitize only the TPC below.
+  Enable::MVTX = !trkrHitSetDstFile.empty();
   Enable::MVTX_CELL = false;
   Enable::MVTX_CLUSTER = false;
   Enable::MVTX_QA = Enable::MVTX_CLUSTER && Enable::QA && true;
 
-  Enable::INTT = false;
+  Enable::INTT = !trkrHitSetDstFile.empty();
 //  Enable::INTT_ABSORBER = true; // enables layerwise support structure readout
 //  Enable::INTT_SUPPORT = true; // enable global support structure readout
   Enable::INTT_CELL = false;
@@ -355,11 +404,13 @@ int Fun4All_G4_sPHENIX(
 
   Enable::TPC = true;
   Enable::TPC_ABSORBER = false;
-  Enable::TPC_CELL = false;
+  // TPC_Cells creates TRKR_HITSET and TRKR_HITTRUTHASSOC.  Keep it off for
+  // the original truth-point-only workflow unless a hitset DST is requested.
+  Enable::TPC_CELL = !trkrHitSetDstFile.empty();
   Enable::TPC_CLUSTER = false;
   Enable::TPC_QA = Enable::TPC_CLUSTER && Enable::QA && true;
 
-  Enable::MICROMEGAS = false;
+  Enable::MICROMEGAS = !trkrHitSetDstFile.empty();
   Enable::MICROMEGAS_CELL = false;
   Enable::MICROMEGAS_CLUSTER = false;
   Enable::MICROMEGAS_QA = Enable::MICROMEGAS_CLUSTER && Enable::QA && true;
@@ -489,6 +540,27 @@ int Fun4All_G4_sPHENIX(
   // Magnet Settings
   //---------------
 
+  if (const char *uniform_field_text = gSystem->Getenv("SIM_G4_UNIFORM_BFIELD_T"))
+  {
+    try
+    {
+      const double uniform_field_t = std::stod(uniform_field_text);
+      if (!std::isfinite(uniform_field_t) || uniform_field_t == 0.0)
+      {
+        throw std::out_of_range("field must be finite and nonzero");
+      }
+      G4MAGNET::magfield = uniform_field_text;
+      std::cout << "Fun4All_G4_sPHENIX: fixed uniform magnetic field="
+                << uniform_field_t << " T" << std::endl;
+    }
+    catch (const std::exception &error)
+    {
+      std::cout << "Fun4All_G4_sPHENIX: invalid SIM_G4_UNIFORM_BFIELD_T='"
+                << uniform_field_text << "': " << error.what() << std::endl;
+      return 1;
+    }
+  }
+
   //  G4MAGNET::magfield =  std::string(getenv("CALIBRATIONROOT"))+ std::string("/Field/Map/sphenix3dbigmapxyz.root");  // default map from the calibration database
   //  G4MAGNET::magfield = "1.5"; // alternatively to specify a constant magnetic field, give a float number, which will be translated to solenoidal field in T, if string use as fieldmap name (including path)
 //  G4MAGNET::magfield_rescale = 1.;  // make consistent with expected Babar field strength of 1.4T
@@ -528,17 +600,32 @@ int Fun4All_G4_sPHENIX(
 
   if (Enable::HCALOUT_CELL) HCALOuter_Cells();
 
-  auto *tpcTruthPoints = new PHG4TpcTruthPointBuilder();
-  tpcTruthPoints->set_output_node("G4HIT_TPC_TRUECLUSTER");
-  // Keep every crossing for low-pT loopers that revisit the same layer.
-  tpcTruthPoints->set_max_intersections_per_track_layer(0);
-  tpcTruthPoints->Verbosity(1);
-  se->registerSubsystem(tpcTruthPoints);
+  if (Enable::TPC_CELL)
+  {
+    TPC_Cells();
+    // PHG4TpcElectronDrift converts global positions through ActsGeometry.
+    // The truth-point-only path does not otherwise need to build this node.
+    ACTSGEOM::ActsGeomInit();
+  }
 
-  auto *tpcTruthTree = new PHG4TpcTruthPointTree("PHG4TpcTruthPointTree", tpcTruthTreeFile);
-  tpcTruthTree->set_truth_point_node("G4HIT_TPC_TRUECLUSTER");
-  tpcTruthTree->Verbosity(1);
-  se->registerSubsystem(tpcTruthTree);
+  // An empty outputFile is useful for jobs that only want TRKR_HITSET.
+  if (!outputFile.empty() || !truthPointDstFile.empty())
+  {
+    auto *tpcTruthPoints = new PHG4TpcTruthPointBuilder();
+    tpcTruthPoints->set_output_node("G4HIT_TPC_TRUECLUSTER");
+    // Keep every crossing for low-pT loopers that revisit the same layer.
+    tpcTruthPoints->set_max_intersections_per_track_layer(0);
+    tpcTruthPoints->Verbosity(1);
+    se->registerSubsystem(tpcTruthPoints);
+
+    if (!outputFile.empty())
+    {
+      auto *tpcTruthTree = new PHG4TpcTruthPointTree("PHG4TpcTruthPointTree", tpcTruthTreeFile);
+      tpcTruthTree->set_truth_point_node("G4HIT_TPC_TRUECLUSTER");
+      tpcTruthTree->Verbosity(1);
+      se->registerSubsystem(tpcTruthTree);
+    }
+  }
 
   //-----------------------------
   // CEMC towering and clustering
@@ -689,6 +776,14 @@ int Fun4All_G4_sPHENIX(
     truthPointOut->AddNode("G4TruthInfo");
     truthPointOut->AddNode("G4HIT_TPC_TRUECLUSTER");
     se->registerOutputManager(truthPointOut);
+  }
+
+  if (!trkrHitSetDstFile.empty())
+  {
+    auto *trkrHitSetOut = new Fun4AllDstOutputManager("TPC_TRKR_HITSET_DST", trkrHitSetDstFile);
+    trkrHitSetOut->AddNode("TRKR_HITSET");
+    trkrHitSetOut->AddNode("TRKR_HITTRUTHASSOC");
+    se->registerOutputManager(trkrHitSetOut);
   }
   //-----------------
   // Event processing

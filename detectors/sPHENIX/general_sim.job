@@ -15,6 +15,9 @@ events_per_job = 10
 n_jobs = 10
 output_base_dir = output
 use_beam_vertex = false
+g4_seed_base = 0
+g4_uniform_bfield_t = none
+write_truth_flat_tree = true
 
 Arguments = $(Process) $(events_per_job) $(total_events)
 
@@ -32,7 +35,7 @@ Initialdir = $(run_dir)
 
 # Per-job environment seen by run_general_sim.sh and Fun4All macro
 # Use space-separated assignments (HTCondor parses this reliably as separate vars).
-environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed HEPMC_INPUT=$(input_hepmc) HEPMC_FILELIST=$(input_filelist) HEPMC_EVENTS_PER_FILE=$(events_per_input_file) USE_BEAM_VERTEX=$(use_beam_vertex)"
+environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed HEPMC_INPUT=$(input_hepmc) HEPMC_FILELIST=$(input_filelist) HEPMC_EVENTS_PER_FILE=$(events_per_input_file) USE_BEAM_VERTEX=$(use_beam_vertex) G4_SEED_BASE=$(g4_seed_base) G4_UNIFORM_BFIELD_T=$(g4_uniform_bfield_t) WRITE_TRUTH_FLAT_TREE=$(write_truth_flat_tree)"
 
 # Resources
 RequestMemory = 8000

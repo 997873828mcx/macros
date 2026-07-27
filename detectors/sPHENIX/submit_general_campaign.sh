@@ -14,6 +14,9 @@ total_events="$3"
 events_per_job="${4:-10}"
 events_per_input_file="${5:-1000}"
 use_beam_vertex="${6:-false}"
+g4_seed_base="${G4_SEED_BASE:-0}"
+g4_uniform_bfield_t="${G4_UNIFORM_BFIELD_T:-none}"
+write_truth_flat_tree="${WRITE_TRUTH_FLAT_TREE:-true}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
@@ -44,6 +47,22 @@ fi
 
 if [[ "${use_beam_vertex}" != "true" && "${use_beam_vertex}" != "false" ]]; then
   echo "Error: use_beam_vertex must be true or false, got ${use_beam_vertex}" >&2
+  exit 2
+fi
+
+if ! [[ "${g4_seed_base}" =~ ^[0-9]+$ ]]; then
+  echo "Error: G4_SEED_BASE must be a nonnegative integer, got ${g4_seed_base}" >&2
+  exit 2
+fi
+
+if [[ "${g4_uniform_bfield_t}" != "none" && "${g4_uniform_bfield_t}" != "NONE" ]] &&
+   ! [[ "${g4_uniform_bfield_t}" =~ ^-?[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$ ]]; then
+  echo "Error: G4_UNIFORM_BFIELD_T must be numeric or 'none', got ${g4_uniform_bfield_t}" >&2
+  exit 2
+fi
+
+if [[ "${write_truth_flat_tree}" != "true" && "${write_truth_flat_tree}" != "false" ]]; then
+  echo "Error: WRITE_TRUTH_FLAT_TREE must be true or false, got ${write_truth_flat_tree}" >&2
   exit 2
 fi
 
@@ -80,6 +99,9 @@ echo "  total_events=${total_events}"
 echo "  events/job=${events_per_job}"
 echo "  n_jobs=${n_jobs}"
 echo "  use_beam_vertex=${use_beam_vertex}"
+echo "  g4_seed_base=${g4_seed_base} (0 means default random seeding)"
+echo "  g4_uniform_bfield_t=${g4_uniform_bfield_t}"
+echo "  write_truth_flat_tree=${write_truth_flat_tree}"
 
 condor_args=(
   -append "campaign = ${campaign}" \
@@ -88,6 +110,9 @@ condor_args=(
   -append "events_per_job = ${events_per_job}" \
   -append "events_per_input_file = ${events_per_input_file}" \
   -append "use_beam_vertex = ${use_beam_vertex}" \
+  -append "g4_seed_base = ${g4_seed_base}" \
+  -append "g4_uniform_bfield_t = ${g4_uniform_bfield_t}" \
+  -append "write_truth_flat_tree = ${write_truth_flat_tree}" \
   -append "output_base_dir = output" \
 )
 

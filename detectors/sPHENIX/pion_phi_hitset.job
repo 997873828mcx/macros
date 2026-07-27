@@ -1,0 +1,23 @@
+run_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+log_dir = $(run_dir)/log
+
+Universe = vanilla
+Executable = $(run_dir)/run_pion_phi_hitset_charge.sh
+
+# The pi+ DST is already complete, so submit only the missing pi- sample.
+charge = piminus
+Arguments = $(charge)
+
+Output = $(log_dir)/pion_phi_hitset/$(charge)_$(Cluster)_$(Process).out
+Error  = $(log_dir)/pion_phi_hitset/$(charge)_$(Cluster)_$(Process).err
+Log    = $(log_dir)/tmp/pion_phi_hitset_$(Cluster)_$(Process).log
+
+Initialdir = $(run_dir)
+
+RequestCpus   = 1
+RequestMemory = 8000
+RequestDisk   = 2000000
+
+PeriodicHold = (NumJobStarts >= 2 && JobStatus == 1)
+
+Queue 1

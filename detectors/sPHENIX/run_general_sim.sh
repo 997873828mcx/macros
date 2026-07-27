@@ -19,6 +19,9 @@ hepmc_input=${HEPMC_INPUT:-/sphenix/user/dcxchenxi/develope/macros/detectors/sPH
 hepmc_filelist=${HEPMC_FILELIST:-}
 hepmc_events_per_file=${HEPMC_EVENTS_PER_FILE:-1000}
 use_beam_vertex=${USE_BEAM_VERTEX:-false}
+g4_seed_base=${G4_SEED_BASE:-0}
+g4_uniform_bfield_t=${G4_UNIFORM_BFIELD_T:-none}
+write_truth_flat_tree=${WRITE_TRUTH_FLAT_TREE:-true}
 export SIM_PROCESS_ID=${process_id}
 
 # Guard against malformed CAMPAIGN_TAG values where extra env assignments are
@@ -86,9 +89,34 @@ if [[ "${use_beam_vertex}" != "true" && "${use_beam_vertex}" != "false" ]]; then
   echo "Error: USE_BEAM_VERTEX must be true or false, got ${use_beam_vertex}" >&2
   exit 2
 fi
+if [[ "${write_truth_flat_tree}" != "true" && "${write_truth_flat_tree}" != "false" ]]; then
+  echo "Error: WRITE_TRUTH_FLAT_TREE must be true or false, got ${write_truth_flat_tree}" >&2
+  exit 2
+fi
+
+if ! [[ "${g4_seed_base}" =~ ^[0-9]+$ ]]; then
+  echo "Error: G4_SEED_BASE must be a nonnegative integer, got ${g4_seed_base}" >&2
+  exit 2
+fi
+if [[ "${g4_seed_base}" -gt 0 ]]; then
+  g4_seed=$((g4_seed_base + process_id))
+  export SIM_G4_RANDOM_SEED="${g4_seed}"
+else
+  g4_seed="default"
+  unset SIM_G4_RANDOM_SEED || true
+fi
+
+if [[ "${g4_uniform_bfield_t}" == "none" || "${g4_uniform_bfield_t}" == "NONE" ]]; then
+  unset SIM_G4_UNIFORM_BFIELD_T || true
+else
+  export SIM_G4_UNIFORM_BFIELD_T="${g4_uniform_bfield_t}"
+fi
 
 outroot="${job_outdir}/tpc_truthpoints_${padded_id}_gskip${global_skip}_nev${nevents}.root"
 outdst="${job_outdir}/tpc_truthpoints_dst_${padded_id}_gskip${global_skip}_nev${nevents}.root"
+if [[ "${write_truth_flat_tree}" == "false" ]]; then
+  outroot=""
+fi
 
 # If set, completed outputs are moved here at the end of a successful job.
 # Set to empty string to disable moving.
@@ -104,6 +132,9 @@ echo "  global_skip=${global_skip}"
 echo "  nevents=${nevents}"
 echo "  total_events=${total_events}"
 echo "  use_beam_vertex=${use_beam_vertex}"
+echo "  g4_seed=${g4_seed}"
+echo "  g4_uniform_bfield_t=${g4_uniform_bfield_t}"
+echo "  write_truth_flat_tree=${write_truth_flat_tree}"
 echo "  flat_tree_out=${outroot}"
 echo "  truth_dst_out=${outdst}"
 
