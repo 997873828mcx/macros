@@ -18,6 +18,29 @@ output_base_dir=${OUTPUT_BASE_DIR:-/sphenix/user/dcxchenxi/develope/macros/detec
 input_dst_filelist=${INPUT_DST_FILELIST:?Error: INPUT_DST_FILELIST is not set}
 completed_dir=${COMPLETED_OUTPUT_DIR:-${output_base_dir}/${campaign_tag}/completed}
 input_path_base=${INPUT_DST_PATH_BASE:-$(dirname "${output_base_dir}")}
+fit_method=${V0_FIT_METHOD:-helix}
+point_order=${V0_POINT_ORDER:-path}
+kalman_sigma_rphi_cm=${V0_KALMAN_SIGMA_RPHI_CM:-0.03}
+kalman_sigma_r_cm=${V0_KALMAN_SIGMA_R_CM:-0.03}
+kalman_sigma_z_cm=${V0_KALMAN_SIGMA_Z_CM:-0.05}
+write_kalman_innovation_diagnostics=${V0_WRITE_KALMAN_INNOVATION_DIAGNOSTICS:-false}
+kalman_uniform_propagator=${V0_KALMAN_UNIFORM_PROPAGATOR:-analytic}
+bfield_t=${V0_BFIELD_T:-1.4}
+coarse_steps=${V0_COARSE_STEPS:-64}
+pca_candidates=${V0_PCA_CANDIDATES:-32}
+
+case "${kalman_uniform_propagator}" in
+  analytic|ANALYTIC)
+    kalman_analytic_uniform=true
+    ;;
+  rk|RK)
+    kalman_analytic_uniform=false
+    ;;
+  *)
+    echo "Error: V0_KALMAN_UNIFORM_PROPAGATOR must be analytic or rk" >&2
+    exit 2
+    ;;
+esac
 
 campaign_tag="${campaign_tag%%;*}"
 
@@ -96,8 +119,15 @@ echo "  nfiles=${nfiles}"
 echo "  events/input file=${events_per_input_file}"
 echo "  nevents=${nevents}"
 echo "  out=${outroot}"
+echo "  fit_method=${fit_method}"
+echo "  point_order=${point_order}"
+echo "  bfield_t=${bfield_t}"
+echo "  kalman_uniform_propagator=${kalman_uniform_propagator}"
+echo "  kalman measurement sigmas: rphi=${kalman_sigma_rphi_cm} cm, r=${kalman_sigma_r_cm} cm, z=${kalman_sigma_z_cm} cm"
+echo "  write_kalman_innovation_diagnostics=${write_kalman_innovation_diagnostics}"
+echo "  PCA search: coarse_steps=${coarse_steps}, candidates=${pca_candidates}"
 
-root.exe -l -b -q "Fun4All_TpcTruthV0.C(${nevents}, \"${chunk_list}\", \"${outroot}\")"
+root.exe -l -b -q "Fun4All_TpcTruthV0.C(${nevents}, \"${chunk_list}\", \"${outroot}\", \"${fit_method}\", \"${point_order}\", ${kalman_sigma_rphi_cm}, ${kalman_sigma_r_cm}, ${kalman_sigma_z_cm}, ${write_kalman_innovation_diagnostics}, ${kalman_analytic_uniform}, ${bfield_t}, ${coarse_steps}, ${pca_candidates})"
 
 if [[ -f "${outroot}" ]]; then
   base="$(basename "${outroot}")"

@@ -13,6 +13,16 @@ total_files = 10000
 n_jobs = 100
 output_base_dir = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX/output
 input_path_base = /sphenix/user/dcxchenxi/develope/macros/detectors/sPHENIX
+fit_method = helix
+point_order = path
+kalman_sigma_rphi_cm = 0.03
+kalman_sigma_r_cm = 0.03
+kalman_sigma_z_cm = 0.05
+write_kalman_innovation_diagnostics = false
+kalman_uniform_propagator = analytic
+bfield_t = 1.4
+coarse_steps = 64
+pca_candidates = 32
 
 Arguments = $(Process) $(files_per_job) $(events_per_input_file) $(total_files)
 
@@ -22,7 +32,7 @@ Log    = $(log_dir)/tmp/$(campaign)/v0_$(Process).log
 
 Initialdir = $(run_dir)
 
-environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed INPUT_DST_FILELIST=$(input_dst_filelist) INPUT_DST_PATH_BASE=$(input_path_base)"
+environment = "CAMPAIGN_TAG=$(campaign) OUTPUT_BASE_DIR=$(output_base_dir) COMPLETED_OUTPUT_DIR=$(output_base_dir)/$(campaign)/completed INPUT_DST_FILELIST=$(input_dst_filelist) INPUT_DST_PATH_BASE=$(input_path_base) V0_FIT_METHOD=$(fit_method) V0_POINT_ORDER=$(point_order) V0_KALMAN_SIGMA_RPHI_CM=$(kalman_sigma_rphi_cm) V0_KALMAN_SIGMA_R_CM=$(kalman_sigma_r_cm) V0_KALMAN_SIGMA_Z_CM=$(kalman_sigma_z_cm) V0_WRITE_KALMAN_INNOVATION_DIAGNOSTICS=$(write_kalman_innovation_diagnostics) V0_KALMAN_UNIFORM_PROPAGATOR=$(kalman_uniform_propagator) V0_BFIELD_T=$(bfield_t) V0_COARSE_STEPS=$(coarse_steps) V0_PCA_CANDIDATES=$(pca_candidates)"
 
 RequestMemory = 4000
 RequestDisk   = 200000
