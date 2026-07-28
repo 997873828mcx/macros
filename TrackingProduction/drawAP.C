@@ -1,8 +1,8 @@
 // =============================================================================
 // drawAP.C
 // -----------------------------------------------------------------------------
-//   root -l drawAP.C\(\"yourFile.root\"\)
-//   root -l drawAP.C\(\"yourFile.root\",false\)  // no plotting cuts
+//   root -l -b -q 'drawAP.C("yourFile.root")'
+//   root -l -b -q 'drawAP.C("yourFile.root",false)'  // no plotting cuts
 // =============================================================================
 void drawAP(const char* infile = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/myKShortReco/ap_79516.root",
             bool applyCuts = true,
@@ -31,51 +31,39 @@ void drawAP(const char* infile = "/sphenix/tg/tg01/hf/dcxchenxi/kshort_reco/myKS
     return;
   }
 
-  // ----------------------------------------------
-  // define the cuts  (variable names match pairTree)
-  // ----------------------------------------------
-  /* TCut crosscut    = "(cross1 == cross2)";
-  TCut ptcut       = "sqrt(px1*px1 + py1*py1) > 0.1 && "
-                     "sqrt(px2*px2 + py2*py2) > 0.1";
+  // Default selection for the current 79513_Skip production. Campaign-level
+  // cuts are already applied before pairTree is written, but repeating them
+  // here makes this macro safe for a looser input. The opposite-sign cut is
+  // needed because the production intentionally stores same-sign pairs too.
+  const char* requiredBranches[] = {
+      "alpha", "qT", "cross1", "cross2", "charge1", "charge2",
+      "px1", "py1", "px2", "py2", "pca_x", "pca_y", "pca_z",
+      "pca1_z", "pca2_z", "pairDCA", "cosThetaReco", "npoints1", "npoints2"};
+  if (applyCuts && (!customCut || std::string(customCut).empty()))
+  {
+    for (const char* branch : requiredBranches)
+    {
+      if (!t->GetBranch(branch))
+      {
+        std::cerr << "[drawAP] required branch missing: " << branch << std::endl;
+        return;
+      }
+    }
+  }
 
-  // - Lproj   = |projected_pathlength⃗|    (branch you stored)
-  // - pairDCA = projected_pair_dca         (branch you stored)
-  TCut paircut     = "cosThetaReco > 0.94 && "
-
-                     "abs(pairDCA) < 0.15";
-
-  TCut chargecut   = "charge1 != charge2";
-
-  // dca_xy?   = |dca3dxy?| that you wrote to the tree
-  TCut trackdcacut = "dca_xy1 > 0.01 && dca_xy2 > 0.01";
-
-  //TCut allCuts = crosscut && ptcut && paircut && chargecut && trackdcacut;
-  TCut allCuts =  paircut && ptcut && crosscut && chargecut; */
-
-
-
-  // - Lproj   = |projected_pathlength⃗|    (branch you stored)
-  // - pairDCA = projected_pair_dca         (branch you stored)
-  /*   TCut paircut     = "cosThetaReco > 0.94 && "
-                       "Lproj > 0.20         && "
-                       "abs(pairDCA) < 0.15"; */
-
-  TCut crosscut = "(cross1 == cross2)";
-  
-
-  TCut DIRAcut = "cosThetaReco > 0.94";
-  
-  TCut pair_cut = "abs(pairDCA) < 0.15";
-  TCut proj_cut = "Lproj > 0.2";
-  TCut chargecut = "charge1 != charge2";
-
-  // dca_xy?   = |dca3dxy?| that you wrote to the tree
-  TCut trackdcacut = "dca_xy1 > 0.03 && dca_xy2 > 0.03";
-  TCut ptcut =
-      "sqrt(px1*px1 + py1*py1) > 0.2 && "
-      "sqrt(px2*px2 + py2*py2) > 0.2";
-
-  TCut selectedCuts = crosscut && DIRAcut && pair_cut && proj_cut && chargecut && trackdcacut && ptcut;
+  TCut selectedCuts =
+      //"cross1 == cross2"
+      " charge1*charge2 < 0"
+      " && abs(pca_z) < 20.0"
+      //" && abs(pca1_z-pca2_z) < 1.0"
+      " && sqrt(px1*px1+py1*py1) > 0.2"
+      " && sqrt(px2*px2+py2*py2) > 0.2"
+      " && sqrt(pca_x*pca_x+pca_y*pca_y) > 2.0"
+      //" && abs(alpha) < 0.90"
+      " && abs(pairDCA) < 0.5"
+      " && cosThetaReco > 0.70"
+      " && npoints1 > 20"
+      " && npoints2 > 20";
   TCut allCuts = selectedCuts;
   if (customCut && std::string(customCut).size() > 0)
   {
