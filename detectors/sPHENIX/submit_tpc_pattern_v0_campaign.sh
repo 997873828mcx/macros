@@ -101,6 +101,12 @@ print_timing="${V0_PRINT_TIMING:-false}"
 primary_vertex_x="${V0_PRIMARY_VERTEX_X:-0.0}"
 primary_vertex_y="${V0_PRIMARY_VERTEX_Y:-0.0}"
 primary_vertex_z="${V0_PRIMARY_VERTEX_Z:-0.0}"
+software_release="${V0_SOFTWARE_RELEASE:-new.15}"
+local_install="${V0_LOCAL_INSTALL:-/sphenix/user/dcxchenxi/install}"
+required_crossing="${V0_REQUIRED_CROSSING:-any}"
+require_same_crossing="${V0_REQUIRE_SAME_CROSSING:-false}"
+max_crossing_tier="${V0_MAX_CROSSING_TIER:--1}"
+crossing_decision_node="${V0_CROSSING_DECISION_NODE:-TPC_CROSSING_DECISIONS}"
 
 case "${kalman_uniform_propagator}" in
   analytic|ANALYTIC|rk|RK)
@@ -110,6 +116,21 @@ case "${kalman_uniform_propagator}" in
     exit 2
     ;;
 esac
+
+case "${required_crossing}" in
+  any|ANY|none|NONE)
+    ;;
+  *)
+    if [[ ! "${required_crossing}" =~ ^-?[0-9]+$ ]]; then
+      echo "Error: V0_REQUIRED_CROSSING must be an integer or 'any', got '${required_crossing}'" >&2
+      exit 2
+    fi
+    ;;
+esac
+if [[ ! "${max_crossing_tier}" =~ ^-?[0-9]+$ ]]; then
+  echo "Error: V0_MAX_CROSSING_TIER must be an integer, got '${max_crossing_tier}'" >&2
+  exit 2
+fi
 
 mkdir -p "log/${campaign}" "log/tmp/${campaign}"
 mkdir -p "${output_base_dir}/${campaign}" "${output_base_dir}/${campaign}/completed"
@@ -142,6 +163,8 @@ echo "  PCA search: coarse_steps=${coarse_steps}, candidates=${pca_candidates}"
 echo "  FinalTrack helix search: measurement-anchored, upstream=${final_track_helix_max_upstream_cm} cm, downstream_margin=${final_track_helix_downstream_margin_cm} cm, span<1 turn"
 echo "  print_timing=${print_timing}"
 echo "  fixed primary vertex=(${primary_vertex_x}, ${primary_vertex_y}, ${primary_vertex_z}) cm"
+echo "  software release=${software_release}, local install=${local_install}"
+echo "  crossing selection: node=${crossing_decision_node}, required=${required_crossing}, same_pair=${require_same_crossing}, max_tier=${max_crossing_tier}"
 echo "  reconstruct_pairs=${reconstruct_pairs}"
 echo "  write_same_sign_pairs=${write_same_sign_pairs}"
 echo "  write_cluster_residual_tree=${write_cluster_residual_tree}"
@@ -193,6 +216,12 @@ condor_submit \
   -append "primary_vertex_x = ${primary_vertex_x}" \
   -append "primary_vertex_y = ${primary_vertex_y}" \
   -append "primary_vertex_z = ${primary_vertex_z}" \
+  -append "software_release = ${software_release}" \
+  -append "local_install = ${local_install}" \
+  -append "required_crossing = ${required_crossing}" \
+  -append "require_same_crossing = ${require_same_crossing}" \
+  -append "max_crossing_tier = ${max_crossing_tier}" \
+  -append "crossing_decision_node = ${crossing_decision_node}" \
   -append "event_chunk_manifest = ${event_chunk_manifest}" \
   -append "reconstruct_pairs = ${reconstruct_pairs}" \
   -append "write_same_sign_pairs = ${write_same_sign_pairs}" \

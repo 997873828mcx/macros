@@ -11,6 +11,7 @@ not a description of the standard ACTS tracking chain.
 pattern-reconstruction DST
   |-- TPC_POLYCLUSTERS
   |-- TPC_POLYTRACKS
+  |-- TPC_CROSSING_DECISIONS (required for crossing selection)
   `-- TPC_POLYTRACKVERTICES (optional)
           |
           v
@@ -71,6 +72,8 @@ The ROOT DST must have an event tree named `T`. The reconstruction macro reads:
 ```text
 TPC_POLYCLUSTERS       cluster centroids associated with pattern tracks
 TPC_POLYTRACKS         upstream track state, charge, dE/dx, and cluster count
+TPC_CROSSING_DECISIONS selected crossing and crossing-quality information,
+                       keyed by source assembled-track ID
 TPC_POLYTRACKVERTICES  optional collision-vertex candidates
 EventHeader            optional run and event identifiers
 ```
@@ -86,6 +89,13 @@ raw TPC hits.
 The track charge comes from `TPC_POLYTRACKS`. Tracks with zero charge, invalid
 fit status, too few valid points, or a failed requested refit are not available
 for pairing.
+
+`TPC_CROSSING_DECISIONS` is optional when no crossing-dependent selection is
+requested. In that case, tracks without a selected crossing are retained and
+the crossing branch uses `32767` as the unknown sentinel. It becomes a strict
+input requirement when a required crossing, a maximum crossing tier, or
+same-crossing pairing is enabled. This prevents a missing node from being
+silently interpreted as crossing zero.
 
 ## Fitting Modes
 
@@ -320,6 +330,69 @@ V0_KALMAN_UNIFORM_PROPAGATOR=analytic \
 For a helix-only track tree, change `V0_FIT_METHOD=helix`; the same switch
 skips pair reconstruction.
 
+## Bunch-Crossing Selection
+
+Crossing metadata is joined to each `TPC_POLYTRACKS` entry through
+`get_source_assembled_track_id()` and the corresponding entry in
+`TPC_CROSSING_DECISIONS`. The selection occurs before the helix or Kalman fit,
+so rejected tracks consume no fitter or pair-PCA time.
+
+To fit and reconstruct V0 candidates using only tracks selected as crossing
+zero:
+
+```bash
+V0_REQUIRED_CROSSING=0 \
+V0_REQUIRE_SAME_CROSSING=true \
+V0_MAX_CROSSING_TIER=1 \
+./submit_tpc_pattern_v0_event_campaign.sh \
+  tpc_pattern_v0_my_sample_crossing0_v1 \
+  output/dst_my_sample.list \
+  2000 \
+  10000
+```
+
+For a crossing-zero `trackTree` without V0 pair reconstruction, use the same
+selection with track-fit-only mode:
+
+```bash
+V0_REQUIRED_CROSSING=0 \
+V0_MAX_CROSSING_TIER=1 \
+V0_RECONSTRUCT_PAIRS=false \
+V0_SOFTWARE_RELEASE=new.20 \
+V0_LOCAL_INSTALL=/path/to/your/install \
+V0_FIT_METHOD=kalman \
+V0_USE_KALMAN_FIELD_MAP=false \
+V0_KALMAN_UNIFORM_PROPAGATOR=analytic \
+./submit_tpc_pattern_v0_event_campaign.sh \
+  tpc_pattern_tracks_my_sample_crossing0_v1 \
+  output/dst_my_sample.list \
+  2000 \
+  10000
+```
+
+`V0_REQUIRE_SAME_CROSSING` is unnecessary in track-fit-only mode because no
+pairs are formed.
+
+The tier selection means:
+
+```text
+0  selected with tight silicon-vertex compatibility
+1  also accept the loose silicon-vertex tier
+2  also accept the TPC-containment fallback
+-1 do not apply a tier cut
+```
+
+`V0_REQUIRED_CROSSING=any` disables the track-level crossing filter.
+`V0_REQUIRE_SAME_CROSSING=true` still requires both daughters to have valid,
+equal selected crossings and rejects mismatched pairs before trajectory PCA.
+When `V0_REQUIRED_CROSSING=0` is active, the same-crossing requirement is
+logically redundant but documents the intended pair contract.
+
+Before launching a strict campaign, verify that an input DST contains
+`TPC_CROSSING_DECISIONS`. Older DSTs containing only `TPC_POLYTRACKS` and
+`TPC_POLYCLUSTERS` cannot recover the selected crossing after the fact and must
+be regenerated with the crossing-decision node persisted.
+
 ## Kalman Field Configuration
 
 Uniform field with the original analytic helix transport:
@@ -422,6 +495,12 @@ like-sign entries can be used for background studies.
 | Variable | Meaning | Default |
 |---|---|---:|
 | `V0_RECONSTRUCT_PAIRS` | Run the two-track V0 pair loop. Set false for track fitting and `trackTree` output only. | `true` |
+| `V0_REQUIRED_CROSSING` | Keep only tracks with this selected crossing; use `any` to disable. | `any` |
+| `V0_REQUIRE_SAME_CROSSING` | Require both V0 daughters to have valid, equal selected crossings. | `false` |
+| `V0_MAX_CROSSING_TIER` | Maximum accepted crossing-confidence tier; `-1` disables. | `-1` |
+| `V0_CROSSING_DECISION_NODE` | Input crossing-decision container. | `TPC_CROSSING_DECISIONS` |
+| `V0_SOFTWARE_RELEASE` | sPHENIX software release used by the worker. It must match the local build. | `new.15` |
+| `V0_LOCAL_INSTALL` | Local install prefix containing the fitted module and compatible dependencies. | `/sphenix/user/dcxchenxi/install` |
 | `V0_PRIMARY_VERTEX_X/Y/Z` | Fixed fallback primary vertex [cm]. | `0,0,0` |
 | `V0_POINT_ORDER` | `auto`, `radius`, `theta-z`, `path`, or `input`. | `auto` |
 | `V0_COARSE_STEPS` | Coarse samples per trajectory in pair-PCA candidate search. | `64` |
@@ -443,12 +522,16 @@ moves a file into `completed/`.
 
 `trackTree` contains one row per successfully built/fitted track before V0 pair
 preselection. It includes fitted kinematics, DCA, fit quality, cluster counts,
-and vector-valued cluster residual information. Kalman-specific fields are
-filled for Kalman fits.
+and vector-valued cluster residual information. Its crossing fields include
+`crossing`, `has_crossing_decision`, `has_selected_crossing`,
+`crossing_status`, `crossing_tier`, and `crossing_score`. Kalman-specific
+fields are filled for Kalman fits.
 
 `pairTree` contains only pairs that passed all enabled campaign-level cuts. It
 includes daughter momenta and charge, pair DCA/PCA, AP `alpha` and `qT`, DIRA,
 decay position, daughter quality, dE/dx, and Kshort/Lambda mass hypotheses. In
+addition to the real `cross1` and `cross2` values, it stores decision presence,
+selection validity, status, tier, and score for both daughters. In
 track-fit-only mode the tree is present with zero entries.
 
 `clusterResidualTree` is optional and duplicates per-cluster information as

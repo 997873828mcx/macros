@@ -5,7 +5,8 @@ export USER="$(id -u -n)"
 export LOGNAME=${USER}
 export HOME=/sphenix/u/${LOGNAME}
 
-source /opt/sphenix/core/bin/sphenix_setup.sh -n new.15
+software_release=${V0_SOFTWARE_RELEASE:-new.15}
+source /opt/sphenix/core/bin/sphenix_setup.sh -n "${software_release}"
 local_install=${V0_LOCAL_INSTALL:-/sphenix/user/dcxchenxi/install}
 source /opt/sphenix/core/bin/setup_local.sh "${local_install}"
 set -u
@@ -62,6 +63,10 @@ print_timing=${V0_PRINT_TIMING:-false}
 primary_vertex_x=${V0_PRIMARY_VERTEX_X:-0.0}
 primary_vertex_y=${V0_PRIMARY_VERTEX_Y:-0.0}
 primary_vertex_z=${V0_PRIMARY_VERTEX_Z:-0.0}
+required_crossing=${V0_REQUIRED_CROSSING:-any}
+require_same_crossing=${V0_REQUIRE_SAME_CROSSING:-false}
+max_crossing_tier=${V0_MAX_CROSSING_TIER:--1}
+crossing_decision_node=${V0_CROSSING_DECISION_NODE:-TPC_CROSSING_DECISIONS}
 event_chunk_manifest=${V0_EVENT_CHUNK_MANIFEST:-}
 
 if [[ "${kalman_field_map}" == "none" || "${kalman_field_map}" == "NONE" ]]; then
@@ -82,6 +87,23 @@ case "${kalman_uniform_propagator}" in
     exit 2
     ;;
 esac
+
+case "${required_crossing}" in
+  any|ANY|none|NONE)
+    required_crossing_value=32767
+    ;;
+  *)
+    if [[ ! "${required_crossing}" =~ ^-?[0-9]+$ ]]; then
+      echo "Error: V0_REQUIRED_CROSSING must be an integer or 'any', got '${required_crossing}'" >&2
+      exit 2
+    fi
+    required_crossing_value=${required_crossing}
+    ;;
+esac
+if [[ ! "${max_crossing_tier}" =~ ^-?[0-9]+$ ]]; then
+  echo "Error: V0_MAX_CROSSING_TIER must be an integer, got '${max_crossing_tier}'" >&2
+  exit 2
+fi
 
 campaign_tag="${campaign_tag%%;*}"
 
@@ -221,12 +243,14 @@ echo "  PCA search: coarse_steps=${coarse_steps}, candidates=${pca_candidates}"
 echo "  FinalTrack helix search: measurement-anchored, upstream=${final_track_helix_max_upstream_cm} cm, downstream_margin=${final_track_helix_downstream_margin_cm} cm, span<1 turn"
 echo "  print_timing=${print_timing}"
 echo "  fixed primary vertex=(${primary_vertex_x}, ${primary_vertex_y}, ${primary_vertex_z}) cm"
+echo "  software release=${software_release}, local install=${local_install}"
+echo "  crossing selection: node=${crossing_decision_node}, required=${required_crossing}, same_pair=${require_same_crossing}, max_tier=${max_crossing_tier}"
 echo "  reconstruct_pairs=${reconstruct_pairs}"
 echo "  write_same_sign_pairs=${write_same_sign_pairs}"
 echo "  write_cluster_residual_tree=${write_cluster_residual_tree}"
 echo "  write_kalman_innovation_diagnostics=${write_kalman_innovation_diagnostics}"
 
-root.exe -l -b -q "Fun4All_TpcPatternRecoV0.C(${nevents}, \"${macro_input}\", \"${outroot}\", ${pre_track_pt_min}, ${pre_track_dca_xy_min}, ${pre_pair_dca_max}, ${pre_lproj_min}, ${pre_cos_theta_min}, ${use_final_track_helix}, \"${point_order}\", \"${fit_method}\", ${kalman_sigma_rphi_cm}, ${kalman_sigma_r_cm}, ${kalman_sigma_z_cm}, ${write_same_sign_pairs}, ${write_cluster_residual_tree}, ${use_kalman_field_map}, \"${kalman_field_map}\", ${kalman_rk_max_step_cm}, ${kalman_rk_step_tolerance}, ${kalman_rk_max_step_trials}, ${kalman_rk_max_total_steps}, ${kalman_fast_field_jacobian}, ${kalman_fast_field_pca}, ${kalman_field_pca_refine_iterations}, ${coarse_steps}, ${pca_candidates}, ${print_timing}, ${event_skip}, ${kalman_analytic_uniform}, ${pre_track_quality_max}, ${pre_track_npoints_min}, ${pair_pca_z_max}, ${pair_pca_dz_max}, ${pair_decay_radius_min}, ${pair_alpha_abs_max}, ${pair_dca_max}, ${pair_dira_min}, ${final_track_helix_max_upstream_cm}, ${final_track_helix_downstream_margin_cm}, ${write_kalman_innovation_diagnostics}, ${primary_vertex_x}, ${primary_vertex_y}, ${primary_vertex_z}, ${reconstruct_pairs})"
+root.exe -l -b -q "Fun4All_TpcPatternRecoV0.C(${nevents}, \"${macro_input}\", \"${outroot}\", ${pre_track_pt_min}, ${pre_track_dca_xy_min}, ${pre_pair_dca_max}, ${pre_lproj_min}, ${pre_cos_theta_min}, ${use_final_track_helix}, \"${point_order}\", \"${fit_method}\", ${kalman_sigma_rphi_cm}, ${kalman_sigma_r_cm}, ${kalman_sigma_z_cm}, ${write_same_sign_pairs}, ${write_cluster_residual_tree}, ${use_kalman_field_map}, \"${kalman_field_map}\", ${kalman_rk_max_step_cm}, ${kalman_rk_step_tolerance}, ${kalman_rk_max_step_trials}, ${kalman_rk_max_total_steps}, ${kalman_fast_field_jacobian}, ${kalman_fast_field_pca}, ${kalman_field_pca_refine_iterations}, ${coarse_steps}, ${pca_candidates}, ${print_timing}, ${event_skip}, ${kalman_analytic_uniform}, ${pre_track_quality_max}, ${pre_track_npoints_min}, ${pair_pca_z_max}, ${pair_pca_dz_max}, ${pair_decay_radius_min}, ${pair_alpha_abs_max}, ${pair_dca_max}, ${pair_dira_min}, ${final_track_helix_max_upstream_cm}, ${final_track_helix_downstream_margin_cm}, ${write_kalman_innovation_diagnostics}, ${primary_vertex_x}, ${primary_vertex_y}, ${primary_vertex_z}, ${reconstruct_pairs}, ${required_crossing_value}, ${require_same_crossing}, ${max_crossing_tier}, \"${crossing_decision_node}\")"
 
 if [[ -f "${outroot}" && -f "${completion_marker}" ]]; then
   base="$(basename "${outroot}")"

@@ -3,6 +3,7 @@
 
 #include <fun4all/Fun4AllDstInputManager.h>
 #include <fun4all/Fun4AllInputManager.h>
+#include <fun4all/Fun4AllReturnCodes.h>
 #include <fun4all/Fun4AllServer.h>
 
 #include <trackingdiagnostics/TpcV0CandidateTree.h>
@@ -65,7 +66,11 @@ int Fun4All_TpcPatternRecoV0(
     const double primaryVertexX = 0.0,
     const double primaryVertexY = 0.0,
     const double primaryVertexZ = 0.0,
-    const bool reconstructPairs = true)
+    const bool reconstructPairs = true,
+    const int requiredCrossing = TpcV0CandidateTree::NoCrossingSelection,
+    const bool requireSameCrossing = false,
+    const int maxCrossingTier = -1,
+    const std::string &crossingDecisionNode = "TPC_CROSSING_DECISIONS")
 {
   const int load_tpc_reco = gSystem->Load("libtpctrackreco.so");
   if (load_tpc_reco < 0)
@@ -113,6 +118,7 @@ int Fun4All_TpcPatternRecoV0(
   v0->set_tpc_sa_cluster_node("TPC_POLYCLUSTERS");
   v0->set_tpc_sa_track_node("TPC_POLYTRACKS");
   v0->set_tpc_sa_track_vertex_node("TPC_POLYTRACKVERTICES");
+  v0->set_crossing_decision_node(crossingDecisionNode);
   v0->set_use_truth_primary_vertex(false);
   v0->set_primary_vertex(primaryVertexX, primaryVertexY, primaryVertexZ);
   std::cout << "Using fixed primary vertex: (" << primaryVertexX << ", "
@@ -173,9 +179,25 @@ int Fun4All_TpcPatternRecoV0(
   v0->set_pair_alpha_abs_max(pairAlphaAbsMax);
   v0->set_pair_dca_max(pairDcaMax);
   v0->set_pair_dira_min(pairDiraMin);
+  v0->set_required_crossing(requiredCrossing);
+  v0->set_require_same_crossing(requireSameCrossing);
+  v0->set_max_crossing_tier(maxCrossingTier);
   v0->set_reconstruct_pairs(reconstructPairs);
   v0->set_write_same_sign_pairs(writeSameSignPairs);
   v0->set_write_cluster_residual_tree(writeClusterResidualTree);
+  std::cout << "Using crossing decisions from " << crossingDecisionNode
+            << ", required crossing=";
+  if (requiredCrossing == TpcV0CandidateTree::NoCrossingSelection)
+  {
+    std::cout << "any";
+  }
+  else
+  {
+    std::cout << requiredCrossing;
+  }
+  std::cout << ", require same crossing=" << std::boolalpha << requireSameCrossing
+            << ", max crossing tier=" << maxCrossingTier << std::noboolalpha
+            << std::endl;
   v0->Verbosity(1);
   se->registerSubsystem(v0);
 
@@ -198,10 +220,20 @@ int Fun4All_TpcPatternRecoV0(
     std::cout << "Skipping " << nSkip << " input events" << std::endl;
     se->skip(nSkip);
   }
-  se->run(nEvents);
+  const int runStatus = se->run(nEvents);
   se->End();
   se->PrintTimer();
   delete se;
+
+  if (runStatus == Fun4AllReturnCodes::ABORTRUN ||
+      runStatus == Fun4AllReturnCodes::ABORTPROCESSING)
+  {
+    gSystem->Unlink((outputFile + ".complete").c_str());
+    std::cerr << "Fun4All processing failed with status " << runStatus
+              << "; not creating a completion marker" << std::endl;
+    gSystem->Exit(4);
+    return 4;
+  }
 
   bool outputIsValid = false;
   Long64_t pairEntries = -1;
