@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# See TPC_PATTERN_V0_WORKFLOW.md for inputs, fitting modes, cuts, and outputs.
+
 if [[ $# -lt 2 || $# -gt 4 ]]; then
   echo "Usage: $0 <campaign> <dst_filelist> [events_per_job] [max_jobs]"
   echo "Example: $0 tpc_v0_event_chunks output/dst.list 7 10000"

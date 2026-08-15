@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# See TPC_PATTERN_V0_WORKFLOW.md for inputs, fitting modes, cuts, and outputs.
+
 if [[ $# -lt 2 || $# -gt 5 ]]; then
   echo "Usage: $0 <campaign> <dst_filelist> [files_per_job] [events_per_input_file] [total_files]"
   echo "Example: $0 tpc_pattern_v0_79513_good /path/to/good_dst_files.list 1 500"
@@ -77,6 +79,7 @@ fit_method="${V0_FIT_METHOD:-helix}"
 kalman_sigma_rphi_cm="${V0_KALMAN_SIGMA_RPHI_CM:-0.03}"
 kalman_sigma_r_cm="${V0_KALMAN_SIGMA_R_CM:-0.03}"
 kalman_sigma_z_cm="${V0_KALMAN_SIGMA_Z_CM:-0.05}"
+reconstruct_pairs="${V0_RECONSTRUCT_PAIRS:-true}"
 write_same_sign_pairs="${V0_WRITE_SAME_SIGN_PAIRS:-false}"
 write_cluster_residual_tree="${V0_WRITE_CLUSTER_RESIDUAL_TREE:-false}"
 write_kalman_innovation_diagnostics="${V0_WRITE_KALMAN_INNOVATION_DIAGNOSTICS:-false}"
@@ -139,6 +142,7 @@ echo "  PCA search: coarse_steps=${coarse_steps}, candidates=${pca_candidates}"
 echo "  FinalTrack helix search: measurement-anchored, upstream=${final_track_helix_max_upstream_cm} cm, downstream_margin=${final_track_helix_downstream_margin_cm} cm, span<1 turn"
 echo "  print_timing=${print_timing}"
 echo "  fixed primary vertex=(${primary_vertex_x}, ${primary_vertex_y}, ${primary_vertex_z}) cm"
+echo "  reconstruct_pairs=${reconstruct_pairs}"
 echo "  write_same_sign_pairs=${write_same_sign_pairs}"
 echo "  write_cluster_residual_tree=${write_cluster_residual_tree}"
 echo "  write_kalman_innovation_diagnostics=${write_kalman_innovation_diagnostics}"
@@ -190,6 +194,7 @@ condor_submit \
   -append "primary_vertex_y = ${primary_vertex_y}" \
   -append "primary_vertex_z = ${primary_vertex_z}" \
   -append "event_chunk_manifest = ${event_chunk_manifest}" \
+  -append "reconstruct_pairs = ${reconstruct_pairs}" \
   -append "write_same_sign_pairs = ${write_same_sign_pairs}" \
   -append "write_cluster_residual_tree = ${write_cluster_residual_tree}" \
   -append "write_kalman_innovation_diagnostics = ${write_kalman_innovation_diagnostics}" \

@@ -64,7 +64,8 @@ int Fun4All_TpcPatternRecoV0(
     const bool writeKalmanInnovationDiagnostics = false,
     const double primaryVertexX = 0.0,
     const double primaryVertexY = 0.0,
-    const double primaryVertexZ = 0.0)
+    const double primaryVertexZ = 0.0,
+    const bool reconstructPairs = true)
 {
   const int load_tpc_reco = gSystem->Load("libtpctrackreco.so");
   if (load_tpc_reco < 0)
@@ -172,6 +173,7 @@ int Fun4All_TpcPatternRecoV0(
   v0->set_pair_alpha_abs_max(pairAlphaAbsMax);
   v0->set_pair_dca_max(pairDcaMax);
   v0->set_pair_dira_min(pairDiraMin);
+  v0->set_reconstruct_pairs(reconstructPairs);
   v0->set_write_same_sign_pairs(writeSameSignPairs);
   v0->set_write_cluster_residual_tree(writeClusterResidualTree);
   v0->Verbosity(1);

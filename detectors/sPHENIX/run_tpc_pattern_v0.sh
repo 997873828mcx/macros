@@ -39,6 +39,7 @@ fit_method=${V0_FIT_METHOD:-helix}
 kalman_sigma_rphi_cm=${V0_KALMAN_SIGMA_RPHI_CM:-0.03}
 kalman_sigma_r_cm=${V0_KALMAN_SIGMA_R_CM:-0.03}
 kalman_sigma_z_cm=${V0_KALMAN_SIGMA_Z_CM:-0.05}
+reconstruct_pairs=${V0_RECONSTRUCT_PAIRS:-true}
 write_same_sign_pairs=${V0_WRITE_SAME_SIGN_PAIRS:-false}
 write_cluster_residual_tree=${V0_WRITE_CLUSTER_RESIDUAL_TREE:-false}
 write_kalman_innovation_diagnostics=${5:-${V0_WRITE_KALMAN_INNOVATION_DIAGNOSTICS:-false}}
@@ -220,11 +221,12 @@ echo "  PCA search: coarse_steps=${coarse_steps}, candidates=${pca_candidates}"
 echo "  FinalTrack helix search: measurement-anchored, upstream=${final_track_helix_max_upstream_cm} cm, downstream_margin=${final_track_helix_downstream_margin_cm} cm, span<1 turn"
 echo "  print_timing=${print_timing}"
 echo "  fixed primary vertex=(${primary_vertex_x}, ${primary_vertex_y}, ${primary_vertex_z}) cm"
+echo "  reconstruct_pairs=${reconstruct_pairs}"
 echo "  write_same_sign_pairs=${write_same_sign_pairs}"
 echo "  write_cluster_residual_tree=${write_cluster_residual_tree}"
 echo "  write_kalman_innovation_diagnostics=${write_kalman_innovation_diagnostics}"
 
-root.exe -l -b -q "Fun4All_TpcPatternRecoV0.C(${nevents}, \"${macro_input}\", \"${outroot}\", ${pre_track_pt_min}, ${pre_track_dca_xy_min}, ${pre_pair_dca_max}, ${pre_lproj_min}, ${pre_cos_theta_min}, ${use_final_track_helix}, \"${point_order}\", \"${fit_method}\", ${kalman_sigma_rphi_cm}, ${kalman_sigma_r_cm}, ${kalman_sigma_z_cm}, ${write_same_sign_pairs}, ${write_cluster_residual_tree}, ${use_kalman_field_map}, \"${kalman_field_map}\", ${kalman_rk_max_step_cm}, ${kalman_rk_step_tolerance}, ${kalman_rk_max_step_trials}, ${kalman_rk_max_total_steps}, ${kalman_fast_field_jacobian}, ${kalman_fast_field_pca}, ${kalman_field_pca_refine_iterations}, ${coarse_steps}, ${pca_candidates}, ${print_timing}, ${event_skip}, ${kalman_analytic_uniform}, ${pre_track_quality_max}, ${pre_track_npoints_min}, ${pair_pca_z_max}, ${pair_pca_dz_max}, ${pair_decay_radius_min}, ${pair_alpha_abs_max}, ${pair_dca_max}, ${pair_dira_min}, ${final_track_helix_max_upstream_cm}, ${final_track_helix_downstream_margin_cm}, ${write_kalman_innovation_diagnostics}, ${primary_vertex_x}, ${primary_vertex_y}, ${primary_vertex_z})"
+root.exe -l -b -q "Fun4All_TpcPatternRecoV0.C(${nevents}, \"${macro_input}\", \"${outroot}\", ${pre_track_pt_min}, ${pre_track_dca_xy_min}, ${pre_pair_dca_max}, ${pre_lproj_min}, ${pre_cos_theta_min}, ${use_final_track_helix}, \"${point_order}\", \"${fit_method}\", ${kalman_sigma_rphi_cm}, ${kalman_sigma_r_cm}, ${kalman_sigma_z_cm}, ${write_same_sign_pairs}, ${write_cluster_residual_tree}, ${use_kalman_field_map}, \"${kalman_field_map}\", ${kalman_rk_max_step_cm}, ${kalman_rk_step_tolerance}, ${kalman_rk_max_step_trials}, ${kalman_rk_max_total_steps}, ${kalman_fast_field_jacobian}, ${kalman_fast_field_pca}, ${kalman_field_pca_refine_iterations}, ${coarse_steps}, ${pca_candidates}, ${print_timing}, ${event_skip}, ${kalman_analytic_uniform}, ${pre_track_quality_max}, ${pre_track_npoints_min}, ${pair_pca_z_max}, ${pair_pca_dz_max}, ${pair_decay_radius_min}, ${pair_alpha_abs_max}, ${pair_dca_max}, ${pair_dira_min}, ${final_track_helix_max_upstream_cm}, ${final_track_helix_downstream_margin_cm}, ${write_kalman_innovation_diagnostics}, ${primary_vertex_x}, ${primary_vertex_y}, ${primary_vertex_z}, ${reconstruct_pairs})"
 
 if [[ -f "${outroot}" && -f "${completion_marker}" ]]; then
   base="$(basename "${outroot}")"
